@@ -4,6 +4,7 @@ from nrrd._version import __version__
 from nrrd.formatters import *
 from nrrd.parsers import *
 from nrrd.reader import read, read_data, read_header
+from nrrd.spatial import VECTOR_KINDS, WorldComponents, to_world_components
 from nrrd.types import NRRDFieldMap, NRRDFieldType, NRRDHeader
 from nrrd.writer import write
 
@@ -43,4 +44,5 @@ __all__ = ['read', 'read_data', 'read_header', 'write', 'format_number_list', 'f
            'format_optional_vector_list', 'parse_matrix', 'parse_number_auto_dtype', 'parse_number_list',
            'parse_optional_matrix',
            'parse_optional_vector', 'parse_vector', 'parse_vector_list', 'parse_optional_vector_list', 'NRRDFieldType',
-           'NRRDFieldMap', 'NRRDHeader', 'SPACE_DIRECTIONS_TYPE', '__version__']
+           'NRRDFieldMap', 'NRRDHeader', 'SPACE_DIRECTIONS_TYPE', 'VECTOR_KINDS', 'WorldComponents',
+           'to_world_components', '__version__']

@@ -98,6 +98,7 @@ Contents
    reference/writing
    reference/parsing
    reference/formatting
+   reference/spatial
 
 .. toctree::
     :caption: Links
