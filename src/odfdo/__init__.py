@@ -166,6 +166,7 @@ __all__ = [  # noqa: RUF022
     "RegularPolygonShape",
     "Row",
     "RowGroup",
+    "RowInsertError",
     "RubyBase",
     "Section",
     "SectionMixin",
@@ -174,6 +175,9 @@ __all__ = [  # noqa: RUF022
     "SizeMix",
     "Spacer",
     "Span",
+    "SPAN_POLICY_EXPAND",
+    "SPAN_POLICY_REJECT",
+    "SpanInsertionError",
     "Spreadsheet",
     "Style",
     "StyleFooter",
@@ -421,6 +425,12 @@ from .styles import Styles
 from .svg import SvgDescription, SvgMixin, SvgTitle
 from .tab import Tab
 from .table import Table
+from .table_insert import (
+    SPAN_POLICY_EXPAND,
+    SPAN_POLICY_REJECT,
+    RowInsertError,
+    SpanInsertionError,
+)
 from .toc import (
     TOC,
     IndexBody,

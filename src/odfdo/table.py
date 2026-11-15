@@ -55,6 +55,11 @@ from .named_range import NamedRange, table_name_check
 from .office_forms import OfficeFormsMixin
 from .row import Row
 from .table_cache import _XP_COLUMN_IDX, _XP_ROW_IDX, TableCache
+from .table_insert import (
+    SPAN_POLICY_EXPAND,
+    SPAN_POLICY_REJECT,
+    insert_rows,
+)
 from .table_serializer import serialize_table
 from .utils import (
     NameUnifyer,
@@ -203,6 +208,11 @@ class Table(MDTable, FormMixin, OfficeFormsMixin, Element):
 
     _tag = "table:table"
     _append = Element.append
+
+    #: Refuse a compression aware insertion landing on a merged cell area.
+    SPAN_POLICY_REJECT = SPAN_POLICY_REJECT
+    #: Extend the merged cell area when an insertion lands inside it.
+    SPAN_POLICY_EXPAND = SPAN_POLICY_EXPAND
 
     def __init__(
         self,
@@ -1552,21 +1562,38 @@ class Table(MDTable, FormMixin, OfficeFormsMixin, Element):
         return row_back
 
     def insert_row(
-        self, y: int | str, row: Row | None = None, clone: bool = True
+        self,
+        y: int | str,
+        row: Row | None = None,
+        clone: bool = True,
+        span_policy: str | None = None,
     ) -> Row:
         """Insert a row before the given 'y' position (0-based).
 
         If no `row` is provided, an empty one is created.
 
+        When `span_policy` is provided, the compression aware engine is used:
+        the repeated segment is split in place, named ranges and formulas
+        referencing the table are shifted, and a merged area covering the
+        insertion point follows the policy. With `None` (default) the
+        historical behavior is kept unchanged.
+
         Args:
             y: The 0-based index at which to insert the row.
             row: The Row element to insert.
             clone: If True (default), a copy of the provided row is used.
+            span_policy: None for the legacy behavior, or one of
+                `SPAN_POLICY_REJECT` / `SPAN_POLICY_EXPAND`.
 
         Returns:
             Row: The newly inserted row, with its `y` attribute updated.
 
         """
+        if span_policy is not None:
+            if row is None:
+                row = Row()
+                clone = False
+            return self.insert_rows(y, rows=[row], span_policy=span_policy)[0]
         if row is None:
             row = Row()
             clone = False
@@ -1583,6 +1610,37 @@ class Table(MDTable, FormMixin, OfficeFormsMixin, Element):
         # Update width if necessary
         self._update_width(row_back)
         return row_back
+
+    def insert_rows(
+        self,
+        y: int | str,
+        amount: int = 1,
+        rows: list[Row] | None = None,
+        span_policy: str = SPAN_POLICY_REJECT,
+    ) -> list[Row]:
+        """Insert one or several rows before the logical 'y' position.
+
+        The insertion is compression aware: a row stored with a large
+        `table:number-rows-repeated` value is split around the insertion point
+        instead of being materialized, so the physical number of XML nodes
+        does not grow with the original repetition count. Named ranges,
+        merged cells and formulas referencing the shifted rows are updated.
+
+        Args:
+            y: The 0-based index (or "A1" style coordinate) of the insertion
+                point. Rows from this position onward are shifted down.
+            amount: Number of empty rows to insert, ignored when `rows` is
+                provided.
+            rows: Optional explicit Row elements to insert.
+            span_policy: `SPAN_POLICY_REJECT` (default) raises a
+                `SpanInsertionError` when the point belongs to a vertically
+                merged area, `SPAN_POLICY_EXPAND` extends the area.
+
+        Returns:
+            list[Row]: The inserted Row elements.
+
+        """
+        return insert_rows(self, y, amount=amount, rows=rows, span_policy=span_policy)
 
     def extend_rows(self, rows: Iterable[Row] | None = None) -> None:
         """Append a list of rows to the end of the table.

@@ -1,5 +1,20 @@
 # Odfdo Release Notes
 
+## Unreleased
+
+### Added
+
+-   Added `Table.insert_rows()` for compression aware row insertion: a repeated
+    row segment is split in place instead of being materialized, so the number
+    of physical XML nodes stays independent of the original repetition count.
+-   Insertion shifts the named ranges and the formulas referencing the table,
+    and supports a `span_policy` argument to reject (`SPAN_POLICY_REJECT`) or
+    extend (`SPAN_POLICY_EXPAND`) a vertically merged cell area.
+-   Added `Table.insert_row(..., span_policy=...)` to use the compression aware
+    engine for a single row.
+-   Added `RowInsertError`, `SpanInsertionError`, `SPAN_POLICY_REJECT` and
+    `SPAN_POLICY_EXPAND`.
+
 ## [3.27.3] - 2026-10-24
 
 -   Improve the filter for parasite files (`.DS_Store` and others) when savving the document.

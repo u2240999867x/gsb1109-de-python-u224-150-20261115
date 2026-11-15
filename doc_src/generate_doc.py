@@ -78,6 +78,7 @@ REFERENCE_MODULES = [
     "tab",
     "table",
     "table_cache",
+    "table_insert",
     "text_index",
     "toc",
     "tracked_changes",

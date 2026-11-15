@@ -148,6 +148,7 @@ nav:
           - tab: reference_tab.md
           - table: reference_table.md
           - table_cache: reference_table_cache.md
+          - table_insert: reference_table_insert.md
           - text_index: reference_text_index.md
           - toc: reference_toc.md
           - tracked_changes: reference_tracked_changes.md
