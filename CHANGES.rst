@@ -1,6 +1,16 @@
 Revision 0.7.0, released XX-XX-2026
 ---------------------------------------
 
+- Added ``pyasn1.codec.ber.semindex``, a semantic de-duplication index over
+  BER substrates.  It assigns stable entity numbers to semantically equal
+  objects regardless of definite versus indefinite length, long versus
+  short length forms, primitive versus constructed string encodings, or
+  SET member order, while retaining every transmitted original byte string.
+  SET/SET OF membership is treated as unordered, SEQUENCE/SEQUENCE OF
+  membership as ordered, character string fragments are never merged across
+  distinct string types, REAL values are compared as exact rationals, and
+  substrates carrying uninterpretable unknown primitive fields never share
+  an entity number.
 - Fixed OverflowError from BER/CER/DER length values that fit in the
   supported 8-octet length field but exceed the platform maximum readable
   size. Such oversized definite lengths are now rejected with PyAsn1Error.

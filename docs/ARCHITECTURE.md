@@ -65,7 +65,7 @@ here.
 
 ### Module map
 
-The package is thirty-two modules; four carry most of the weight:
+The package is thirty-three modules; four carry most of the weight:
 `type/univ.py` (~3,300 lines), `codec/ber/decoder.py` (~2,200),
 `codec/ber/encoder.py` (~960), `type/constraint.py` (~750).
 
@@ -86,6 +86,7 @@ The package is thirty-two modules; four carry most of the weight:
 | `codec/ber/decoder.py` | The base decoder: payload decoders, the state machine, every security limit |
 | `codec/ber/encoder.py` | The base encoder |
 | `codec/ber/eoo.py` | The end-of-octets singleton |
+| `codec/ber/semindex.py` | `SemanticIndex`: canonical semantic fingerprints over BER TLVs, grouping definite/indefinite and primitive/constructed variants while retaining every original substrate; read-only with respect to the codecs |
 | `codec/cer/*`, `codec/der/*` | Derived codecs, sharing BER's objects by identity |
 | `codec/native/*` | Conversion to and from Python dicts, lists and scalars |
 | `compat/integer.py` | A single `to_bytes` helper |
