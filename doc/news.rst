@@ -38,6 +38,20 @@ Features:
 * Delay symlink creation in :meth:`RarFile.extractall`
   [`#148 <https://github.com/markokr/rarfile/pull/148>`_]
 
+* Add local capability preflight: :meth:`RarFile.extraction_plan`
+  matches features used by the archive (compression, encryption,
+  solid compression) against configured extraction tools and
+  returns an executable extraction plan.
+
+* Archive metadata is now readable without any extraction tool
+  installed; only comments that need tool-based decompression
+  are left unread.
+
+* Keep tool errors, bad passwords and corrupt data distinct:
+  exit codes are mapped with the error map captured when the
+  extraction was started, so they are no longer at risk of
+  being reported as "tool not installed".
+
 Version 4.5 (2026-08-02)
 ------------------------
 

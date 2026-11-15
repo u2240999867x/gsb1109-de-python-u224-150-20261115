@@ -12,14 +12,18 @@ from types import TracebackType
 from typing import IO, Literal
 
 from . import config
-from .backend import empty_read
+from .backend import (
+    FEAT_COMPRESSED, FEAT_ENCRYPTED, FEAT_SOLID, ExtractPlan, empty_read,
+    plan_extraction,
+)
 from .bits import (
-    DOS_MODE_READONLY, RAR5_ID, RAR5_XREDIR_ISDIR,
-    RAR5_XREDIR_WINDOWS_JUNCTION, RAR_FILE_DIRECTORY, RAR_ID,
-    RAR_OS_MSDOS, RAR_OS_UNIX, RAR_OS_WIN32, RAR_V3, RAR_V5,
+    DOS_MODE_READONLY, RAR5_ID, RAR5_XREDIR_FILE_COPY,
+    RAR5_XREDIR_HARD_LINK, RAR5_XREDIR_ISDIR, RAR5_XREDIR_WINDOWS_JUNCTION,
+    RAR_FILE_DIRECTORY, RAR_FILE_SOLID, RAR_ID, RAR_M0, RAR_OS_MSDOS,
+    RAR_OS_UNIX, RAR_OS_WIN32, RAR_V3, RAR_V5,
 )
 from .errors import (
-    BadRarFile, BadSymLinkError, NotRarFile,
+    BadRarFile, BadSymLinkError, NoRarEntry, NotRarFile,
     PasswordRequired, UnsupportedWarning,
 )
 from .format import RAR3Parser, RAR5Parser
@@ -200,6 +204,61 @@ class RarFile:
         """
         assert self._file_parser is not None
         return self._file_parser.is_solid()
+
+    def extraction_plan(self, member: str | Path | RarInfo | None = None) -> ExtractPlan:
+        """Check local extraction capability for archive entries.
+
+        Matches features used by the archive (compression, encryption,
+        solid compression) against configured extraction tools and
+        returns an executable extraction plan, without extracting
+        anything.  Listing archive metadata never needs a tool.
+
+        Parameters:
+
+            member
+                optional filename or :class:`RarInfo` instance to check,
+                by default all entries are checked.
+
+        .. versionadded:: 5.0
+        """
+        if member is None:
+            entries: Iterable[RarInfo] = self.infolist()
+        else:
+            entries = [self.getinfo(member)]
+        return plan_extraction(self._collect_features(entries))
+
+    def _collect_features(self, entries: Iterable[RarInfo]) -> set[str]:
+        """Gather features used by entries that affect extraction."""
+        feats: set[str] = set()
+        for inf in entries:
+            feats |= self._entry_features(inf)
+        if FEAT_COMPRESSED in feats and self._file_parser is not None and self.is_solid():
+            feats.add(FEAT_SOLID)
+        return feats
+
+    def _entry_features(self, inf: RarInfo) -> set[str]:
+        """Features used by single entry."""
+        feats: set[str] = set()
+        if inf.file_redir:
+            redir_type = inf.file_redir[0]
+            if redir_type in (RAR5_XREDIR_FILE_COPY, RAR5_XREDIR_HARD_LINK):
+                # data comes from the referenced entry
+                try:
+                    inf = self.getinfo_orig(inf)
+                except NoRarEntry:
+                    return feats
+            else:
+                # symlink data is the link target, read directly
+                return feats
+        if not inf.is_file():
+            return feats
+        if inf.compress_type != RAR_M0:
+            feats.add(FEAT_COMPRESSED)
+        if inf.needs_password():
+            feats.add(FEAT_ENCRYPTED)
+        if inf.flags & RAR_FILE_SOLID:
+            feats.add(FEAT_SOLID)
+        return feats
 
     def namelist(self) -> list[str]:
         """Return list of filenames in archive.

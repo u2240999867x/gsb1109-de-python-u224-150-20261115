@@ -52,8 +52,8 @@ from .crypto import (
     HeaderDecrypt, NoHashContext, rar3_s2k, rar5_s2k,
 )
 from .errors import (
-    BadRarFile, BadRarName, NeedFirstVolume,
-    NoRarEntry, NotRarFile, RarWrongPassword,
+    BadRarFile, BadRarName, NeedFirstVolume, NoRarEntry, NotRarFile,
+    RarCannotExec, RarWrongPassword,
 )
 from .info import (
     FileEncryption, Rar3EndArcInfo, Rar3GenericInfo, Rar3Info, Rar3MainInfo,
@@ -486,7 +486,7 @@ class CommonParser:
 
         # read from unrar pipe
         cmd = setup.open_cmdline(pwd, os.fsdecode(rarfile), fn)
-        return PipeReader(inf, cmd, tmpfile)
+        return PipeReader(inf, cmd, tmpfile, setup.get_errmap())
 
 
 #
@@ -753,8 +753,13 @@ class RAR3Parser(CommonParser):
                     continue
                 pos += S_COMMENT_HDR.size
                 data = hdata[pos: pos_next]
-                cmt = rar3_decompress(ver, meth, data, declen, sflags,
-                                      crc, self._password)
+                try:
+                    cmt = rar3_decompress(ver, meth, data, declen, sflags,
+                                          crc, self._password)
+                except RarCannotExec:
+                    # no extraction tool available, leave comment unread
+                    pos = pos_next
+                    continue
                 if not self._crc_check or (crc32(cmt) & 0xFFFF == crc):
                     comment = self._decode_comment(cmt)
 
@@ -775,8 +780,12 @@ class RAR3Parser(CommonParser):
             data = rf.read(inf.compress_size)
 
         # decompress
-        cmt = rar3_decompress(inf.extract_version, inf.compress_type, data,
-                              inf.file_size, inf.flags, inf.CRC or 0, pwd, inf.salt)
+        try:
+            cmt = rar3_decompress(inf.extract_version, inf.compress_type, data,
+                                  inf.file_size, inf.flags, inf.CRC or 0, pwd, inf.salt)
+        except RarCannotExec:
+            # no extraction tool available, leave comment unread
+            return None
 
         # check crc
         if self._crc_check:
@@ -1290,8 +1299,12 @@ class RAR5Parser(CommonParser):
             cmt = f.read(item.file_size)
         else:
             # archive comment
-            with self._open_clear(item) as cmtstream:
-                cmt = cmtstream.read()
+            try:
+                with self._open_clear(item) as cmtstream:
+                    cmt = cmtstream.read()
+            except RarCannotExec:
+                # no extraction tool available, leave comment unread
+                return None
 
         # rar bug? - appends zero to comment
         cmt = cmt.split(b"\0", 1)[0]
@@ -1536,7 +1549,12 @@ def rar3_decompress(vers: int, meth: int, data: bytes, declen: int = 0, flags: i
         curpwd = (flags & RAR_FILE_PASSWORD) and pwd or None
         cmd = setup.open_cmdline(curpwd, tmpname)
         p = custom_popen(cmd)
-        return p.communicate()[0]
+        out = p.communicate()[0]
+        # tool may append error messages to output, keep only actual data;
+        # caller validates the result against CRC stored in archive
+        if declen and len(out) > declen:
+            out = out[:declen]
+        return out
     finally:
         tmpf.close()
         os.unlink(tmpname)

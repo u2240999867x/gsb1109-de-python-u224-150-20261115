@@ -55,6 +55,14 @@ Functions
 
 .. autofunction:: is_rarfile
 .. autofunction:: is_rarfile_sfx
+.. autofunction:: find_tool
+.. autofunction:: plan_extraction
+
+ExtractPlan class
+-----------------
+
+.. autoclass:: ExtractPlan
+   :members:
 
 Constants
 ---------

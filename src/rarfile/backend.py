@@ -1,7 +1,8 @@
 import errno
 import re
 import sys
-from collections.abc import Sequence
+from collections.abc import Iterable, Sequence
+from dataclasses import dataclass
 from subprocess import DEVNULL, PIPE, STDOUT, Popen
 from typing import Literal, Protocol, TypeAlias, TypedDict, TypeVar
 
@@ -26,11 +27,37 @@ class Reader(Protocol[T_co]):
     def read(self, n: int = -1, /) -> T_co: ...
 
 
-__all__ = ("empty_read", "custom_popen", "check_returncode", "ToolSetup", "tool_setup")
+__all__ = (
+    "empty_read", "custom_popen", "check_returncode", "ToolSetup", "tool_setup",
+    "find_tool", "plan_extraction", "ExtractPlan",
+    "FEAT_COMPRESSED", "FEAT_ENCRYPTED", "FEAT_SOLID",
+    "CAP_PASSWORD", "CAP_SOLID",
+)
 
 CmdLine: TypeAlias = tuple[str, ...]
 ErrMap: TypeAlias = Sequence[type[Exception] | None]
 CmdLineKeys: TypeAlias = Literal["open_cmd", "check_cmd"]
+
+#: Archive feature: entries are compressed, external tool is required.
+FEAT_COMPRESSED = "compressed"
+
+#: Archive feature: entries are encrypted, tool must support passwords.
+FEAT_ENCRYPTED = "encrypted"
+
+#: Archive feature: solid compression is used, tool must handle solid archives.
+FEAT_SOLID = "solid"
+
+#: Tool capability: can extract password-protected entries.
+CAP_PASSWORD = "password"
+
+#: Tool capability: can extract from solid archives.
+CAP_SOLID = "solid"
+
+#: Map archive feature to tool capability it requires.
+_FEATURE_TOOL_CAPS = {
+    FEAT_ENCRYPTED: CAP_PASSWORD,
+    FEAT_SOLID: CAP_SOLID,
+}
 
 
 class ToolConfig(TypedDict):
@@ -41,6 +68,7 @@ class ToolConfig(TypedDict):
     errmap: ErrMap
     check_output: NotRequired[str]
     executables: NotRequired[Sequence[str]]
+    caps: NotRequired[Sequence[str]]
 
 
 def empty_read(src: Reader[bytes], size: int, blklen: int) -> None:
@@ -65,9 +93,9 @@ def custom_popen(cmd: Sequence[str]) -> Popen[bytes]:
                   creationflags=creationflags)
     except OSError as ex:
         if ex.errno == errno.ENOENT:
-            raise RarCannotExec("Unrar not installed?") from None
+            raise RarCannotExec("Tool not installed: %s" % cmd[0]) from None
         if ex.errno == errno.EACCES or ex.errno == errno.EPERM:
-            raise RarCannotExec("Cannot execute unrar") from None
+            raise RarCannotExec("Cannot execute tool: %s" % cmd[0]) from None
         raise
     return p
 
@@ -141,6 +169,22 @@ class ToolSetup:
     def get_errmap(self) -> ErrMap:
         return self.setup["errmap"]
 
+    def supports(self, cap: str) -> bool:
+        """Check whether the tool supports a capability.
+
+        Capabilities are :data:`CAP_PASSWORD` and :data:`CAP_SOLID`.
+        Tools without declared capabilities are assumed to support everything.
+        """
+        caps = self.setup.get("caps")
+        if caps is None:
+            return True
+        return cap in caps
+
+    def missing_caps(self, needed: Iterable[str]) -> list[str]:
+        """Return capabilities from ``needed`` that the tool does not support.
+        """
+        return [cap for cap in needed if not self.supports(cap)]
+
     def get_cmdline(self, key: CmdLineKeys, pwd: str | bytes | None, nodash: bool = False) -> list[str]:
         cmdline: list[str]
         if "executables" in self.setup and self.executable:
@@ -182,6 +226,7 @@ UNRAR_CONFIG: ToolConfig = {
     "check_cmd": ("UNRAR_TOOL", "-inul", "-?"),
     "password": "-p",
     "no_password": ("-p-",),
+    "caps": (CAP_PASSWORD, CAP_SOLID),
     # map return code to exception class, codes from rar.txt
     "errmap": [None,
                RarWarning, RarFatalError, RarCRCError, RarLockedArchiveError,    # 1..4
@@ -197,6 +242,7 @@ UNAR_CONFIG: ToolConfig = {
     "check_cmd": ("UNAR_TOOL", "-version"),
     "password": ("-p",),
     "no_password": ("-p", ""),
+    "caps": (CAP_PASSWORD, CAP_SOLID),
     "errmap": [None],
 }
 
@@ -211,6 +257,7 @@ BSDTAR_CONFIG: ToolConfig = {
     "check_output": "bsdtar|libarchive",
     "password": None,
     "no_password": (),
+    "caps": (),
     "errmap": [None],
 }
 
@@ -221,6 +268,7 @@ SEVENZIP_CONFIG: ToolConfig = {
     "check_output": "Rar3",  # rar plugin appears in "Codec" not "Format"
     "password": "-p",
     "no_password": ("-p",),
+    "caps": (CAP_PASSWORD, CAP_SOLID),
     "errmap": [None,
                RarWarning, RarFatalError, None, None,           # 1..4
                None, None, RarUserError, RarMemoryError]        # 5..8
@@ -229,9 +277,13 @@ SEVENZIP_CONFIG: ToolConfig = {
 CURRENT_SETUP: ToolSetup | None = None
 
 
-def tool_setup(unrar: bool = True, unar: bool = True, bsdtar: bool = True,
-               sevenzip: bool = True, force: bool = False) -> ToolSetup:
+def find_tool(unrar: bool = True, unar: bool = True, bsdtar: bool = True,
+              sevenzip: bool = True, force: bool = False) -> ToolSetup | None:
     """Pick a tool, return cached ToolSetup.
+
+    Returns None if no configured tool works, without raising.
+
+    .. versionadded:: 5.0
     """
     global CURRENT_SETUP
     if force:
@@ -253,6 +305,80 @@ def tool_setup(unrar: bool = True, unar: bool = True, bsdtar: bool = True,
         if setup.check():
             CURRENT_SETUP = setup
             break
-    if CURRENT_SETUP is None:
-        raise RarCannotExec("Cannot find working tool")
     return CURRENT_SETUP
+
+
+def tool_setup(unrar: bool = True, unar: bool = True, bsdtar: bool = True,
+               sevenzip: bool = True, force: bool = False) -> ToolSetup:
+    """Pick a tool, return cached ToolSetup.
+
+    Raises :exc:`RarCannotExec` if no configured tool works.
+    """
+    setup = find_tool(unrar, unar, bsdtar, sevenzip, force)
+    if setup is None:
+        raise RarCannotExec("Cannot find working tool")
+    return setup
+
+
+@dataclass(frozen=True)
+class ExtractPlan:
+    """Result of matching archive features against locally available tools.
+
+    .. versionadded:: 5.0
+
+    Attributes:
+
+        ok
+            True if the requested entries can be extracted locally.
+
+        tool
+            Resolved tool executable that would be used for extraction.
+            None if no external tool is needed or no working tool was found.
+
+        direct
+            True if the requested entries can be read directly,
+            without running an external tool.
+
+        features
+            Archive features that affect extraction:
+            ``"compressed"``, ``"encrypted"``, ``"solid"``.
+
+        problems
+            Human-readable reasons why extraction cannot proceed.
+            Empty when the plan is executable.
+    """
+
+    ok: bool
+    tool: str | None
+    direct: bool
+    features: frozenset[str]
+    problems: tuple[str, ...]
+
+    def __bool__(self) -> bool:
+        return self.ok
+
+
+def plan_extraction(features: Iterable[str]) -> ExtractPlan:
+    """Match archive features against locally configured tools.
+
+    Runs only local capability checks, no extraction is attempted.
+    Features are ``"compressed"``, ``"encrypted"`` and ``"solid"``,
+    see :data:`FEAT_COMPRESSED`, :data:`FEAT_ENCRYPTED`, :data:`FEAT_SOLID`.
+
+    .. versionadded:: 5.0
+    """
+    feats = frozenset(features)
+    if FEAT_COMPRESSED not in feats and FEAT_ENCRYPTED not in feats:
+        # stored and unencrypted entries are read directly
+        return ExtractPlan(ok=True, tool=None, direct=True, features=feats, problems=())
+    setup = find_tool()
+    if setup is None:
+        return ExtractPlan(ok=False, tool=None, direct=False, features=feats,
+                           problems=("Cannot find working tool",))
+    problems = []
+    for feat in sorted(feats):
+        cap = _FEATURE_TOOL_CAPS.get(feat)
+        if cap is not None and not setup.supports(cap):
+            problems.append("Tool %r does not support %s archives" % (setup.executable, feat))
+    return ExtractPlan(ok=not problems, tool=setup.executable, direct=False,
+                       features=feats, problems=tuple(problems))

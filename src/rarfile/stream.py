@@ -8,7 +8,7 @@ from subprocess import Popen
 from typing import TYPE_CHECKING, cast
 
 from . import config
-from .backend import check_returncode, custom_popen, empty_read, tool_setup
+from .backend import ErrMap, check_returncode, custom_popen, empty_read
 from .bits import RAR_BLOCK_MAIN, RAR_BLOCK_MARK, RAR_FILE_SPLIT_AFTER
 from .crypto import HashContext, NoHashContext
 from .errors import BadRarFile
@@ -38,6 +38,7 @@ class RarExtFile(io.RawIOBase):
     _returncode: int = 0
     _md_context: HashContext | None = None
     _seeking: bool = False
+    _errmap: ErrMap | None = None
 
     def __init__(self, inf: RarInfo):
         super().__init__()
@@ -81,8 +82,7 @@ class RarExtFile(io.RawIOBase):
             n -= len(data)
         data = b"".join(buf)
         if n > 0:
-            if self._returncode:
-                check_returncode(self._returncode, "", tool_setup().get_errmap())
+            self._check_returncode()
             raise BadRarFile("Failed the read enough data: req=%d got=%d" % (orig, len(data)))
 
         # done?
@@ -90,6 +90,15 @@ class RarExtFile(io.RawIOBase):
             # self.close()
             self._check()
         return data
+
+    def _check_returncode(self) -> None:
+        """Map tool exit code to exception, using errmap captured at open time.
+
+        This keeps tool errors, bad passwords and corrupt data distinct
+        even if tool resolution would fail at read time.
+        """
+        if self._returncode:
+            check_returncode(self._returncode, "", self._errmap or ())
 
     def _check(self) -> None:
         """Check final CRC."""
@@ -100,8 +109,7 @@ class RarExtFile(io.RawIOBase):
             return
         if final is None:
             return
-        if self._returncode:
-            check_returncode(self._returncode, "", tool_setup().get_errmap())
+        self._check_returncode()
         if self._remain != 0:
             raise BadRarFile("Failed the read enough data")
         if final != exp:
@@ -211,11 +219,13 @@ class PipeReader(RarExtFile):
 
     _proc: Popen[bytes] | None = None
 
-    def __init__(self, inf: RarInfo, cmd: Sequence[str], tempfile: str | None = None):
+    def __init__(self, inf: RarInfo, cmd: Sequence[str], tempfile: str | None = None,
+                 errmap: ErrMap | None = None):
         super().__init__(inf)
         self._cmd = cmd
         self._proc = None
         self._tempfile = tempfile
+        self._errmap = errmap
         self._open_extfile()
 
     def _close_proc(self) -> None:

@@ -64,6 +64,7 @@ def test_read_vols() -> None:
             rf.read(fn)  # rar5
 
 
+@pytest.mark.skipif(not have_tool(config.UNRAR_TOOL), reason="unrar not installed")
 def test_unrar_tool() -> None:
     install_unrar_tool()
     try:
