@@ -519,3 +519,16 @@ def vbkv_dumps(obj):
     checksum = crc32(data)
 
     return b'VBKV' + struct.pack('<i', checksum) + data
+
+
+# typed JSON interchange (see vdf.json_interchange)
+from vdf.json_interchange import (
+    encode_typed,
+    decode_typed,
+    typed_json_dumps,
+    typed_json_dump,
+    typed_json_loads,
+    typed_json_load,
+    binary_to_typed,
+    typed_to_binary,
+)

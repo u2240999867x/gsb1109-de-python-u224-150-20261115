@@ -79,6 +79,42 @@ For binary representation
     d = vdf.vbkv_loads(vbkv_bytes)
     b = vdf.vbkv_dumps(d)
 
+Typed JSON interchange
+----------------------
+
+Binary VDF carries types that text VDF (and plain JSON) cannot express:
+64-bit signed/unsigned integers, pointers and colors. Sending these through an
+ordinary JSON number is also unsafe, because most JSON consumers parse numbers
+as IEEE-754 doubles and lose precision above ``2**53``.
+
+The typed interchange helpers keep every such integer as an exact decimal
+**string** and record its type out of band in a ``sidecar`` table keyed by
+RFC 6901 JSON Pointer. Decoding parses the decimal text with ``int()`` (never
+``float()``) and rebuilds the exact value and ``vdf`` subclass, so the data
+round-trips back to identical binary bytes.
+
+.. code:: python
+
+    # binary VDF -> typed JSON envelope for a JSON-only service
+    envelope = vdf.binary_to_typed(vdf_bytes)
+    text = vdf.typed_json_dumps(vdf.binary_loads(vdf_bytes))
+
+    # typed JSON -> binary VDF (identical bytes, same types and values)
+    vdf_bytes = vdf.typed_to_binary(envelope)
+
+The envelope shape::
+
+    {
+        "vdf_typed_json": "1.0",
+        "data": {"big": "18446744073709551615", "ptr": "1234"},
+        "sidecar": {"/big": "uint64", "/ptr": "pointer"}
+    }
+
+The sidecar tags are ``uint64``, ``int64``, ``pointer`` and ``color`` - exactly
+the types text VDF cannot represent. A mapping with duplicate keys
+(``vdf.VDFDict``) is encoded as an ordered array of ``[key, value]`` pairs,
+since JSON objects cannot hold duplicate keys.
+
 Using an alternative mapper
 
 .. code:: python
