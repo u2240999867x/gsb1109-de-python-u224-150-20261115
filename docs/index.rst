@@ -71,31 +71,59 @@ downside of this mode is that exceptions when a reference cannot be loaded might
 issued from more places when using the loaded document. Turning off lazy loading can
 make catching errors much easier.
 
-``merge_props``
-^^^^^^^^^^^^^^^
+``sibling_props``
+^^^^^^^^^^^^^^^^^
 
-When using this mode, extra properties from the reference object will be merged into
-the referenced document. e.g.::
+Properties placed next to a ``$ref`` key ("sibling" properties) are handled
+differently across tools: some ignore them, others treat them as overrides of
+the referenced data. jsonref makes you choose the rule explicitly for every
+projection with ``sibling_props``, instead of relying on a library default.
 
+- ``SiblingProps.IGNORE`` (or the string ``"ignore"``): sibling properties are
+  discarded; the result is exactly the referenced data. This is the default.
+- ``SiblingProps.OVERRIDE`` (or the string ``"override"``): sibling properties
+  are applied on top of a referenced *object*. This is a single top-level
+  override: a sibling mapping replaces the referenced mapping wholesale and is
+  never deep-merged into nested properties. A referenced list or scalar cannot
+  be extended, so its siblings stay ignored.
+
+Example::
+
+    >>> from jsonref import SiblingProps
     >>> json = {
-        "a": {"$ref": "#/b", "extra": "blah"},
-        "b": {"real": "b"}
+        "a": {"real": "b", "meta": {"x": 1, "y": 2}},
+        "b": {"$ref": "#/a", "extra": "blah", "meta": {"x": 9}}
     }
-    >>> print(replace_refs(json, merge_props=True))
-    {
-        "a": {"real": "b", "extra": "blah"},
-        "b": {"real": "b"}
-    }
-    >>> print(replace_refs(json))
-    {
-        "a": {"real": "b"},
-        "b": {"real": "b"}
-    }
+    >>> print(replace_refs(json, sibling_props=SiblingProps.IGNORE)["b"])
+    {'real': 'b', 'meta': {'x': 1, 'y': 2}}
+    >>> print(replace_refs(json, sibling_props=SiblingProps.OVERRIDE)["b"])
+    {'real': 'b', 'meta': {'x': 9}, 'extra': 'blah'}
 
-This is against the JSON reference spec, but some other JSON reference libraries also
-implement this behavior. It can be useful to e.g. extend common JSON schemas with extra
-properties. This behavior should not be used if you want your JSON documents to be
-usable with the widest possible array of tools.
+Note how ``meta`` is replaced wholesale rather than merged into ``{'x': 1,
+'y': 2}``.
+
+The effective rule and the origin of every sibling key are recorded on the
+resolved proxy. ``JsonRef.effective_rule`` holds the rule in effect, and
+``JsonRef.effective_sources`` maps each sibling key to its JSON Pointer inside
+the original document with a status of ``"ignored"``, ``"added"`` or
+``"override"``. The detailed sources are populated lazily on resolution, while
+``effective_rule`` is available immediately.
+
+Re-projection safety
+^^^^^^^^^^^^^^^^^^^^
+
+The input document is never mutated and its reference objects are preserved.
+Every :func:`replace_refs` call projects fresh output from that original
+structure, so switching rules re-reads the untouched source and never a
+previously merged result::
+
+    >>> override = replace_refs(json, sibling_props=SiblingProps.OVERRIDE)
+    >>> ignore = replace_refs(json, sibling_props=SiblingProps.IGNORE)
+    >>> # `ignore` reflects the original document, not the merged `override`.
+
+The legacy boolean ``merge_props`` remains supported: ``True`` maps to the
+override rule and ``False`` to the ignore rule. New code should prefer the
+explicit ``sibling_props`` argument.
 
 A note on ``base_uri``
 --------------------
@@ -144,6 +172,18 @@ use the data as if it does not contain references at all.
 
         Contains the original JSON Reference object. Accessing this attribute
         will not cause the referent data to be loaded.
+
+    .. attribute:: effective_rule
+
+        The explicitly selected sibling property rule (``"ignore"`` or
+        ``"override"``), available without resolving the reference.
+
+    .. attribute:: effective_sources
+
+        Provenance for the sibling properties, populated once the reference is
+        resolved. Records the rule, the reference and referent locations, and
+        the origin JSON Pointer plus status (``"ignored"``, ``"added"`` or
+        ``"override"``) of every sibling key.
 
 
 Loading a document at a given URI

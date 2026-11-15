@@ -1,3 +1,4 @@
+import enum
 import functools
 import json
 import warnings
@@ -19,6 +20,55 @@ except ImportError:
     requests = None
 
 __version__ = "1.1.0"
+
+
+class SiblingProps(enum.Enum):
+    """
+    Explicit rules for the properties sitting next to a ``$ref`` key.
+
+    Vendors disagree about these "sibling" properties: some ignore them, others
+    treat them as overrides of the referenced data. The rule must be chosen
+    explicitly for every projection instead of being left to a library default.
+    """
+
+    IGNORE = "ignore"
+    OVERRIDE = "override"
+
+
+# String aliases for the rules, convenient to pass directly to the API.
+REF_IGNORE_SIBLINGS = SiblingProps.IGNORE.value
+REF_OVERRIDE_SIBLINGS = SiblingProps.OVERRIDE.value
+REF_SIBLING_RULES = frozenset(rule.value for rule in SiblingProps)
+
+
+def _normalize_sibling_rule(sibling_props, merge_props):
+    """
+    Resolve the explicitly selected sibling rule to one of the string values in
+    :data:`REF_SIBLING_RULES`.
+
+    The legacy boolean ``merge_props`` flag is only consulted when no explicit
+    rule was given, so old callers keep their behavior while new callers state
+    the rule outright.
+    """
+    if sibling_props is None:
+        return (
+            REF_OVERRIDE_SIBLINGS if merge_props else REF_IGNORE_SIBLINGS
+        )
+    if isinstance(sibling_props, SiblingProps):
+        sibling_props = sibling_props.value
+    if sibling_props not in REF_SIBLING_RULES:
+        raise ValueError(
+            "Invalid sibling property rule %r, expected one of %r"
+            % (sibling_props, sorted(REF_SIBLING_RULES))
+        )
+    return sibling_props
+
+
+def _pointer_for_path(path):
+    """Render an in-document tuple of keys as a JSON Pointer fragment."""
+    return "#" + "".join(
+        "/" + str(part).replace("~", "~0").replace("/", "~1") for part in path
+    )
 
 
 class JsonRefError(Exception):
@@ -44,7 +94,11 @@ class JsonRef(LazyProxy):
 
     """
 
-    __notproxied__ = ("__reference__",)
+    __notproxied__ = (
+        "__reference__",
+        "effective_rule",
+        "effective_sources",
+    )
 
     @classmethod
     def replace_refs(
@@ -89,21 +143,30 @@ class JsonRef(LazyProxy):
         jsonschema=False,
         load_on_repr=True,
         merge_props=False,
+        sibling_props=None,
         _path=(),
         _store=None,
     ):
         if not isinstance(refobj.get("$ref"), str):
             raise ValueError("Not a valid json reference object: %s" % refobj)
+        # Keep the reference object exactly as it appeared in the source
+        # document, so re-projection under another rule reads untouched data.
         self.__reference__ = refobj
         self.base_uri = base_uri
         self.loader = loader or jsonloader
         self.jsonschema = jsonschema
         self.load_on_repr = load_on_repr
         self.merge_props = merge_props
+        self.sibling_props = _normalize_sibling_rule(sibling_props, merge_props)
         self.path = _path
         self.store = _store  # Use the same object to be shared with children
         if self.store is None:
             self.store = URIDict()
+        # The selected rule is known up front and visible without resolving
+        # (which could trigger a remote load); detailed provenance is populated
+        # lazily on resolution.
+        self.effective_rule = self.sibling_props
+        self.effective_sources = None
 
     @property
     def _ref_kwargs(self):
@@ -113,6 +176,7 @@ class JsonRef(LazyProxy):
             jsonschema=self.jsonschema,
             load_on_repr=self.load_on_repr,
             merge_props=self.merge_props,
+            sibling_props=self.sibling_props,
             path=self.path,
             store=self.store,
         )
@@ -143,16 +207,60 @@ class JsonRef(LazyProxy):
             raise self._error("Reference refers directly to itself.")
         if hasattr(result, "__subject__"):
             result = result.__subject__
-        if (
-            self.merge_props
-            and isinstance(result, Mapping)
-            and len(self.__reference__) > 1
-        ):
-            result = {
-                **result,
-                **{k: v for k, v in self.__reference__.items() if k != "$ref"},
+        return self._apply_sibling_rule(result, uri, fragment)
+
+    def _sibling_pointer(self, key):
+        """JSON Pointer to a sibling key in the original reference object."""
+        return _pointer_for_path(self.path + (key,))
+
+    def _apply_sibling_rule(self, result, uri, fragment):
+        """
+        Apply the explicitly selected sibling rule to the resolved referent.
+
+        Only the top level of an object referent can be overridden. Sibling
+        mappings are never deep-merged into the referent's nested properties:
+        a conflicting nested value is replaced wholesale. Provenance for every
+        sibling key is recorded on the proxy before the result is returned.
+        """
+        rule = self.sibling_props
+        siblings = {
+            key: value
+            for key, value in self.__reference__.items()
+            if key != "$ref"
+        }
+        key_sources = [
+            {
+                "key": key,
+                "pointer": self._sibling_pointer(key),
+                "status": "ignored",
             }
-        return result
+            for key in siblings
+        ]
+        self.effective_rule = rule
+        self.effective_sources = {
+            "rule": rule,
+            "reference_uri": self.full_uri,
+            "reference_path": _pointer_for_path(self.path),
+            "referent_uri": uri,
+            "referent_pointer": fragment,
+            "keys": key_sources,
+        }
+
+        if rule == SiblingProps.IGNORE.value or not siblings:
+            return result
+
+        # OVERRIDE: only object referents can carry sibling keys. A list or
+        # scalar referent cannot be extended, so the siblings stay dropped and
+        # their "ignored" status already explains why.
+        if not isinstance(result, Mapping):
+            return result
+
+        merged = dict(result)
+        for record in key_sources:
+            key = record["key"]
+            record["status"] = "override" if key in result else "added"
+            merged[key] = siblings[key]
+        return merged
 
     def resolve_pointer(self, document, pointer):
         """
@@ -289,12 +397,17 @@ def replace_refs(
     jsonschema=False,
     load_on_repr=True,
     merge_props=False,
+    sibling_props=None,
     proxies=True,
     lazy_load=True,
 ):
     """
     Returns a deep copy of `obj` with all contained JSON reference objects
     replaced with :class:`JsonRef` instances.
+
+    The input `obj` is never mutated and its reference objects stay intact;
+    each call projects fresh output from the original structure, so switching
+    rules never reads a document produced by a previous projection.
 
     :param obj: If this is a JSON reference object, a :class:`JsonRef`
         instance will be created. If `obj` is not a JSON reference object,
@@ -310,11 +423,16 @@ def replace_refs(
     :param load_on_repr: If set to ``False``, :func:`repr` call on a
         :class:`JsonRef` object will not cause the reference to be loaded
         if it hasn't already. (defaults to ``True``)
-    :param merge_props: When ``True``, JSON reference objects that
-        have extra keys other than '$ref' in them will be merged into the
-        document resolved by the reference (if it is a dictionary.) NOTE: This
-        is not part of the JSON Reference spec, and may not behave the same as
-        other libraries.
+    :param merge_props: Deprecated boolean alias for :attr:`sibling_props`.
+        Maps to the override rule when ``True`` and the ignore rule when
+        ``False``. Prefer passing an explicit :class:`SiblingProps` rule.
+    :param sibling_props: Explicit rule for the properties sitting next to
+        ``$ref``: ``SiblingProps.IGNORE`` (``"ignore"``) discards them,
+        ``SiblingProps.OVERRIDE`` (``"override"``) applies them on top of the
+        referenced object at the top level. Nested mappings override wholesale
+        and are never deep-merged. Defaults to the ignore rule. After
+        resolution, :attr:`JsonRef.effective_sources` reports the rule and the
+        origin of every sibling key.
     :param proxies: If `True`, references will be replaced with transparent
         proxy objects. Otherwise, they will be replaced directly with the
         referred data. (defaults to ``True``)
@@ -323,6 +441,7 @@ def replace_refs(
         document is accessed. (defaults to ``True``)
 
     """
+    rule = _normalize_sibling_rule(sibling_props, merge_props)
     result = _replace_refs(
         obj,
         base_uri=base_uri,
@@ -330,6 +449,7 @@ def replace_refs(
         jsonschema=jsonschema,
         load_on_repr=load_on_repr,
         merge_props=merge_props,
+        sibling_props=rule,
         store=URIDict(),
         path=(),
         recursing=False,
@@ -349,6 +469,7 @@ def _replace_refs(
     jsonschema,
     load_on_repr,
     merge_props,
+    sibling_props,
     store,
     path,
     recursing,
@@ -374,6 +495,7 @@ def _replace_refs(
                 jsonschema=jsonschema,
                 load_on_repr=load_on_repr,
                 merge_props=merge_props,
+                sibling_props=sibling_props,
                 store=store,
                 path=path + (k,),
                 recursing=True,
@@ -389,6 +511,7 @@ def _replace_refs(
                 jsonschema=jsonschema,
                 load_on_repr=load_on_repr,
                 merge_props=merge_props,
+                sibling_props=sibling_props,
                 store=store,
                 path=path + (i,),
                 recursing=True,
@@ -405,6 +528,7 @@ def _replace_refs(
             jsonschema=jsonschema,
             load_on_repr=load_on_repr,
             merge_props=merge_props,
+            sibling_props=sibling_props,
             _path=path,
             _store=store,
         )
@@ -423,6 +547,7 @@ def load(
     jsonschema=False,
     load_on_repr=True,
     merge_props=False,
+    sibling_props=None,
     proxies=True,
     lazy_load=True,
     **kwargs,
@@ -448,6 +573,7 @@ def load(
         jsonschema=jsonschema,
         load_on_repr=load_on_repr,
         merge_props=merge_props,
+        sibling_props=sibling_props,
         proxies=proxies,
         lazy_load=lazy_load,
     )
@@ -460,6 +586,7 @@ def loads(
     jsonschema=False,
     load_on_repr=True,
     merge_props=False,
+    sibling_props=None,
     proxies=True,
     lazy_load=True,
     **kwargs,
@@ -485,6 +612,7 @@ def loads(
         jsonschema=jsonschema,
         load_on_repr=load_on_repr,
         merge_props=merge_props,
+        sibling_props=sibling_props,
         proxies=proxies,
         lazy_load=lazy_load,
     )
@@ -497,6 +625,7 @@ def load_uri(
     jsonschema=False,
     load_on_repr=True,
     merge_props=False,
+    sibling_props=None,
     proxies=True,
     lazy_load=True,
 ):
@@ -522,6 +651,7 @@ def load_uri(
         jsonschema=jsonschema,
         load_on_repr=load_on_repr,
         merge_props=merge_props,
+        sibling_props=sibling_props,
         proxies=proxies,
         lazy_load=lazy_load,
     )

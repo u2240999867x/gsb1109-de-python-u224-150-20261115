@@ -6,7 +6,11 @@ import pytest
 from jsonref import (
     JsonRef,
     JsonRefError,
+    SiblingProps,
+    REF_IGNORE_SIBLINGS,
+    REF_OVERRIDE_SIBLINGS,
     _walk_refs,
+    loads,
     replace_refs,
 )
 
@@ -360,3 +364,106 @@ class TestJsonRef(object):
         result = parametrized_replace_refs(json, loader=loader)
         assert result == {"a": 1234, "b": 1234}
         loader.assert_called_once_with("mock://aoeu")
+
+    def test_sibling_rules_explicit(self):
+        json = {"a": {"main": 1}, "b": {"$ref": "#/a", "extra": 2}}
+        for ignore in (SiblingProps.IGNORE, REF_IGNORE_SIBLINGS):
+            result = replace_refs(json, sibling_props=ignore)
+            assert dict(result["b"]) == {"main": 1}
+        for override in (SiblingProps.OVERRIDE, REF_OVERRIDE_SIBLINGS):
+            result = replace_refs(json, sibling_props=override)
+            assert dict(result["b"]) == {"main": 1, "extra": 2}
+
+    def test_default_rule_is_ignore(self):
+        json = {"a": {"main": 1}, "b": {"$ref": "#/a", "extra": 2}}
+        result = replace_refs(json)
+        assert result["b"].effective_rule == REF_IGNORE_SIBLINGS
+        assert dict(result["b"]) == {"main": 1}
+
+    def test_invalid_sibling_rule_raises(self):
+        json = {"b": {"$ref": "#/a"}}
+        with pytest.raises(ValueError):
+            replace_refs(json, sibling_props="deep-merge")
+
+    def test_legacy_merge_props_maps_to_rule(self):
+        json = {"a": {"main": 1}, "b": {"$ref": "#/a", "extra": 2}}
+        merged = replace_refs(json, merge_props=True)["b"]
+        assert merged.effective_rule == REF_OVERRIDE_SIBLINGS
+        assert dict(merged) == {"main": 1, "extra": 2}
+        ignored = replace_refs(json, merge_props=False)["b"]
+        assert ignored.effective_rule == REF_IGNORE_SIBLINGS
+
+    def test_override_does_not_deep_merge_nested(self):
+        json = {
+            "base": {"meta": {"a": 1, "b": 2}, "keep": 9},
+            "child": {"$ref": "#/base", "meta": {"a": 100}},
+        }
+        result = replace_refs(json, sibling_props=SiblingProps.OVERRIDE)
+        # The sibling mapping replaces the nested mapping wholesale, no deep merge.
+        assert dict(result["child"]) == {"meta": {"a": 100}, "keep": 9}
+        assert "b" not in result["child"]["meta"]
+
+    def test_override_provenance_reports_sources(self):
+        json = {
+            "base": {"main": 1, "shared": 2},
+            "child": {
+                "$ref": "#/base",
+                "shared": 20,
+                "added": 30,
+            },
+        }
+        proxy = replace_refs(json, sibling_props=SiblingProps.OVERRIDE)["child"]
+        proxy.__subject__  # force resolution
+        sources = proxy.effective_sources
+        assert proxy.effective_rule == REF_OVERRIDE_SIBLINGS
+        assert sources["rule"] == REF_OVERRIDE_SIBLINGS
+        assert sources["reference_uri"] == "#/base"
+        assert sources["reference_path"] == "#/child"
+        assert sources["referent_pointer"] == "/base"
+        statuses = {entry["key"]: entry for entry in sources["keys"]}
+        assert statuses["shared"]["status"] == "override"
+        assert statuses["shared"]["pointer"] == "#/child/shared"
+        assert statuses["added"]["status"] == "added"
+        assert statuses["added"]["pointer"] == "#/child/added"
+
+    def test_ignore_provenance_marks_siblings_ignored(self):
+        json = {"a": {"main": 1}, "b": {"$ref": "#/a", "extra": 2}}
+        proxy = replace_refs(json, sibling_props=SiblingProps.IGNORE)["b"]
+        proxy.__subject__
+        sources = proxy.effective_sources
+        assert sources["rule"] == REF_IGNORE_SIBLINGS
+        assert sources["keys"] == [
+            {"key": "extra", "pointer": "#/b/extra", "status": "ignored"}
+        ]
+
+    def test_list_referent_siblings_cannot_override(self):
+        json = {"arr": ["target"], "b": {"$ref": "#/arr", "extra": "x"}}
+        proxy = replace_refs(json, sibling_props=SiblingProps.OVERRIDE)["b"]
+        assert list(proxy) == ["target"]
+        assert proxy.effective_sources["keys"][0]["status"] == "ignored"
+
+    def test_provenance_absent_until_resolved(self):
+        json = {"a": {"main": 1}, "b": {"$ref": "#/a", "extra": 2}}
+        proxy = replace_refs(json, sibling_props=SiblingProps.OVERRIDE)["b"]
+        assert proxy.effective_sources is None
+        proxy.__subject__
+        assert proxy.effective_sources is not None
+
+    def test_reprojection_reads_original_not_prior_output(self):
+        json = {
+            "base": {"meta": {"a": 1, "b": 2}},
+            "child": {"$ref": "#/base", "meta": {"a": 100}},
+        }
+        override = replace_refs(json, sibling_props=SiblingProps.OVERRIDE)
+        assert dict(override["child"]) == {"meta": {"a": 100}}
+        # A fresh projection under another rule must not see merged output.
+        ignore = replace_refs(json, sibling_props=SiblingProps.IGNORE)
+        assert dict(ignore["child"]) == {"meta": {"a": 1, "b": 2}}
+        # The original reference object and document stay untouched.
+        assert json["child"] == {"$ref": "#/base", "meta": {"a": 100}}
+        assert json["base"] == {"meta": {"a": 1, "b": 2}}
+
+    def test_loads_accepts_sibling_rule(self):
+        text = '{"a": {"main": 1}, "b": {"$ref": "#/a", "extra": 2}}'
+        result = loads(text, sibling_props=SiblingProps.OVERRIDE)
+        assert dict(result["b"]) == {"main": 1, "extra": 2}
