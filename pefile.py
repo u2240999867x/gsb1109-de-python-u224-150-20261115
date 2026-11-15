@@ -22,6 +22,7 @@ __contact__ = "ero.carrera@gmail.com"
 
 import codecs
 import copy
+import locale
 import math
 import mmap
 import os
@@ -663,6 +664,255 @@ def get_sublang_name_for_lang(lang_value, sublang_value):
             return sublang_name
     # otherwise return the first sublang name
     return SUBLANG.get(sublang_value, ["*unknown*"])[0]
+
+
+# Code pages in the version information StringTables. The 16-bit LangID only
+# identifies a language; the encoding of the associated strings comes from the
+# table's own code page, which has to be honoured independently of it.
+CODEPAGE_ENCODINGS = {
+    0x04E2: "cp1250",  # Latin-2 Central European (1250)
+    0x04E3: "cp1251",  # Cyrillic (1251)
+    0x04E4: "cp1252",  # Latin-1 Western European (1252)
+    0x04E5: "cp1253",  # Greek (1253)
+    0x04E6: "cp1254",  # Turkish (1254)
+    0x04E7: "cp1255",  # Hebrew (1255)
+    0x04E8: "cp1256",  # Arabic (1256)
+    0x04E9: "cp1257",  # Baltic (1257)
+    0x04EA: "cp1258",  # Vietnamese (1258)
+    0x036A: "cp874",  # Thai (874)
+    0x03A4: "cp932",  # Japanese (932, Shift-JIS)
+    0x03A8: "cp936",  # Simplified Chinese (936, GBK)
+    0x03B5: "cp949",  # Korean (949, Unified Hangul Code)
+    0x03B6: "cp950",  # Traditional Chinese (950, Big5)
+    0x04B0: "utf-16-le",  # Unicode (1200)
+    0x04B1: "utf-16-be",  # Unicode big-endian (1201)
+    0xFDE9: "utf-8",  # UTF-8 (65001)
+}
+
+# Code page values that designate UTF-16LE strings. These carry no extra
+# information because version information strings are already read as Unicode.
+CODEPAGE_UNICODE = {0x0000, 0x04B0}
+
+
+def get_codepage_encoding(code_page):
+    """Return the Python codec used to decode a version string table.
+
+    ``None`` means that the strings must be read as Unicode, either because
+    the code page explicitly says so or because it is unknown.
+    """
+    if not code_page or code_page in CODEPAGE_UNICODE:
+        return None
+    return CODEPAGE_ENCODINGS.get(code_page)
+
+
+def parse_version_langid(lang_id):
+    """Split a version StringTable language declaration.
+
+    StringTable keys are 32-bit hexadecimal values such as ``b"040904B0"``.
+    The first 16 bits identify the language, the last 16 bits are the code
+    page. Four digit keys are also accepted. Returns
+    ``(primary_language, sublanguage)`` or ``(None, None)`` when the value
+    cannot be interpreted.
+    """
+    language, _ = parse_version_language_and_codepage(lang_id)
+    if language is None:
+        return None, None
+    return language & 0x3FF, (language >> 10) & 0x3F
+
+
+def parse_version_codepage(lang_id):
+    """Return the code page declared by a version StringTable key."""
+    _, code_page = parse_version_language_and_codepage(lang_id)
+    return code_page
+
+
+def parse_version_language_and_codepage(lang_id):
+    """Split a StringTable key into its 16-bit language and code page."""
+    if lang_id is None:
+        return None, None
+    if isinstance(lang_id, int):
+        if lang_id > 0xFFFF:
+            language = (lang_id >> 16) & 0xFFFF
+            code_page = lang_id & 0xFFFF
+        else:
+            language = lang_id & 0xFFFF
+            code_page = 0
+        return language, code_page
+    if isinstance(lang_id, (bytes, bytearray)):
+        lang_id = bytes(lang_id).decode("ascii", "ignore")
+    if not isinstance(lang_id, str):
+        return None, None
+    text = lang_id.strip()
+    if text.lower().startswith("0x"):
+        text = text[2:]
+    if not text or not all(c in "0123456789abcdefABCDEF" for c in text):
+        return None, None
+    if len(text) >= 8:
+        language = int(text[:4], 16)
+        code_page = int(text[4:8], 16)
+    elif len(text) >= 4:
+        language = int(text[:4], 16)
+        code_page = 0
+    else:
+        language = int(text, 16)
+        code_page = 0
+    return language, code_page
+
+
+def is_hex_langid(name):
+    """Whether the text is a hexadecimal LangID (``0409``/``040904B0``).
+
+    A ``0x`` prefix is accepted for arbitrary lengths. Without one, only the
+    four- and eight-digit forms used by version StringTables are treated as
+    hexadecimal, so bare language names such as ``"de"`` or ``"da"`` are not
+    mistaken for numbers.
+    """
+    prefixed = name.lower().startswith("0x")
+    digits = name[2:] if prefixed else name
+    if not digits or not all(c in "0123456789abcdefABCDEF" for c in digits):
+        return False
+    return 1 <= len(digits) <= 8 if prefixed else len(digits) in (4, 8)
+
+
+def normalize_version_encoding(encoding):
+    """Normalize locale/encoding names used by version resource callers.
+
+    ``encoding`` may be a Windows LangID/LCID (e.g. ``0x0409``), a LangID as
+    hexadecimal text (``"040904B0"``), a locale tag (``"en-US"``), a
+    ``LANG_*`` constant or a bare language name. It returns
+    ``(primary_language, sublanguage)``; ``sublanguage`` is ``None`` when the
+    declaration only identifies the primary language.
+    """
+    if encoding is None:
+        return None
+
+    if isinstance(encoding, int):
+        if encoding > 0xFFFF:
+            value = (encoding >> 16) & 0xFFFF
+        else:
+            value = encoding & 0xFFFF
+        return value & 0x3FF, (value >> 10) & 0x3F
+
+    if isinstance(encoding, (bytes, bytearray)):
+        encoding = bytes(encoding).decode("ascii", "ignore")
+
+    if not isinstance(encoding, str):
+        return None
+
+    name = encoding.strip()
+    if not name:
+        return None
+
+    if name.upper() in LANG:
+        value = LANG[name.upper()]
+        if value > 0x3FF:
+            return value & 0x3FF, (value >> 10) & 0x3F
+        return value & 0x3FF, None
+
+    if "-" in name or "_" in name:
+        tag = name.replace("_", "-").lower()
+        for lcid, locale_name in locale.windows_locale.items():
+            if locale_name.lower().replace("_", "-") == tag:
+                return lcid & 0x3FF, (lcid >> 10) & 0x3F
+        # Fall back to the primary part of the tag, e.g. "de-AT" -> German.
+        name = tag.split("-", 1)[0]
+
+    if is_hex_langid(name):
+        digits = name[2:] if name.lower().startswith("0x") else name
+        language = int(digits[:4], 16) if len(digits) >= 8 else int(digits, 16)
+        language &= 0xFFFF
+        return language & 0x3FF, (language >> 10) & 0x3F
+
+    primary_name = name.replace("-", "_").split("_", 1)[0].upper()
+    if f"LANG_{primary_name}" in LANG:
+        return LANG[f"LANG_{primary_name}"] & 0x3FF, None
+
+    # Bare ISO 639 language codes ("de", "ja", ...) are resolved through the
+    # locale table: return the primary language without a sublanguage.
+    normalized = name.lower()
+    for lcid, locale_name in locale.windows_locale.items():
+        if locale_name.lower().split("_", 1)[0] == normalized:
+            return lcid & 0x3FF, None
+
+    return None
+
+
+def get_string_u_at_rva_with_codepage(pe, rva, max_length, code_page):
+    """Read a StringTable value honouring the table's own code page.
+
+    Version information values are normally UTF-16LE, but a StringTable may
+    declare an ANSI code page, UTF-16BE or UTF-8. The returned representation
+    stays UTF-8 encoded bytes, like the rest of ``StringTable.entries``.
+    """
+    if max_length == 0:
+        return b""
+
+    encoding = get_codepage_encoding(code_page)
+    if encoding is None or encoding == "utf-16-le":
+        return pe.get_string_u_at_rva(rva, max_length=max_length)
+
+    try:
+        data = pe.get_data(rva, max_length * 2)
+    except PEFormatError:
+        return b""
+    if not data:
+        return b""
+
+    if encoding == "utf-16-be":
+        end = 0
+        while end + 1 < len(data):
+            if data[end] == 0 and data[end + 1] == 0:
+                break
+            end += 2
+        return data[:end].decode("utf-16-be", "backslashreplace").encode(
+            "utf-8", "backslashreplace_"
+        )
+
+    # A 0x00 byte is the string terminator for these single- and double-byte
+    # code pages (their trail bytes never use 0x00). Reading up to twice the
+    # declared length covers files that count ValueLength in bytes or in
+    # characters.
+    null_index = data.find(b"\x00")
+    if null_index >= 0:
+        data = data[:null_index]
+    else:
+        data = data[:max_length]
+
+    return data.decode(encoding, "backslashreplace").encode(
+        "utf-8", "backslashreplace_"
+    )
+
+
+def _version_language_match(table_lang_id, requested):
+    """Return whether a table matches one language in the caller's order.
+
+    ``requested`` is ``(primary language, sublanguage)``. A sublanguage of
+    ``None`` means the caller listed only a base language and therefore
+    accepts any sublanguage of it. Otherwise the sublanguage must match
+    exactly: the caller's list is the fallback, so an unlisted sibling locale
+    is not silently substituted. Neutral tables are matched only when the
+    caller lists neutral.
+    """
+    if requested is None:
+        return False
+    primary, sublang = requested
+    lang, sub = parse_version_langid(table_lang_id)
+    if lang is None:
+        return False
+    if sublang is None:
+        return lang == primary
+    return lang == primary and sub == sublang
+
+
+def _version_table_sort_key(table):
+    """Deterministic ordering of StringTables within the same match."""
+    lang, sub = parse_version_langid(table.LangID)
+    code_page = parse_version_codepage(table.LangID) or 0
+    entries = getattr(table, "entries", {}) or {}
+    content = sha256(
+        repr(sorted(entries.items())).encode("utf-8", "backslashreplace")
+    ).hexdigest()
+    return (lang or 0, sub or 0, code_page, content)
 
 
 # Ange Albertini's code to process resources' strings
@@ -3562,19 +3812,54 @@ class PE:
                                 # The lengths are in characters, not in bytes.
                                 offsets = st_entry.entries_offsets[key]
                                 lengths = st_entry.entries_lengths[key]
+                                value_length = (
+                                    getattr(
+                                        st_entry, "entries_value_lengths", {}
+                                    ).get(key, lengths[1])
+                                    or lengths[1]
+                                )
+                                code_page = getattr(st_entry, "CodePage", 0)
+                                encoding = get_codepage_encoding(code_page)
 
-                                if len(value) > lengths[1]:
-                                    l = value.decode("utf-8").encode("utf-16le")
-                                    file_data[
-                                        offsets[1] : offsets[1] + lengths[1] * 2
-                                    ] = l[: lengths[1] * 2]
+                                if encoding is None or encoding == "utf-16-le":
+                                    if len(value) > lengths[1]:
+                                        encoded = value.decode("utf-8").encode(
+                                            "utf-16le"
+                                        )
+                                        file_data[
+                                            offsets[1] : offsets[1] + lengths[1] * 2
+                                        ] = encoded[: lengths[1] * 2]
+                                    else:
+                                        encoded = value.decode("utf-8").encode(
+                                            "utf-16le"
+                                        )
+                                        file_data[
+                                            offsets[1] : offsets[1] + len(encoded)
+                                        ] = encoded
+                                    continue
+
+                                if encoding == "utf-16-be":
+                                    # ValueLength counts characters for UTF-16.
+                                    byte_length = value_length * 2
+                                    encoded = value.decode("utf-8").encode(encoding)
+                                elif encoding == "utf-8":
+                                    byte_length = value_length
+                                    encoded = value.decode("utf-8").encode(encoding)
                                 else:
-                                    encoded_data = value.decode("utf-8").encode(
-                                        "utf-16le"
-                                    )
-                                    file_data[
-                                        offsets[1] : offsets[1] + len(encoded_data)
-                                    ] = encoded_data
+                                    byte_length = value_length
+                                    try:
+                                        encoded = value.decode("utf-8").encode(
+                                            encoding
+                                        )
+                                    except UnicodeEncodeError:
+                                        encoded = value.decode(
+                                            "utf-8", "backslashreplace"
+                                        ).encode(encoding, "backslashreplace")
+                                start = offsets[1]
+                                end = start + byte_length
+                                file_data[start:end] = (
+                                    encoded + b"\0" * byte_length
+                                )[:byte_length]
 
         new_file_data = file_data
         if not filename:
@@ -4909,19 +5194,24 @@ class PE:
                 else:
                     break
 
-            # Check if this entry contains version information
+            # Check if this entry contains version information. There can be
+            # any number of name entries below RT_VERSION, each with its own
+            # set of language leaves, so walk the whole subtree instead of
+            # only the first one. Every parsed leaf is kept.
             if level == 0 and res.Id == RESOURCE_TYPE["RT_VERSION"]:
                 if dir_entries:
                     last_entry = dir_entries[-1]
-
-                try:
-                    version_entries = last_entry.directory.entries[0].directory.entries
-                except (AttributeError, IndexError):
-                    # Maybe a malformed directory structure...?
-                    # Let's ignore it
-                    pass
+                    if hasattr(last_entry, "directory"):
+                        version_name_entries = last_entry.directory.entries
+                    else:
+                        version_name_entries = []
                 else:
-                    for version_entry in version_entries:
+                    version_name_entries = []
+
+                for version_name_entry in version_name_entries:
+                    if not hasattr(version_name_entry, "directory"):
+                        continue
+                    for version_entry in version_name_entry.directory.entries:
                         rt_version_struct = None
                         try:
                             rt_version_struct = version_entry.data.struct
@@ -4931,7 +5221,12 @@ class PE:
                             pass
 
                         if rt_version_struct is not None:
-                            self.parse_version_information(rt_version_struct)
+                            parsed_leaf = self.parse_version_information(
+                                rt_version_struct
+                            )
+                            if parsed_leaf is not None and version_entry.data:
+                                parsed_leaf.lang = version_entry.data.lang
+                                parsed_leaf.sublang = version_entry.data.sublang
 
             rva += res.sizeof()
 
@@ -5029,6 +5324,12 @@ class PE:
         VarFileInfo structures will have a list as an attribute named 'Var' containing
         all Var structures. Each Var structure will have a dictionary as an attribute
         named 'entry' which will contain the name and value of the Var.
+
+        Every RT_VERSION leaf is parsed, so FileInfo keeps one entry per language
+        leaf. StringTable instances keep the original LangID bytes and also expose
+        the parsed LanguageID and CodePage, which are used to decode their values.
+        Returns the parsed VS_VERSIONINFO structure, or None when the leaf is
+        invalid.
         """
 
         # Retrieve the data for the version info resource
@@ -5039,7 +5340,7 @@ class PE:
                 "Error parsing the version information, "
                 f"attempting to read OffsetToData with RVA: {version_struct.OffsetToData:#x}"
             )
-            return
+            return None
         raw_data = self.__data__[start_offset : start_offset + version_struct.Size]
 
         # Map the main structure and the subsequent string
@@ -5048,7 +5349,7 @@ class PE:
         )
 
         if versioninfo_struct is None:
-            return
+            return None
 
         ustr_offset = version_struct.OffsetToData + versioninfo_struct.sizeof()
         section = self.get_section_by_rva(ustr_offset)
@@ -5083,7 +5384,7 @@ class PE:
             self.__warnings.append(
                 f"Invalid VS_VERSION_INFO block: {versioninfo_string}"
             )
-            return
+            return None
 
         # If the structure does not contain the expected name, it's assumed to
         # be invalid
@@ -5098,7 +5399,7 @@ class PE:
                 "Invalid VS_VERSION_INFO block: "
                 f"{versioninfo_string}"
             )
-            return
+            return None
 
         if not hasattr(self, "VS_VERSIONINFO"):
             self.VS_VERSIONINFO = []
@@ -5123,7 +5424,7 @@ class PE:
         )
 
         if not fixedfileinfo_struct:
-            return
+            return None
 
         if not hasattr(self, "VS_FIXEDFILEINFO"):
             self.VS_FIXEDFILEINFO = []
@@ -5156,7 +5457,7 @@ class PE:
                 self.__warnings.append(
                     "Error parsing StringFileInfo/VarFileInfo struct"
                 )
-                return
+                return None
 
             # Get the subsequent string defining the structure
             ustr_offset = (
@@ -5224,9 +5525,14 @@ class PE:
                             break
 
                         stringtable_struct.LangID = stringtable_string
+                        (
+                            stringtable_struct.LanguageID,
+                            stringtable_struct.CodePage,
+                        ) = parse_version_language_and_codepage(stringtable_string)
                         stringtable_struct.entries = {}
                         stringtable_struct.entries_offsets = {}
                         stringtable_struct.entries_lengths = {}
+                        stringtable_struct.entries_value_lengths = {}
                         stringfileinfo_struct.StringTable.append(stringtable_struct)
 
                         entry_offset = self.dword_align(
@@ -5276,8 +5582,11 @@ class PE:
 
                             ustr_offset = version_struct.OffsetToData + value_offset
                             try:
-                                value = self.get_string_u_at_rva(
-                                    ustr_offset, max_length=string_struct.ValueLength
+                                value = get_string_u_at_rva_with_codepage(
+                                    self,
+                                    ustr_offset,
+                                    string_struct.ValueLength,
+                                    stringtable_struct.CodePage,
                                 )
                                 value_offset = self.get_offset_from_rva(ustr_offset)
                             except PEFormatError:
@@ -5306,6 +5615,9 @@ class PE:
                             stringtable_struct.entries_lengths[key] = (
                                 len(key),
                                 len(value),
+                            )
+                            stringtable_struct.entries_value_lengths[key] = (
+                                string_struct.ValueLength
                             )
 
                         new_stringtable_offset = self.dword_align(
@@ -5420,6 +5732,7 @@ class PE:
                 break
 
         self.FileInfo.append(finfo)
+        return vinfo
 
     def parse_export_directory(self, rva, size, forwarded_only=False):
         """Parse the export directory.
@@ -6366,6 +6679,181 @@ class PE:
             self.__data__ = original_data
 
         return mapped_data
+
+    def get_version_string(
+        self,
+        key,
+        languages=None,
+        encoding=None,
+        file_info_index=None,
+    ):
+        """Return a version information string for the caller's language order.
+
+        ``key`` is the StringTable entry name, as bytes
+        (``b"FileDescription"``) or text (``"FileDescription"``).
+
+        ``languages`` is the caller's fallback order, for example
+        ``["fr-FR", "en-US"]`` or ``["de", "en"]``. Each item may be a locale
+        tag, a ``LANG_*`` constant, a ``(primary language, sublanguage)``
+        pair, a LangID, or the hexadecimal LangID stored in a StringTable.
+
+        The first language with a matching StringTable that contains ``key``
+        wins, even when the matching table lives in a later version resource
+        leaf. A table that matches the language but does not contain ``key``
+        does not stop the fallback.
+
+        When no requested language matches, ``None`` is returned. Ties between
+        tables are resolved deterministically, so swapping the order of the
+        resource directory entries cannot change the result.
+
+        ``file_info_index`` limits the search to one parsed version resource
+        leaf. By default every leaf is searched.
+
+        ``encoding`` optionally decodes the returned bytes to text.
+        """
+        table, value = self._select_version_string(
+            key, languages, file_info_index
+        )
+        if value is None:
+            return None
+        if encoding is not None:
+            return value.decode(encoding, "backslashreplace")
+        return value
+
+    def get_version_display_name(
+        self,
+        languages=None,
+        key=b"FileDescription",
+        encoding=None,
+        file_info_index=None,
+    ):
+        """Return the version resource display name for a fallback order.
+
+        This is a convenience wrapper around :meth:`get_version_string` for
+        the usual display name key (``FileDescription``). ``None`` means that
+        no table matched the supplied fallback languages.
+        """
+        return self.get_version_string(
+            key,
+            languages=languages,
+            encoding=encoding,
+            file_info_index=file_info_index,
+        )
+
+    def get_display_name(
+        self,
+        languages=None,
+        key=b"FileDescription",
+        encoding=None,
+        file_info_index=None,
+    ):
+        """Alias for :meth:`get_version_display_name`."""
+        return self.get_version_display_name(
+            languages,
+            key=key,
+            encoding=encoding,
+            file_info_index=file_info_index,
+        )
+
+    def get_version_string_tables(self, file_info_index=None):
+        """Return every parsed StringTable for the version resource.
+
+        Each table keeps its original ``LangID`` bytes and exposes the parsed
+        ``LanguageID`` and ``CodePage`` integers plus the raw ``entries``
+        dictionary. Tables are returned in deterministic order.
+
+        ``file_info_index`` restricts the result to one parsed leaf; by
+        default every leaf is included.
+        """
+        if not hasattr(self, "FileInfo"):
+            return []
+        if file_info_index is None:
+            indexes = range(len(self.FileInfo))
+        elif file_info_index >= len(self.FileInfo):
+            return []
+        else:
+            indexes = (file_info_index,)
+        tables = []
+        for index in indexes:
+            for entry in self.FileInfo[index]:
+                if hasattr(entry, "StringTable"):
+                    tables.extend(entry.StringTable)
+        return sorted(tables, key=_version_table_sort_key)
+
+    def get_version_info(
+        self,
+        key,
+        languages=None,
+        encoding=None,
+        file_info_index=None,
+    ):
+        """Alias for :meth:`get_version_string`."""
+        return self.get_version_string(
+            key,
+            languages=languages,
+            encoding=encoding,
+            file_info_index=file_info_index,
+        )
+
+    def _select_version_string(
+        self, key, languages=None, file_info_index=None
+    ):
+        if isinstance(key, str):
+            key = key.encode("utf-8")
+        elif not isinstance(key, (bytes, bytearray)):
+            raise TypeError("version information key must be bytes or text")
+        else:
+            key = bytes(key)
+
+        if languages is None:
+            languages = []
+        elif isinstance(languages, (str, bytes, int)):
+            languages = [languages]
+        else:
+            languages = list(languages)
+
+        requested = []
+        for language in languages:
+            if isinstance(language, (tuple, list)) and len(language) >= 2:
+                requested.append((language[0], language[1]))
+                continue
+            normalized = normalize_version_encoding(language)
+            if normalized is not None:
+                requested.append(normalized)
+
+        if not hasattr(self, "FileInfo"):
+            return None, None
+
+        indexes = (
+            [file_info_index]
+            if file_info_index is not None
+            else list(range(len(self.FileInfo)))
+        )
+
+        # The caller's fallback order is authoritative, so it is the outer
+        # loop: a later leaf must not beat an earlier requested language.
+        for primary, sublang in requested:
+            candidates = []
+            for index in indexes:
+                if index is None or index >= len(self.FileInfo):
+                    continue
+                for entry in self.FileInfo[index]:
+                    if not hasattr(entry, "StringTable"):
+                        continue
+                    for table in entry.StringTable:
+                        if not _version_language_match(
+                            table.LangID, (primary, sublang)
+                        ):
+                            continue
+                        if key not in table.entries:
+                            continue
+                        candidates.append(table)
+            if not candidates:
+                continue
+            candidates.sort(key=_version_table_sort_key)
+            table = candidates[0]
+            return table, table.entries[key]
+        return None, None
 
     def get_resources_strings(self):
         """Returns a list of all the strings found within the resources (if any).
