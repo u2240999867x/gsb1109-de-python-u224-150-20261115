@@ -29,6 +29,13 @@ RarEntry class
 .. autoclass:: RarEntry()
    :members:
 
+Timestamp provenance
+--------------------
+
+.. automodule:: rarfile.times
+   :members: TimeValue, TimezoneBasis, TimePrecision, DaySelection,
+             select_by_day, select_by_precision, interpret_wallclock
+
 RarExtFile class
 ----------------
 

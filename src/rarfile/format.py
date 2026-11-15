@@ -61,6 +61,7 @@ from .info import (
     Rar5FileInfo, Rar5MainInfo, Rar5ServiceInfo, RarEntry, RarInfo,
 )
 from .stream import BytesReader, DirectReader, PipeReader, RarExtFile
+from .times import TimePrecision, TimeValue
 from .utils import (
     DateTuple, FileLike, PathLike, UnicodeFilename, XFile, is_filelike,
     membuf_tempfile, parse_dos_time, to_datetime, to_nsdatetime,
@@ -118,6 +119,7 @@ class InfoArgs(CommonArgs):
     ctime: NotRequired[datetime | None]
     atime: NotRequired[datetime | None]
     arctime: NotRequired[datetime | None]
+    times: NotRequired[dict[str, TimeValue]]
     comment: NotRequired[str | None]
     CRC: NotRequired[int]
     blake2sp_hash: NotRequired[bytes]
@@ -647,6 +649,7 @@ class RAR3Parser(CommonParser):
         host_os = fld[2]
         crc = fld[3]
         date_time = parse_dos_time(fld[4])
+        dos_mtime = to_datetime(date_time)
         extract_version = fld[5]
         compress_type = fld[6]
         name_size = fld[7]
@@ -696,7 +699,23 @@ class RAR3Parser(CommonParser):
             "host_os": host_os,
             "CRC": crc,
             "date_time": date_time,
-            "mtime": to_datetime(date_time),
+            "mtime": dos_mtime,
+            "times": {
+                "date_time": TimeValue.from_wallclock(
+                    field_name="date_time",
+                    declared=dos_mtime,
+                    precision=TimePrecision.DOS,
+                    source="rar3-dostime",
+                    flags=flags,
+                ),
+                "mtime": TimeValue.from_wallclock(
+                    field_name="mtime",
+                    declared=dos_mtime,
+                    precision=TimePrecision.DOS,
+                    source="rar3-dostime",
+                    flags=flags,
+                ),
+            },
             "extract_version": extract_version,
             "compress_type": compress_type,
             "mode": mode,
@@ -1042,6 +1061,15 @@ class RAR5Parser(CommonParser):
         if mtime is not None:
             file_args["mtime"] = mtime
             file_args["date_time"] = mtime.timetuple()[:6]
+            times = file_args.setdefault("times", {})
+            times["mtime"] = TimeValue.from_utc(
+                field_name="mtime", declared=mtime,
+                precision=TimePrecision.SECOND,
+                source="rar5-unix", flags=file_flags)
+            times["date_time"] = TimeValue.from_utc(
+                field_name="date_time", declared=mtime.replace(microsecond=0),
+                precision=TimePrecision.SECOND,
+                source="rar5-unix", flags=file_flags)
         if crc is not None:
             file_args["CRC"] = crc
             file_args["_md_class"] = CRC32Context
@@ -1151,8 +1179,12 @@ class RAR5Parser(CommonParser):
         tflags, pos = load_vint(xdata, pos)
 
         ldr = load_windowstime
+        precision = TimePrecision.FILETIME
+        source = "rar5-windowstime"
         if tflags & RAR5_XTIME_UNIXTIME:
             ldr = load_unixtime
+            precision = TimePrecision.SECOND
+            source = "rar5-unixtime"
 
         mtime: datetime | None = None
         ctime: datetime | None = None
@@ -1166,6 +1198,7 @@ class RAR5Parser(CommonParser):
             atime, pos = ldr(xdata, pos)
 
         if tflags & RAR5_XTIME_UNIXTIME_NS:
+            precision = TimePrecision.NANOSECOND
             if tflags & RAR5_XTIME_HAS_MTIME:
                 nsec, pos = load_le32(xdata, pos)
                 assert mtime is not None
@@ -1179,12 +1212,26 @@ class RAR5Parser(CommonParser):
                 assert atime is not None
                 atime = to_nsdatetime(atime, nsec)
 
+        times = file_args.setdefault("times", {})
         if mtime is not None:
             file_args["mtime"] = mtime
+            times["mtime"] = TimeValue.from_utc(
+                field_name="mtime", declared=mtime, precision=precision,
+                source=source, flags=tflags)
+            times["date_time"] = TimeValue.from_utc(
+                field_name="date_time", declared=mtime.replace(microsecond=0),
+                precision=TimePrecision.SECOND,
+                source=source, flags=tflags)
         if ctime is not None:
             file_args["ctime"] = ctime
+            times["ctime"] = TimeValue.from_utc(
+                field_name="ctime", declared=ctime, precision=precision,
+                source=source, flags=tflags)
         if atime is not None:
             file_args["atime"] = atime
+            times["atime"] = TimeValue.from_utc(
+                field_name="atime", declared=atime, precision=precision,
+                source=source, flags=tflags)
 
     # just remember encryption info
     def _parse_file_encryption(self, file_args: InfoArgs, flags: int, xdata: bytes, pos: int
@@ -1459,19 +1506,45 @@ def _parse_ext_time(file_args: InfoArgs, data: bytes, pos: int) -> int:
         flags = S_SHORT.unpack_from(data, pos)[0]
         pos += 2
 
-    mtime, pos = _parse_xtime(flags >> 3 * 4, data, pos, file_args.get("mtime"))
-    file_args["ctime"], pos = _parse_xtime(flags >> 2 * 4, data, pos)
-    file_args["atime"], pos = _parse_xtime(flags >> 1 * 4, data, pos)
-    file_args["arctime"], pos = _parse_xtime(flags >> 0 * 4, data, pos)
+    times = file_args.setdefault("times", {})
+    mtime_flags = flags >> 3 * 4
+    mtime, pos, precision = _parse_xtime(mtime_flags, data, pos, file_args.get("mtime"))
+    if mtime is not None:
+        times["mtime"] = TimeValue.from_wallclock(
+            field_name="mtime", declared=mtime, precision=precision,
+            source="rar3-exttime", flags=mtime_flags)
+
+    for name, shift in (("ctime", 2 * 4), ("atime", 1 * 4), ("arctime", 0)):
+        field_flags = flags >> shift
+        value, pos, precision = _parse_xtime(field_flags, data, pos)
+        if value is not None:
+            times[name] = TimeValue.from_wallclock(
+                field_name=name, declared=value, precision=precision,
+                source="rar3-exttime", flags=field_flags)
+        if name == "ctime":
+            file_args["ctime"] = value
+        elif name == "atime":
+            file_args["atime"] = value
+        else:
+            file_args["arctime"] = value
+
     if mtime:
         file_args["mtime"] = mtime
         file_args["date_time"] = mtime.timetuple()[:6]
+        date_precision = times["mtime"].precision
+        if date_precision > TimePrecision.SECOND:
+            date_precision = TimePrecision.SECOND
+        times["date_time"] = TimeValue.from_wallclock(
+            field_name="date_time", declared=to_datetime(file_args["date_time"]),
+            precision=date_precision, source="rar3-exttime", flags=mtime_flags)
     return pos
 
 
-def _parse_xtime(flag: int, data: bytes, pos: int, basetime: datetime | None = None) -> tuple[datetime | None, int]:
+def _parse_xtime(flag: int, data: bytes, pos: int,
+                 basetime: datetime | None = None) -> tuple[datetime | None, int, TimePrecision]:
     """Parse one RAR3 extended time field
     """
+    precision = TimePrecision.DOS
     res = None
     if flag & 8:
         if not basetime:
@@ -1483,13 +1556,21 @@ def _parse_xtime(flag: int, data: bytes, pos: int, basetime: datetime | None = N
         for _ in range(cnt):
             b, pos = load_byte(data, pos)
             rem = (b << 16) | (rem >> 8)
+        if cnt == 1:
+            precision = TimePrecision.EXTTIME_1
+        elif cnt == 2:
+            precision = TimePrecision.EXTTIME_2
+        elif cnt == 3:
+            precision = TimePrecision.EXTTIME_3
 
         # dostime has room for 30 seconds only, correct if needed
         if flag & 4 and basetime.second < 59:
             basetime = basetime.replace(second=basetime.second + 1)
+            if cnt == 0:
+                precision = TimePrecision.SECOND
 
         res = to_nsdatetime(basetime, rem * 100)
-    return res, pos
+    return res, pos, precision
 
 
 def rar3_decompress(vers: int, meth: int, data: bytes, declen: int = 0, flags: int = 0,

@@ -78,6 +78,26 @@ format for your own archives.
 .. _Zip: https://en.wikipedia.org/wiki/ZIP_%28file_format%29
 .. _7z:  https://en.wikipedia.org/wiki/7z
 
+Why do timestamps have no timezone in RAR3?
+-------------------------------------------
+
+RAR3 stores the modification time as a DOS timestamp: a local wall-clock
+reading with two-second resolution.  The optional extended time record adds
+fractional seconds but still does not declare a timezone.  :mod:`rarfile`
+therefore keeps such values naive and records
+:attr:`~rarfile.TimezoneBasis.UNKNOWN` in :attr:`RarInfo.times`.  The host
+timezone is never applied, so importing the same archive on another machine
+does not change the date.
+
+RAR5 stores Unix timestamps and Windows FILETIME values in UTC; those are
+absolute and carry :attr:`~rarfile.TimezoneBasis.UTC`.
+
+For calendar-day queries, use :meth:`RarFile.infolist_by_day`.  Values whose
+provable range crosses a day edge are returned in
+:attr:`~rarfile.DaySelection.boundary` instead of being silently assigned to
+one day.  Pass an explicit ``offset`` only when the archive source is known
+to use that offset.
+
 What is the USE_EXTRACT_HACK?
 -----------------------------
 

@@ -1,7 +1,7 @@
 """RAR entry records.
 """
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import datetime
 from typing import TypeAlias
 
@@ -15,6 +15,7 @@ from .bits import (
     RAR_FILE_SPLIT_BEFORE, RAR_MAIN_PASSWORD, RAR_MAIN_SOLID, RAR_OS_UNIX,
 )
 from .crypto import HashContext
+from .times import TimeValue
 from .utils import DateTuple, FileLike, PathLike
 
 __all__ = (
@@ -82,7 +83,9 @@ class RarInfo(RarEntry):
     r"""A file entry in rar archive.
 
     Timestamps as :class:`~datetime.datetime` are without timezone in RAR3,
-    with UTC timezone in RAR5 archives.
+    with UTC timezone in RAR5 archives.  RAR3 values are wall-clock readings
+    from the machine that created the archive; they carry no timezone and
+    must not be interpreted using the host timezone.
 
     Attributes:
 
@@ -139,6 +142,15 @@ class RarInfo(RarEntry):
             Optional time field: archival time.  As :class:`~datetime.datetime` object.
             (RAR3-only)
 
+        times
+            Declared timestamps by field name, as :class:`TimeValue` objects.
+            Each value keeps the value exactly as declared, the timezone
+            basis, the source precision and the provable instant range.
+            RAR3 wall-clock values have
+            :attr:`~TimezoneBasis.UNKNOWN` basis; the host timezone is not
+            applied.  (RAR5 absolute values have
+            :attr:`~TimezoneBasis.UTC` basis.)
+
         CRC
             CRC-32 of uncompressed file, unsigned int.
 
@@ -190,6 +202,9 @@ class RarInfo(RarEntry):
     atime: datetime | None = None
     arctime: datetime | None = None
 
+    # declared timestamps with timezone basis and provable range.
+    times: dict[str, TimeValue] = field(default_factory=dict)
+
     extract_version: int
     mode: int
     host_os: int
@@ -207,6 +222,15 @@ class RarInfo(RarEntry):
     # internal hashing fields
     _md_class: type[HashContext] | None = None
     _md_expect: int | bytes | None = None
+
+    def get_time(self, field_name: str = "mtime") -> TimeValue | None:
+        """Return declared timestamp with provenance for a field.
+
+        Returns None when the archive does not declare that field.
+
+        .. versionadded:: 5.0
+        """
+        return self.times.get(field_name)
 
     # zipfile compat
     def is_dir(self) -> bool:

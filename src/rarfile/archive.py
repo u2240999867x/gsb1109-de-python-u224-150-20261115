@@ -7,6 +7,7 @@ import shutil
 import sys
 import warnings
 from collections.abc import Callable, Iterable, Iterator, Sequence
+from datetime import date, timedelta, timezone, tzinfo
 from pathlib import Path
 from types import TracebackType
 from typing import IO, Literal
@@ -25,6 +26,9 @@ from .errors import (
 from .format import RAR3Parser, RAR5Parser
 from .info import RarEntry, RarInfo
 from .stream import RarExtFile
+from .times import (
+    DaySelection, TimePrecision, select_by_day, select_by_precision,
+)
 from .utils import (
     FileLike, PathLike, XFile, is_filelike, sanitize_filename, to_nsecs,
 )
@@ -242,6 +246,35 @@ class RarFile:
         """
         assert self._file_parser is not None
         return self._file_parser.getinfo_orig(name)
+
+    def infolist_by_day(self, day: date, *, tz: tzinfo = timezone.utc,
+                        offset: timedelta | None = None,
+                        field_name: str = "mtime") -> DaySelection:
+        """Select entries by calendar day with provenance.
+
+        Entries whose whole provable instant range lies inside the day are
+        returned in :attr:`DaySelection.certain`.  Entries whose range
+        crosses a day edge, typically because the archive declares only a
+        wall-clock value without a timezone, are returned separately in
+        :attr:`DaySelection.boundary`.
+
+        The day is interpreted in *tz* (default UTC).  The host timezone is
+        never used.  *offset* can supply an explicit timezone basis for
+        wall-clock values; it is never inferred.
+
+        .. versionadded:: 5.0
+        """
+        return select_by_day(self.infolist(), day, tz=tz, offset=offset,
+                             field_name=field_name)
+
+    def infolist_by_precision(self, min_precision: TimePrecision, *,
+                              field_name: str = "mtime") -> list[RarInfo]:
+        """Select entries whose timestamp source is at least *min_precision*.
+
+        .. versionadded:: 5.0
+        """
+        return select_by_precision(self.infolist(), min_precision,
+                                   field_name=field_name)
 
     def open(self, name: str | Path | RarInfo, mode: str = "r", pwd: str | None = None) -> RarExtFile:
         """Returns file-like object (:class:`RarExtFile`) from where the data can be read.

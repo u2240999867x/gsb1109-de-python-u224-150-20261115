@@ -19,6 +19,13 @@ Features:
 * Move to multi-file module.
   [`#137 <https://github.com/markokr/rarfile/pull/137>`_]
 
+* Timestamp provenance: :attr:`RarInfo.times` keeps the declared value,
+  timezone basis, source precision and provable instant range for each
+  timestamp.  RAR3 wall-clock values are never interpreted with the host
+  timezone.  New :meth:`RarFile.infolist_by_day` and
+  :meth:`RarFile.infolist_by_precision` helpers support day and precision
+  queries, with day-boundary uncertainty reported separately.
+
 * Typing for Python.
   [`#146 <https://github.com/markokr/rarfile/pull/146>`_]
 

@@ -43,6 +43,7 @@ from .errors import *
 from .format import *
 from .info import *
 from .stream import *
+from .times import *
 from .utils import *
 
 __all__ = ("get_rar_version", "is_rarfile", "is_rarfile_sfx", "RarInfo", "RarFile", "RarExtFile")
