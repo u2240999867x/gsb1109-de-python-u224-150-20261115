@@ -139,6 +139,14 @@ class Selector(object):
     XPath selector class. Create an instance of this class if you want to apply an XPath
     selector to several target data.
 
+    The compiled expression (parser and token tree) is built once and reused by every
+    :meth:`select`/:meth:`iter_select`, while each call creates its own dynamic context.
+    That keeps the in-scope variables, the focus (context item, position and size) and the
+    implicit timezone of one evaluation independent of the others, so a rule that moves the
+    focus onto an attribute node while processing a record leaves no trace on the next
+    record, and concurrent batches each observe their own position(), last() and context
+    item. Pass any per-record values (variables, timezone, ...) to the individual calls.
+
     :param path: the XPath expression.
     :param namespaces: a dictionary with mapping from namespace prefixes into URIs.
     :param parser: the parser class to use, that is :class:`XPath2Parser` for default.

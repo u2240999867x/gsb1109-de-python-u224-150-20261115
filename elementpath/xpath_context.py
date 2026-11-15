@@ -208,7 +208,10 @@ class XPathContext:
         obj.position = self.position
         obj.axis = None
         obj.namespaces = self.namespaces
-        obj.variables = self.variables
+        # Duplicate the variables mapping so that variable bindings added by
+        # nested evaluations (e.g. inline functions, for/let expressions and
+        # predicates) stay local to the copied dynamic context.
+        obj.variables = self.variables.copy()
         return obj
 
     @cached_property

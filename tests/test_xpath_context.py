@@ -71,6 +71,50 @@ class XPathContextTest(unittest.TestCase):
         self.assertIsInstance(copy(context), XPathContext)
         self.assertIsNot(copy(context), context)
 
+    def test_copy_variable_isolation(self):
+        # A copied context gets its own variables mapping: bindings added by a
+        # nested evaluation must not leak back into the originating context.
+        root = ElementTree.XML('<A a1="10"/>')
+        context = XPathContext(root, variables={'v': 1})
+        copied = copy(context)
+
+        self.assertIsNot(copied.variables, context.variables)
+        copied.variables['v'] = 2
+        copied.variables['w'] = 3
+        self.assertEqual(context.variables, {'v': 1})
+
+    def test_copy_focus_isolation(self):
+        # Focus (item/position/size/axis) of a copy must be independent of
+        # the originating context, with the transient axis reset on entry.
+        root = ElementTree.XML('<A><B1/><B2/></A>')
+        context = XPathContext(root)
+        context.axis = 'child'
+        context.position = 5
+        context.size = 9
+
+        copied = copy(context)
+        self.assertIsNone(copied.axis)
+        self.assertEqual(copied.position, 5)
+        self.assertEqual(copied.size, 9)
+
+        copied.item = copied.root[0]
+        copied.position = 1
+        copied.axis = 'attribute'
+        self.assertIs(context.item, context.root)
+        self.assertEqual(context.position, 5)
+        self.assertEqual(context.axis, 'child')
+
+    def test_copy_timezone_isolation(self):
+        # The implicit timezone and current dateTime travel with each context.
+        root = ElementTree.XML('<A/>')
+        context = XPathContext(root, timezone='Z')
+        copied = copy(context)
+        self.assertEqual(copied.timezone, context.timezone)
+        self.assertEqual(copied.current_dt, context.current_dt)
+
+        other = XPathContext(root, timezone='-05:00')
+        self.assertNotEqual(other.timezone, copied.timezone)
+
     @unittest.skipIf(lxml_etree is None, 'lxml library is not installed')
     def test_etree_property(self):
         root = ElementTree.XML('<root/>')

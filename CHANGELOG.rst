@@ -2,6 +2,12 @@
 CHANGELOG
 *********
 
+`v5.1.5`_ (unreleased)
+======================
+* Isolate the variables mapping of copied dynamic contexts, so variable bindings
+  added by nested evaluations (inline functions, for/let and predicates) no longer
+  leak back into the caller or across records reusing the same compiled expression
+
 `v5.1.4`_ (2026-08-08)
 ======================
 * Add *allow_environment* and *allow_external_resources* arguments to XPath30Parser
@@ -555,3 +561,4 @@ CHANGELOG
 .. _v5.1.2: https://github.com/sissaschool/elementpath/compare/v5.1.1...v5.1.2
 .. _v5.1.3: https://github.com/sissaschool/elementpath/compare/v5.1.2...v5.1.3
 .. _v5.1.4: https://github.com/sissaschool/elementpath/compare/v5.1.3...v5.1.4
+.. _v5.1.5: https://github.com/sissaschool/elementpath/compare/v5.1.4...v5.1.5
