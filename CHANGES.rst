@@ -1,6 +1,12 @@
 Revision 0.7.0, released XX-XX-2026
 ---------------------------------------
 
+- Added ``pyasn1.migration`` module providing ``OfflineMigration`` for
+  offline record migration across schema revisions: caller-supplied field
+  renames and old-state-to-enum merge maps, separate storage of unknown
+  legacy extensions, loss reporting for irreversible enum merges, and
+  deep-copy passthrough so untouched complex fields survive a
+  migrate/restore round-trip unchanged
 - Fixed OverflowError from BER/CER/DER length values that fit in the
   supported 8-octet length field but exceed the platform maximum readable
   size. Such oversized definite lengths are now rejected with PyAsn1Error.

@@ -8,6 +8,7 @@ import unittest
 
 suite = unittest.TestLoader().loadTestsFromNames(
     ['tests.test_debug.suite',
+     'tests.test_migration.suite',
      'tests.type.__main__.suite',
      'tests.codec.__main__.suite']
 )
