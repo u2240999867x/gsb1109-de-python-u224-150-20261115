@@ -361,6 +361,75 @@ Comments can have leading whitespace, but trailing whitespace may be
 stripped and should not be relied upon.  Comments may not contain
 embedded newlines.
 
+### Clipping a mesh to a bounding box
+
+A mesh made of a vertex element (with `x`, `y`, and `z` properties)
+and a face element (with a list property of vertex indices) can be
+clipped to an axis-aligned bounding box with `PlyData.clip`.  The box
+is given as a `(3, 2)` array of `(minimum, maximum)` bounds on the x,
+y, and z axes, and the bounds are inclusive.  Geometry intersecting
+the box is kept: original edges crossing the box are split at their
+intersection points, polygons are fan-triangulated, and a face whose
+vertices are all outside the box but whose interior or edges cross it
+is still retained.
+
+```Python Console
+>>> vertex = numpy.array([
+...     (-2, -2, 0, 10),
+...     (2, -2, 0, 20),
+...     (2, 2, 0, 30),
+...     (-2, 2, 0, 40)],
+...     dtype=[('x', 'f4'), ('y', 'f4'), ('z', 'f4'),
+...            ('segment', 'i4')])
+>>> face = numpy.array([([0, 1, 2, 3],)],
+...                    dtype=[('vertex_indices', 'O')])
+>>> ply = PlyData([PlyElement.describe(vertex, 'vertex'),
+...                PlyElement.describe(face, 'face')])
+>>> bbox = numpy.array([[-1, 1], [-1, 1], [-1, 1]])
+>>> result = ply.clip(bbox)
+>>> len(result.ply['vertex'].data)
+4
+>>> len(result.ply['face'].data)
+2
+>>> result.face_map.tolist()
+[0, 0]
+>>>
+```
+
+Every vertex of the returned mesh lies in the box, and every face
+index points at a valid vertex of the new vertex element.
+
+Floating-point vertex properties are linearly interpolated at
+intersection points.  Integer, boolean, and object properties are
+treated as discrete labels and selected rather than blended; the
+selection rule is chosen with `discrete_rule` (`'first'` by default,
+also `'last'` and `'majority'`), and the set of discrete properties
+can be given explicitly with `discrete_properties`.
+
+Each output vertex is a convex combination of original input
+vertices, recorded on the `ClipResult` in compressed-sparse-row form
+(`provenance_indptr`, `provenance_vertices`, and
+`provenance_weights`).  `ClipResult.trace_vertex` returns the
+supporting original vertices and their weights for one output
+vertex: an untouched vertex has one support with weight 1, while an
+intersection on an original edge has the two edge endpoints as
+supports, the weights giving the interpolation position along that
+edge.
+
+```Python Console
+>>> clipped = result.ply['vertex'].data
+>>> positions = numpy.stack([clipped['x'], clipped['y'],
+...                          clipped['z']], axis=1)
+>>> assert bool((positions >= -1).all())
+>>> assert bool((positions <= 1).all())
+>>> for k in range(len(clipped)):
+...     support, weights = result.trace_vertex(k)
+...     assert numpy.isclose(weights.sum(), 1.0)
+...     assert clipped['segment'][k] in (10, 20, 30, 40)
+...
+>>>
+```
+
 ### Getting a two-dimensional array from a list property
 
 The PLY format provides no way to assert that all the data for a given

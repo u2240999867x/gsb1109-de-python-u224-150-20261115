@@ -3,6 +3,14 @@
 All notable changes to this project will be documented here.
 
 ## [Unreleased]
+### Added
+- `PlyData.clip`: clip a vertex/face mesh to an axis-aligned
+  bounding box.  Intersecting geometry is retained, polygons are
+  fan-triangulated, and each output vertex carries convex-weight
+  provenance back to the original input vertices, including the
+  interpolation position along original edges.  Discrete vertex
+  properties are selected rather than interpolated, configurable via
+  `discrete_properties` and `discrete_rule`.
 
 ## [1.1.5] - 2026-07-25
 ### Fixed

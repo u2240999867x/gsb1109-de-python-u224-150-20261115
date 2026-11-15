@@ -285,6 +285,70 @@ class PlyData(object):
                 (self.elements, self.text, self.byte_order,
                  self.comments, self.obj_info))
 
+    def clip(self, bbox, vertex_element='vertex', face_element='face',
+             index_property=None, discrete_properties=None,
+             discrete_rule='first'):
+        """
+        Clip the mesh against an axis-aligned bounding box.
+
+        The portion of the mesh intersecting the closed box is kept.
+        Original edges crossing the box are split at their
+        intersection points.  Every output vertex is a convex
+        combination of original input vertices, recorded in the
+        returned `ClipResult`: an untouched vertex has a single
+        support, an edge intersection has the two edge endpoints as
+        supports with weights giving the interpolation position, and
+        a box-edge or box-corner intersection may combine several
+        vertices of the originating face.  Floating-point vertex
+        properties are linearly interpolated at intersections;
+        discrete (integer, boolean, or object) vertex properties are
+        not interpolated and are selected with `discrete_rule`.
+        Faces with all vertices outside the box but whose edges still
+        pass through it are retained.
+
+        Parameters
+        ----------
+        bbox : array-like, shape (3, 2)
+            The lower and upper bounds on the x, y, and z axes, in
+            that order.  Bounds are inclusive.
+        vertex_element : str, optional
+            Name of the element holding the vertices (default
+            `'vertex'`).  It must contain `'x'`, `'y'`, and `'z'`
+            properties.
+        face_element : str, optional
+            Name of the element holding the faces (default `'face'`).
+        index_property : str, optional
+            Name of the face list property holding vertex indices.
+            If omitted, the face element's only list property is
+            used.
+        discrete_properties : iterable of str, optional
+            Vertex property names that must not be interpolated.  If
+            omitted, every integer, boolean, or object vertex
+            property (other than `'x'`, `'y'`, `'z'`) is treated as
+            discrete; floating-point properties are interpolated.
+        discrete_rule : {'first', 'last', 'majority'}, optional
+            How to assign a discrete property at an intersection of an
+            edge whose endpoints carry different labels.  `'first'`
+            takes the start vertex's label, `'last'` the end vertex's
+            label, and `'majority'` takes the more frequent label
+            among the edge endpoints (for two endpoints this means the
+            start vertex's label when they differ).
+
+        Returns
+        -------
+        ClipResult
+
+        Raises
+        ------
+        PlyBBoxClipError
+            If the required elements or properties are missing, an
+            index is out of range, or an argument is invalid.
+        """
+        clipper = _PlyMeshClipper(
+            self, bbox, vertex_element, face_element,
+            index_property, discrete_properties, discrete_rule)
+        return clipper.run()
+
 
 class PlyElement(object):
     """
@@ -1102,6 +1166,560 @@ class PlyHeaderParseError(PlyParseError):
         return ('%s(%r, line=%r)' %
                 (self.__class__.__name__,
                  self.message, self.line))
+
+
+class PlyBBoxClipError(ValueError):
+    """
+    Raised when a PLY mesh cannot be clipped against a bounding box,
+    for example because the required elements or properties are
+    missing or because an argument is invalid.
+    """
+
+    pass
+
+
+class ClipResult(object):
+    """
+    Result of clipping a vertex/face mesh against an axis-aligned
+    bounding box.
+
+    Instances are returned by `PlyData.clip`; this class is not
+    intended to be instantiated directly.
+
+    Every output vertex is a convex combination of the original input
+    vertices.  The combination is stored in compressed-sparse-row
+    style: for output vertex ``k``, its supporting original vertices
+    are ``provenance_vertices[provenance_indptr[k]:
+    provenance_indptr[k+1]]`` with weights
+    ``provenance_weights[...]`` over the same slice.
+
+    Attributes
+    ----------
+    ply : PlyData
+        The clipped mesh.  Every vertex of its vertex element lies in
+        the box; it contains the surviving original vertices and the
+        intersection vertices created on original edges or on box
+        edges/corners.  Its face element holds only faces with
+        non-empty geometry inside the box (polygons fan-triangulated),
+        renumbered so that every index points at a valid vertex of the
+        new vertex element.
+    provenance_indptr : numpy.ndarray
+        Length ``len(vertex element) + 1``; offsets into
+        `provenance_vertices` and `provenance_weights` for each output
+        vertex.
+    provenance_vertices : numpy.ndarray
+        Concatenated input indices of the original vertices
+        supporting each output vertex.
+    provenance_weights : numpy.ndarray
+        Convex weights corresponding to `provenance_vertices`; each
+        output vertex's weights sum to 1.
+    face_map : numpy.ndarray
+        For each output face, the index of the face it derives from in
+        the input face element.  Clipping one input face can produce
+        several output faces.
+    """
+
+    def __init__(self, ply, provenance_indptr, provenance_vertices,
+                 provenance_weights, face_map):
+        self.ply = ply
+        self.provenance_indptr = provenance_indptr
+        self.provenance_vertices = provenance_vertices
+        self.provenance_weights = provenance_weights
+        self.face_map = face_map
+
+    def __repr__(self):
+        return ('ClipResult(vertices=%d, faces=%d)' %
+                (len(self.provenance_indptr) - 1,
+                 len(self.face_map)))
+
+    def trace_vertex(self, index):
+        """
+        Return the original vertices and convex weights an output
+        vertex is derived from.
+
+        An untouched original vertex yields one support vertex with
+        weight 1.  An intersection on an original mesh edge yields
+        exactly two support vertices: the edge endpoints, with weights
+        ``1 - t`` and ``t``, where ``t`` is the interpolation position
+        along the edge.  A vertex on a box edge or box corner (where
+        clipping planes meet inside a face) combines the vertices of
+        the originating face and may therefore have three or more
+        support vertices.
+
+        Parameters
+        ----------
+        index : int
+            Index of a vertex in the output vertex element.
+
+        Returns
+        -------
+        vertices : numpy.ndarray
+            Input indices of the supporting original vertices.
+        weights : numpy.ndarray
+            Corresponding convex weights, summing to 1.
+        """
+        index = int(index)
+        start = int(self.provenance_indptr[index])
+        stop = int(self.provenance_indptr[index + 1])
+        return (self.provenance_vertices[start:stop].copy(),
+                self.provenance_weights[start:stop].copy())
+
+
+class _PlyMeshClipper(object):
+    """
+    Engine that clips a vertex/face mesh to an axis-aligned bounding
+    box.  Not part of the public interface; use `PlyData.clip`.
+
+    Output vertices are registered lazily and compacted at the end so
+    that output indices are contiguous and every index referenced by
+    an output face is valid.
+    """
+
+    _position_properties = ('x', 'y', 'z')
+    _rules = ('first', 'last', 'majority')
+
+    def __init__(self, plydata, bbox, vertex_element, face_element,
+                 index_property, discrete_properties, discrete_rule):
+        self._plydata = plydata
+        self._bbox = bbox
+        self._vertex_element_name = vertex_element
+        self._face_element_name = face_element
+        self._index_property_name = index_property
+        self._discrete_property_names = discrete_properties
+        self._discrete_rule = discrete_rule
+
+    def run(self):
+        """
+        Perform the clipping.
+
+        Returns
+        -------
+        ClipResult
+        """
+        self._prepare()
+
+        for face_index in range(self._face_count):
+            self._clip_face(face_index)
+
+        return self._build_result()
+
+    def _prepare(self):
+        """
+        Validate all inputs and initialize the clipping state.
+        """
+        bbox = _np.asarray(self._bbox, dtype=_np.float64)
+        if bbox.shape != (3, 2):
+            raise PlyBBoxClipError(
+                "bbox must have shape (3, 2), giving (min, max) "
+                "for x, y, z")
+        self._lower = bbox[:, 0]
+        self._upper = bbox[:, 1]
+        if _np.any(self._lower > self._upper):
+            raise PlyBBoxClipError(
+                "bbox minimum must not exceed maximum on any axis")
+
+        if self._discrete_rule not in self._rules:
+            raise PlyBBoxClipError(
+                "discrete_rule must be one of %r" % (self._rules,))
+
+        for name in (self._vertex_element_name,
+                     self._face_element_name):
+            if name not in self._plydata:
+                raise PlyBBoxClipError(
+                    "element %r not found" % name)
+
+        self._vertex_el = self._plydata[self._vertex_element_name]
+        self._face_el = self._plydata[self._face_element_name]
+        self._vertex_data = self._vertex_el.data
+        self._face_data = self._face_el.data
+        self._vertex_count = len(self._vertex_data)
+        self._face_count = len(self._face_data)
+
+        for prop_name in self._position_properties:
+            if prop_name not in self._vertex_el:
+                raise PlyBBoxClipError(
+                    "vertex element %r has no %r property" %
+                    (self._vertex_element_name, prop_name))
+
+        positions = []
+        for prop_name in self._position_properties:
+            positions.append(
+                _np.asarray(self._vertex_data[prop_name],
+                            dtype=_np.float64))
+        self._all_positions = _np.stack(positions, axis=1)
+
+        self._index_prop = self._resolve_index_property()
+        self._index_dtype = self._index_prop.val_dtype
+
+        self._classify_vertex_properties()
+
+        # Output vertex registry.  Each registered vertex records its
+        # structured data, exact position, and its convex weights on
+        # the original input vertices.
+        self._records = []
+        self._positions = []
+        self._support = []
+        self._original_id = _np.full(self._vertex_count, -1,
+                                     dtype=_np.int64)
+        self._edge_cache = {}
+
+        # Output face data.
+        self._out_rings = []
+        self._face_map = []
+
+    def _resolve_index_property(self):
+        """
+        Return the face element's list property holding vertex
+        indices.
+        """
+        list_props = [p for p in self._face_el.properties
+                      if isinstance(p, PlyListProperty)]
+        if self._index_property_name is not None:
+            if self._index_property_name not in self._face_el:
+                raise PlyBBoxClipError(
+                    "face element %r has no property %r" %
+                    (self._face_element_name,
+                     self._index_property_name))
+            prop = self._face_el.ply_property(
+                self._index_property_name)
+            if not isinstance(prop, PlyListProperty):
+                raise PlyBBoxClipError(
+                    "index property %r must be a list property" %
+                    self._index_property_name)
+            return prop
+
+        if len(list_props) == 1:
+            return list_props[0]
+
+        if not list_props:
+            raise PlyBBoxClipError(
+                "face element %r has no list property holding "
+                "vertex indices" % self._face_element_name)
+
+        raise PlyBBoxClipError(
+            "face element %r has several list properties %r; "
+            "index_property must be specified" %
+            (self._face_element_name,
+             [p.name for p in list_props]))
+
+    def _classify_vertex_properties(self):
+        """
+        Decide which vertex properties are interpolated and which are
+        discrete labels that must be selected rather than blended.
+        """
+        names = list(self._vertex_data.dtype.names)
+        if self._discrete_property_names is None:
+            discrete = set()
+            for name in names:
+                if name in self._position_properties:
+                    continue
+                kind = self._vertex_data.dtype.fields[name][0].kind
+                if kind in ('i', 'u', 'b', 'O'):
+                    discrete.add(name)
+        else:
+            discrete = set(self._discrete_property_names)
+            for name in discrete:
+                if name not in self._vertex_el:
+                    raise PlyBBoxClipError(
+                        "vertex element %r has no property %r" %
+                        (self._vertex_element_name, name))
+            for name in self._position_properties:
+                if name in discrete:
+                    raise PlyBBoxClipError(
+                        "position property %r cannot be treated "
+                        "as discrete" % name)
+
+        # Object properties cannot be arithmetically interpolated, so
+        # they are always handled as discrete labels.
+        for name in names:
+            kind = self._vertex_data.dtype.fields[name][0].kind
+            if kind == 'O':
+                discrete.add(name)
+        self._discrete = discrete
+
+    def _face_indices(self, face_index):
+        """
+        Return the vertex-index array of one input face.
+        """
+        raw = self._face_data[self._index_prop.name][face_index]
+        indices = _np.asarray(raw).ravel()
+        if indices.size < 3:
+            raise PlyBBoxClipError(
+                "face %d has fewer than 3 vertices" % face_index)
+        if indices.min() < 0 or indices.max() >= self._vertex_count:
+            raise PlyBBoxClipError(
+                "face %d references a vertex outside the vertex "
+                "element" % face_index)
+        return [int(i) for i in indices]
+
+    def _clip_face(self, face_index):
+        """
+        Clip one input face and register its output geometry.
+
+        No separate intersection pre-filter is used: a face that
+        contains the whole box while having every vertex and edge
+        outside it must also be retained, and Sutherland-Hodgman
+        clipping naturally yields an empty polygon for a genuinely
+        disjoint face.
+        """
+        ring = self._face_indices(face_index)
+        tokens = [self._add_original(i) for i in ring]
+
+        # Sutherland-Hodgman clipping against the six half-spaces.
+        for axis in range(3):
+            tokens = self._clip_plane(
+                tokens, axis, self._lower[axis], True)
+            tokens = self._clip_plane(
+                tokens, axis, self._upper[axis], False)
+
+        if len(tokens) < 3:
+            return
+
+        tokens = self._dedupe_ring(tokens)
+        for k in range(1, len(tokens) - 1):
+            triangle = (tokens[0], tokens[k], tokens[k + 1])
+            if len(set(triangle)) < 3:
+                # Skip degenerate triangles created when several
+                # clipping planes meet at a box edge or corner.
+                continue
+            self._out_rings.append(triangle)
+            self._face_map.append(face_index)
+
+    @staticmethod
+    def _dedupe_ring(tokens):
+        """
+        Remove consecutive duplicate vertices (including across the
+        ring closure) from a polygon given as registry indices.
+        """
+        deduped = []
+        for token in tokens:
+            if not deduped or deduped[-1] != token:
+                deduped.append(token)
+        if len(deduped) > 1 and deduped[0] == deduped[-1]:
+            deduped.pop()
+        return deduped
+
+    def _clip_plane(self, tokens, axis, bound, lower):
+        """
+        Clip a convex polygon (given as registry indices) against one
+        clipping plane.  When `lower` is True the retained half-space
+        is coordinate >= bound, otherwise coordinate <= bound.
+        """
+        if not tokens:
+            return tokens
+
+        output = []
+        previous = tokens[-1]
+        previous_inside = self._token_inside(previous, axis,
+                                             bound, lower)
+        for current in tokens:
+            current_inside = self._token_inside(current, axis,
+                                                bound, lower)
+            if current_inside:
+                if not previous_inside:
+                    output.append(self._add_intersection(
+                        previous, current, axis, bound))
+                output.append(current)
+            elif previous_inside:
+                output.append(self._add_intersection(
+                    previous, current, axis, bound))
+            previous = current
+            previous_inside = current_inside
+        return output
+
+    def _token_inside(self, token, axis, bound, lower):
+        coordinate = self._positions[token][axis]
+        if lower:
+            return coordinate >= bound
+        return coordinate <= bound
+
+    def _add_original(self, vertex_index):
+        """
+        Register an input vertex in the output registry.
+        """
+        existing = self._original_id[vertex_index]
+        if existing >= 0:
+            return existing
+
+        token = len(self._records)
+        self._original_id[vertex_index] = token
+        self._records.append(
+            self._vertex_data[vertex_index])
+        self._positions.append(
+            self._all_positions[vertex_index].copy())
+        self._support.append({vertex_index: 1.0})
+        return token
+
+    def _add_intersection(self, first, second, axis, bound):
+        """
+        Register (or reuse) the intersection of the segment between
+        two registered vertices with one clipping plane.  The convex
+        weights of both parents over the original input vertices are
+        merged using the local interpolation parameter.
+        """
+        key = (first, second) if first < second else (second, first)
+        cached = self._edge_cache.get(key)
+        if cached is not None:
+            return cached
+
+        start = self._positions[first]
+        end = self._positions[second]
+        parameter = ((bound - start[axis]) /
+                     (end[axis] - start[axis]))
+
+        if parameter <= 0.0:
+            return first
+        if parameter >= 1.0:
+            return second
+
+        position = start + parameter * (end - start)
+        position[axis] = bound
+        record = self._interpolate_record(first, second,
+                                          parameter)
+        support = {}
+        for (vertex, weight) in self._support[first].items():
+            support[vertex] = (1.0 - parameter) * weight
+        for (vertex, weight) in self._support[second].items():
+            support[vertex] = support.get(vertex, 0.0) + \
+                parameter * weight
+
+        token = len(self._records)
+        self._edge_cache[key] = token
+        self._records.append(record)
+        self._positions.append(position)
+        self._support.append(support)
+        return token
+
+    def _interpolate_record(self, first, second, parameter):
+        """
+        Build the vertex record of an intersection vertex.
+
+        Floating-point properties are linearly interpolated; discrete
+        properties are selected according to the configured rule.
+        """
+        first_record = self._records[first]
+        second_record = self._records[second]
+        record = _np.empty((), dtype=self._vertex_data.dtype)
+        for name in self._vertex_data.dtype.names:
+            first_value = first_record[name]
+            second_value = second_record[name]
+            if name in self._discrete:
+                value = self._select_discrete(first_value,
+                                              second_value)
+            else:
+                value = (first_value +
+                         parameter * (second_value -
+                                      first_value))
+            record[name] = value
+        return record
+
+    def _select_discrete(self, first_value, second_value):
+        if self._discrete_rule == 'first':
+            return first_value
+        if self._discrete_rule == 'last':
+            return second_value
+        if first_value == second_value:
+            return first_value
+        # 'majority' with two sources and no agreement: fall back to
+        # the first source deterministically.
+        return first_value
+
+    def _build_result(self):
+        """
+        Compact the registry, renumber indices, and assemble the
+        returned `ClipResult`.  Only vertices referenced by an output
+        face are kept; provenance is stored separately, so the output
+        vertex element contains no point outside the box.
+        """
+        used = sorted({token for ring in self._out_rings
+                       for token in ring})
+        remap = {old: new for (new, old) in enumerate(used)}
+
+        vertex_dtype = self._vertex_data.dtype
+        if used:
+            new_vertices = _np.array(
+                [self._records[i] for i in used],
+                dtype=vertex_dtype)
+        else:
+            new_vertices = _np.empty(0, dtype=vertex_dtype)
+
+        indptr = [0]
+        provenance_vertices = []
+        provenance_weights = []
+        for token in used:
+            support = self._support[token]
+            for vertex in sorted(support):
+                provenance_vertices.append(vertex)
+                provenance_weights.append(support[vertex])
+            indptr.append(len(provenance_vertices))
+        provenance_indptr = _np.array(indptr, dtype=_np.int64)
+        provenance_vertices = _np.array(provenance_vertices,
+                                        dtype=_np.int64)
+        provenance_weights = _np.array(provenance_weights,
+                                       dtype=_np.float64)
+
+        face_records = []
+        face_map = []
+        face_dtype = self._face_data.dtype
+        index_name = self._index_prop.name
+        field_names = list(face_dtype.names)
+        for (ring, source_face) in zip(self._out_rings,
+                                       self._face_map):
+            indices = _np.array(
+                [remap[token] for token in ring],
+                dtype=self._index_dtype)
+            source_record = self._face_data[source_face]
+            values = tuple(
+                indices if name == index_name
+                else source_record[name]
+                for name in field_names)
+            face_records.append(values)
+            face_map.append(source_face)
+
+        if face_records:
+            new_faces = _np.array(face_records, dtype=face_dtype)
+        else:
+            new_faces = _np.empty(0, dtype=face_dtype)
+
+        new_vertex_el = self._describe_element(
+            self._vertex_el, new_vertices)
+        new_face_el = self._describe_element(
+            self._face_el, new_faces)
+
+        elements = []
+        for element in self._plydata.elements:
+            if element.name == self._vertex_el.name:
+                elements.append(new_vertex_el)
+            elif element.name == self._face_el.name:
+                elements.append(new_face_el)
+            else:
+                elements.append(element)
+
+        new_ply = PlyData(
+            elements, self._plydata.text,
+            self._plydata._byte_order,
+            self._plydata.comments, self._plydata.obj_info)
+
+        return ClipResult(
+            new_ply, provenance_indptr, provenance_vertices,
+            provenance_weights,
+            _np.array(face_map, dtype=_np.int64))
+
+    def _describe_element(self, old_element, new_data):
+        """
+        Rebuild an element around a replacement data array while
+        preserving property type choices and comments.
+        """
+        len_types = {}
+        val_types = {}
+        for prop in old_element.properties:
+            if isinstance(prop, PlyListProperty):
+                len_types[prop.name] = prop.len_dtype
+                val_types[prop.name] = prop.val_dtype
+        return PlyElement.describe(
+            new_data, old_element.name,
+            len_types=len_types, val_types=val_types,
+            comments=old_element.comments)
 
 
 class _PlyHeaderParser(object):
