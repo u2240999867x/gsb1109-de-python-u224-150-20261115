@@ -69,6 +69,7 @@ from . import ssl
 from . import stp
 from . import stun
 from . import tcp
+from . import tcpstream
 from . import telnet
 from . import tftp
 from . import tns

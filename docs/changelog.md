@@ -1,5 +1,8 @@
 # Changelog
 
+## Unreleased
+- Added `dpkt.tcpstream`, a TCP flow tracker with two byte ledgers: wire bytes (every captured payload byte, retransmissions included) and unique bytes (distinct sequence-number ranges, so overlapping retransmissions only count new ranges); handles sequence-number wrap, excludes SYN/FIN payload, and only counts bytes present in snaplen-truncated captures.
+
 ## 1.9.8
 **[2022-08-17]**
 - Fixed endianness issues in PCAPNG, Loopback
