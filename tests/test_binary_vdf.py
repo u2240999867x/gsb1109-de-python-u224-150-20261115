@@ -145,6 +145,31 @@ class BinaryVDF(unittest.TestCase):
 
         self.assertEqual(vdf.binary_loads(test, merge_duplicate_keys=False), result)
 
+    def test_duplicate_occurrences_roundtrip(self):
+        data = vdf.VDFDict([
+            ('install', vdf.VDFDict([
+                ('item', 'first'),
+                ('item', 'second'),
+                ('item', 'third'),
+            ])),
+        ])
+
+        data['install'][(1, 'item')] = 'corrected'
+        data['install']['item'] = 'fourth'
+
+        result = vdf.binary_loads(
+            vdf.binary_dumps(data),
+            mapper=vdf.VDFDict,
+            merge_duplicate_keys=False)
+
+        self.assertEqual(
+            list(result['install'].items()),
+            [('item', 'first'), ('item', 'corrected'),
+             ('item', 'third'), ('item', 'fourth')])
+        self.assertEqual(
+            result['install'].get_all_for('item'),
+            ['first', 'corrected', 'third', 'fourth'])
+
     def test_raise_on_remaining(self):
         # default binary_loads is to raise
         with self.assertRaises(SyntaxError):

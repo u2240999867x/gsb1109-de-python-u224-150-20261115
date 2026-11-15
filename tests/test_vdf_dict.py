@@ -292,3 +292,72 @@ class VDFDictCase(unittest.TestCase):
         # duplicate in nested dict
         d = VDFDict({'1': {'2': {'3': None}}})
         self.assertFalse(d.has_duplicates())
+
+    def test_three_occurrences(self):
+        a = VDFDict()
+        a['key'] = 'first'
+        a['key'] = 'second'
+        a['key'] = 'third'
+
+        self.assertEqual(len(a), 3)
+        self.assertEqual(a.get_all_for('key'), ['first', 'second', 'third'])
+        self.assertEqual(a[(0, 'key')], 'first')
+        self.assertEqual(a[(1, 'key')], 'second')
+        self.assertEqual(a[(2, 'key')], 'third')
+
+    def test_correct_middle_occurrence(self):
+        a = VDFDict([('key', 'first'), ('key', 'second'), ('key', 'third')])
+
+        a[(1, 'key')] = 'corrected'
+
+        self.assertEqual(
+            list(a.items()),
+            [('key', 'first'), ('key', 'corrected'), ('key', 'third')])
+        self.assertEqual(a[(0, 'key')], 'first')
+        self.assertEqual(a[(2, 'key')], 'third')
+        self.assertEqual(a.get_all_for('key'), ['first', 'corrected', 'third'])
+        self.assertEqual(len(a), 3)
+
+    def test_insert_after_correction_keeps_occurrence_indices(self):
+        a = VDFDict([('key', 'first'), ('key', 'second'), ('key', 'third')])
+        first = a[(0, 'key')]
+        third = a[(2, 'key')]
+
+        a[(1, 'key')] = 'corrected'
+        a['key'] = 'fourth'
+
+        self.assertIs(a[(0, 'key')], first)
+        self.assertIs(a[(2, 'key')], third)
+        self.assertEqual(a[(1, 'key')], 'corrected')
+        self.assertEqual(a[(3, 'key')], 'fourth')
+        self.assertEqual(
+            a.get_all_for('key'),
+            ['first', 'corrected', 'third', 'fourth'])
+
+    def test_delete_after_correction_keeps_occurrence_count(self):
+        a = VDFDict([('key', 'first'), ('key', 'second'), ('key', 'third')])
+
+        a[(1, 'key')] = 'corrected'
+        del a[(0, 'key')]
+
+        self.assertEqual(
+            list(a.items()),
+            [('key', 'corrected'), ('key', 'third')])
+        self.assertEqual(a.get_all_for('key'), ['corrected', 'third'])
+        self.assertEqual(len(a), 2)
+
+        a['key'] = 'fourth'
+        self.assertEqual(
+            a.get_all_for('key'), ['corrected', 'third', 'fourth'])
+
+    def test_nested_duplicate_correction_is_isolated(self):
+        a = VDFDict()
+        a['outer'] = VDFDict([('item', {'id': '1'})])
+        a['outer']['item'] = VDFDict([('id', '2')])
+        a['outer']['item'] = VDFDict([('id', '3')])
+
+        a['outer'][(1, 'item')] = VDFDict([('id', 'corrected')])
+
+        self.assertEqual([x['id'] for x in a['outer'].get_all_for('item')],
+                         ['1', 'corrected', '3'])
+        self.assertEqual(list(a['outer'].keys()), ['item', 'item', 'item'])

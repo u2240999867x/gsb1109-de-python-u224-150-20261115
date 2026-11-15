@@ -504,6 +504,78 @@ class testcase_VDF(unittest.TestCase):
 
         self.assertEqual(vdf.loads(INPUT), EXPECTED)
 
+    duplicate_occurrences_input = '''
+    "install"
+    {
+        "item" "first"
+        "item" "second"
+        "item" "third"
+        "metadata"
+        {
+            "path" "root"
+            "path" "nested"
+        }
+    }
+    '''
+
+    def test_three_duplicate_occurrences_preserved(self):
+        result = vdf.loads(
+            self.duplicate_occurrences_input,
+            mapper=vdf.VDFDict,
+            merge_duplicate_keys=False)
+
+        self.assertEqual(
+            list(result['install'].items())[:3],
+            [('item', 'first'), ('item', 'second'), ('item', 'third')])
+
+    def test_duplicate_occurrence_correction(self):
+        result = vdf.loads(
+            self.duplicate_occurrences_input,
+            mapper=vdf.VDFDict,
+            merge_duplicate_keys=False)
+
+        result['install'][(1, 'item')] = 'corrected'
+
+        self.assertEqual(
+            list(result['install'].items())[:3],
+            [('item', 'first'), ('item', 'corrected'), ('item', 'third')])
+
+    def test_nested_duplicate_occurrence_correction(self):
+        result = vdf.loads(
+            self.duplicate_occurrences_input,
+            mapper=vdf.VDFDict,
+            merge_duplicate_keys=False)
+
+        result['install']['metadata'][(1, 'path')] = 'changed'
+
+        self.assertEqual(
+            list(result['install']['metadata'].items()),
+            [('path', 'root'), ('path', 'changed')])
+        self.assertEqual(
+            list(result['install'].items())[:3],
+            [('item', 'first'), ('item', 'second'), ('item', 'third')])
+
+    def test_duplicate_occurrences_roundtrip(self):
+        result = vdf.loads(
+            self.duplicate_occurrences_input,
+            mapper=vdf.VDFDict,
+            merge_duplicate_keys=False)
+        result['install'][(1, 'item')] = 'corrected'
+
+        texts = [
+            vdf.dumps(result),
+            vdf.dumps(result, pretty=True),
+            vdf.dumps(result, escaped=False),
+        ]
+
+        for text in texts:
+            reloaded = vdf.loads(
+                text, mapper=vdf.VDFDict, merge_duplicate_keys=False)
+            self.assertEqual(list(reloaded['install'].items())[:3],
+                             list(result['install'].items())[:3])
+            self.assertEqual(list(reloaded['install']['metadata'].items()),
+                             list(result['install']['metadata'].items()))
+
 class testcase_VDF_other(unittest.TestCase):
     def test_dumps_pretty_output(self):
         tests = [

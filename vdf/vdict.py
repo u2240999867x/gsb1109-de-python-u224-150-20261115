@@ -74,6 +74,7 @@ class VDFDict(dict):
         if isinstance(key, _string_type):
             key = (self.__kcount[key], key)
             self.__omap.append(key)
+            self.__kcount[key[1]] += 1
         elif isinstance(key, tuple):
             self._verify_key_tuple(key)
             if key not in self:
@@ -81,7 +82,6 @@ class VDFDict(dict):
         else:
             raise TypeError("Expected either a str or tuple for key")
         super(VDFDict, self).__setitem__(key, value)
-        self.__kcount[key[1]] += 1
 
     def __getitem__(self, key):
         return super(VDFDict, self).__getitem__(self._normalize_key(key))
