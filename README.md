@@ -51,6 +51,47 @@ Some of the tasks that pefile makes possible are:
 * Packer detection with [PEiD’s signatures](https://github.com/erocarrera/pefile/blob/wiki/PEiDSignatures.md)
 * [PEiD signature](https://github.com/erocarrera/pefile/blob/wiki/PEiDSignatures.md) generation
 
+## Resolving export forwarding chains
+
+`peforward.py` follows DLL export forwarding (`MODULE.Symbol` /
+`MODULE.#Ordinal`) across a local set of PE files and reports where each
+export actually lands. It works offline and never guesses which build of a
+DLL to use.
+
+```shell
+python peforward.py vendor/bin --json
+python peforward.py vendor/bin --dll kernel32 --name Sleep
+```
+
+The library API is the same engine:
+
+```python
+import peforward
+
+resolver = peforward.ExportResolver()
+resolver.add_directory("vendor/bin")
+resolver.select_version("version", "10.0.19041.1")
+report = resolver.report()
+print(peforward.format_report(report))
+```
+
+Behaviour:
+
+* Each export is resolved independently. A forwarder pointing at a missing
+  library or symbol is reported on that entry only; other exports still
+  resolve.
+* An export whose RVA falls inside the declared export directory range is
+  always treated as a forwarder, never as local code, even if the bytes there
+  do not form a valid forwarder string.
+* A forwarding RVA outside that range is local code, even if the bytes it
+  points at would read as `MODULE.Symbol`.
+* Chains are followed with cycle detection; a loop is reported with the
+  closed cycle (`a!X -> b!X -> a!X`) instead of recursing forever.
+  `max_depth` bounds non-cyclic chains as an additional safeguard.
+* When several loaded files share a module name, the caller must choose one
+  with `select_version()`, `select_path()`, or a `version_selector`
+  callback; otherwise the entry is reported as `ambiguous_library`.
+
 Please, refer to [Usage Examples](https://github.com/erocarrera/pefile/blob/wiki/UsageExamples.md#introduction) for some code snippets that demonstrate how to use _pefile_.
 
 Here are a few examples of what a dump produced with _pefile_ looks like for different types of files:

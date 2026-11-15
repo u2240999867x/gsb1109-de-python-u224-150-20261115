@@ -49,6 +49,7 @@ path = "pefile.py"
 [tool.hatch.build.targets.wheel]
 include = [
     "/pefile.py",
+    "/peforward.py",
     "/peutils.py",
     "/ordlookup",
 ]
@@ -56,6 +57,7 @@ include = [
 [tool.hatch.build.targets.sdist]
 include = [
     "/pefile.py",
+    "/peforward.py",
     "/peutils.py",
     "/ordlookup",
     "/CITATION.cff",
