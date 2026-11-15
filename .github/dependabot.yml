@@ -1,0 +1,28 @@
+#
+# https://docs.github.com/en/code-security/reference/supply-chain-security/dependabot-options-reference
+#
+
+version: 2
+
+updates:
+
+  - package-ecosystem: "uv"
+    versioning-strategy: "increase-if-necessary"
+    directories:
+      - "/"
+    schedule:
+      interval: "monthly"
+    cooldown:
+      default-days: 7
+    # security only
+    open-pull-requests-limit: 0
+
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "monthly"
+    cooldown:
+      default-days: 7
+    # security only
+    open-pull-requests-limit: 0
+
