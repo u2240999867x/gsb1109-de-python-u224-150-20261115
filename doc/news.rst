@@ -38,6 +38,14 @@ Features:
 * Delay symlink creation in :meth:`RarFile.extractall`
   [`#148 <https://github.com/markokr/rarfile/pull/148>`_]
 
+* Add :meth:`RarFile.read_many` for reading a batch of entries in one
+  pass.  Requests are planned by solid segment and served from a single
+  tool run on solid archives, so the shared solid prefix is decoded only
+  once; results come back in the request order, duplicate names are told
+  apart by their :class:`RarInfo` identity, and dropping one request does
+  not discard data another request still needs.  Layouts that cannot be
+  split into one label-free stream fall back to per-entry reads.
+
 Version 4.5 (2026-08-02)
 ------------------------
 

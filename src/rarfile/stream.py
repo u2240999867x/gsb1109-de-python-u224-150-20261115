@@ -18,7 +18,10 @@ from .utils import PathLike, RawFileLike, WritableBuffer, XFile
 if TYPE_CHECKING:
     from .format import CommonParser
 
-__all__ = ("RarExtFile", "DirectReader", "PipeReader", "BytesReader")
+__all__ = (
+    "RarExtFile", "DirectReader", "PipeReader", "BytesReader",
+    "SolidBatchStream",
+)
 
 
 class RarExtFile(io.RawIOBase):
@@ -472,3 +475,104 @@ class BytesReader(RarExtFile):
         if self._fd is None:
             return b""
         return self._fd.read(cnt)
+
+
+class SolidBatchStream:
+    """Single tool process whose output is shared by a batch of entries.
+
+    A solid archive is decoded as one continuous stream, so one tool
+    invocation can feed every entry in a solid segment: the bytes of
+    entries nobody requested are simply discarded, while the shared
+    dictionary/prefix decoding is paid for only once.
+
+    The stream is consumed strictly in archive order and each slice is
+    bounded by the entry's ``file_size``, so duplicate names are told
+    apart by the :class:`~rarfile.RarInfo` identity rather than the name.
+    """
+
+    _fd: RawFileLike | None = None
+    _proc: Popen[bytes] | None = None
+
+    def __init__(self, cmd: Sequence[str], tempfile: str | None = None):
+        self._tempfile = tempfile
+        self._returncode = 0
+        self._closed = False
+        self._proc = custom_popen(cmd)
+        self._fd = cast("RawFileLike | None", self._proc.stdout)
+
+    def read(self, n: int = -1) -> bytes:
+        """Raw read from the tool pipe."""
+        if self._fd is None:
+            return b""
+        return self._fd.read(n)
+
+    def read_exact(self, cnt: int) -> bytes:
+        """Read exactly *cnt* bytes, looping over short reads."""
+        if cnt == 0:
+            return b""
+        assert self._fd is not None
+        buf: list[bytes] = []
+        while cnt > 0:
+            data = self._fd.read(cnt)
+            if not data:
+                break
+            buf.append(data)
+            cnt -= len(data)
+        if cnt:
+            raise BadRarFile("Solid batch stream ended before all data was read")
+        if len(buf) == 1:
+            return buf[0]
+        return b"".join(buf)
+
+    def discard(self, cnt: int) -> None:
+        """Read and drop *cnt* bytes belonging to an unrequested entry."""
+        empty_read(self, cnt, config.BSIZE)
+
+    @property
+    def returncode(self) -> int:
+        """Tool exit code, available after :meth:`close`."""
+        return self._returncode
+
+    def check_returncode(self) -> None:
+        """Raise the matching exception if the tool failed."""
+        if self._returncode:
+            check_returncode(self._returncode, "", tool_setup().get_errmap())
+
+    def close(self) -> None:
+        """Drain the pipe, wait for the tool and remove temp files."""
+        if self._closed:
+            return
+        self._closed = True
+        try:
+            if self._fd is not None:
+                while self._fd.read(config.BSIZE):
+                    pass
+        finally:
+            if self._proc is not None:
+                proc = self._proc
+                if proc.stdout is not None:
+                    proc.stdout.close()
+                proc.wait()
+                self._returncode = proc.returncode
+            self._proc = None
+            self._fd = None
+            if self._tempfile:
+                try:
+                    os.unlink(self._tempfile)
+                except OSError:
+                    pass
+                self._tempfile = None
+
+    def __enter__(self) -> "SolidBatchStream":
+        return self
+
+    def __exit__(self, typ: type[BaseException] | None, value: BaseException | None,
+                 traceback: object) -> None:
+        self.close()
+
+    def __del__(self) -> None:
+        """Make sure the tool process and temp file are released."""
+        try:
+            self.close()
+        except Exception:  # pragma: no cover - best-effort cleanup
+            pass

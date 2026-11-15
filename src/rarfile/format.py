@@ -60,7 +60,7 @@ from .info import (
     Rar3SubInfo, Rar5BaseFile, Rar5EncryptionInfo, Rar5EndArcInfo,
     Rar5FileInfo, Rar5MainInfo, Rar5ServiceInfo, RarEntry, RarInfo,
 )
-from .stream import BytesReader, DirectReader, PipeReader, RarExtFile
+from .stream import BytesReader, DirectReader, PipeReader, RarExtFile, SolidBatchStream
 from .utils import (
     DateTuple, FileLike, PathLike, UnicodeFilename, XFile, is_filelike,
     membuf_tempfile, parse_dos_time, to_datetime, to_nsdatetime,
@@ -153,6 +153,7 @@ class CommonParser:
         self._vol_list: list[PathLike | FileLike] = []
         self._sfx_offset = sfx_offset
         self._part_only = part_only
+        self._has_version_entries = False
 
     def is_solid(self) -> bool:
         """Returns True if archive uses solid compression.
@@ -488,6 +489,108 @@ class CommonParser:
         cmd = setup.open_cmdline(pwd, os.fsdecode(rarfile), fn)
         return PipeReader(inf, cmd, tmpfile)
 
+    #
+    # Solid batch extraction
+    #
+
+    def _solid_segment_map(self) -> dict[int, int]:
+        """Map each entry identity to its solid segment index."""
+        mapping: dict[int, int] = {}
+        segment = -1
+        for cur in self._info_list:
+            if (cur.flags & RAR_FILE_SOLID) == 0:
+                segment += 1
+            mapping[id(cur)] = segment
+        return mapping
+
+    def solid_segment_of(self, inf: RarInfo) -> int:
+        """Return the solid segment index an entry belongs to.
+
+        Entries are decoded in archive order; a new segment starts at
+        every entry that is not itself marked solid.  Requests sharing
+        a segment also share the same prefix decoding.
+        """
+        try:
+            return self._solid_segment_map()[id(inf)]
+        except KeyError:
+            raise NoRarEntry(
+                "Entry is not part of this archive: %s" % inf.filename) from None
+
+    def plan_solid_batches(self, entries: Sequence[RarInfo]) -> list[list[int]]:
+        """Group request positions by solid segment, in archive order.
+
+        Each inner list is one extraction batch: the requests inside it
+        rely on the same solid prefix, and consecutive batches may still
+        share one tool run so that prefix is decoded only once.
+        """
+        segment_of = self._solid_segment_map()
+        positions_by_segment: dict[int, list[int]] = {}
+        for pos, inf in enumerate(entries):
+            try:
+                segment = segment_of[id(inf)]
+            except KeyError:
+                raise NoRarEntry(
+                    "Entry is not part of this archive: %s" % inf.filename) from None
+            positions_by_segment.setdefault(segment, []).append(pos)
+        return [positions_by_segment[segment]
+                for segment in sorted(positions_by_segment)]
+
+    def solid_batch_ok(self, entries: Sequence[RarInfo]) -> bool:
+        """Check whether *entries* can be served from one shared stream.
+
+        The tool emits entries in archive order without name labels, so
+        the stream can only be split reliably when every entry in the
+        archive is an ordinary file whose byte length is known.  Links,
+        version entries, redirects and split parts therefore force the
+        caller back to per-entry extraction.
+        """
+        if not entries:
+            return False
+        # skipped version entries still contribute bytes to the stream
+        if self._has_version_entries:
+            return False
+        for inf in self._info_list:
+            if not self._batch_streamable(inf):
+                return False
+        # every requested entry must be known to this parser
+        known = set(id(inf) for inf in self._info_list)
+        return all(id(inf) in known for inf in entries)
+
+    def _batch_streamable(self, inf: RarInfo) -> bool:
+        """Entry layout must allow label-free stream splitting.
+
+        Directories are accepted: they carry no data, so they align
+        trivially (a zero-length discard).  Symlinks, redirects, version
+        entries and split parts change or obscure the byte layout, so any
+        of them forces per-entry extraction instead.
+        """
+        if inf.is_dir():
+            return True
+        if inf.is_symlink():
+            return False
+        if inf.file_redir is not None:
+            return False
+        if inf.flags & RAR_FILE_VERSION:
+            return False
+        if inf.flags & (RAR_FILE_SPLIT_BEFORE | RAR_FILE_SPLIT_AFTER):
+            return False
+        return True
+
+    def open_solid_batch(self, pwd: str | None = None) -> SolidBatchStream:
+        """Launch one tool process decoding the whole solid archive.
+
+        The caller walks the entries in archive order, keeping requested
+        slices and discarding the rest, so the solid prefix is decoded
+        only once for the whole batch.
+        """
+        setup = tool_setup()
+        if is_filelike(self._rarfile):
+            tmpname = membuf_tempfile(self._rarfile)
+            cmd = setup.open_cmdline(pwd, tmpname)
+            return SolidBatchStream(cmd, tmpname)
+        cmd = setup.open_cmdline(pwd, os.fsdecode(self._rarfile))
+        return SolidBatchStream(cmd)
+
 
 #
 # RAR3 format
@@ -802,7 +905,9 @@ class RAR3Parser(CommonParser):
             assert isinstance(item, Rar3Info)
             # use only first part
             if item.flags & RAR_FILE_VERSION:
-                pass    # skip old versions
+                # old versions are skipped from the lookup, but their data
+                # still appears in the tool's stream
+                self._has_version_entries = True
             elif (item.flags & RAR_FILE_SPLIT_BEFORE) == 0:
                 self._info_map[item.filename.rstrip("/")] = item
                 self._info_list.append(item)
@@ -1251,7 +1356,9 @@ class RAR5Parser(CommonParser):
             assert isinstance(item, Rar5BaseFile)
             assert item.block_flags is not None
             if item.file_version:
-                pass    # skip old versions
+                # old versions are skipped from the lookup, but their data
+                # still appears in the tool's stream
+                self._has_version_entries = True
             elif (item.block_flags & RAR5_BLOCK_FLAG_SPLIT_BEFORE) == 0:
                 # use only first part
                 self._info_map[item.filename.rstrip("/")] = item

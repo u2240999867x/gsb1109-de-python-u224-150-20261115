@@ -9,7 +9,7 @@ import warnings
 from collections.abc import Callable, Iterable, Iterator, Sequence
 from pathlib import Path
 from types import TracebackType
-from typing import IO, Literal
+from typing import IO, Literal, cast
 
 from . import config
 from .backend import empty_read
@@ -19,7 +19,7 @@ from .bits import (
     RAR_OS_MSDOS, RAR_OS_UNIX, RAR_OS_WIN32, RAR_V3, RAR_V5,
 )
 from .errors import (
-    BadRarFile, BadSymLinkError, NotRarFile,
+    BadRarFile, BadSymLinkError, NoRarEntry, NotRarFile,
     PasswordRequired, UnsupportedWarning,
 )
 from .format import RAR3Parser, RAR5Parser
@@ -301,6 +301,154 @@ class RarFile:
 
         with self.open(name, "r", pwd) as f:
             return f.read()
+
+    def read_many(self, members: Iterable[str | Path | RarInfo],
+                  pwd: str | None = None) -> list[bytes]:
+        """Read several entries at once, sharing solid-prefix decoding.
+
+        Requests are planned into batches by the solid segment each
+        entry belongs to (:meth:`RarInfo` objects are compared by
+        identity, so entries sharing a filename stay distinct).  All
+        batches of a solid archive are then served by one tool run: the
+        archive is decoded once in archive order, keeping only the
+        requested slices while discarding bytes nobody asked for.
+        Non-solid archives and layouts whose stream cannot be split
+        reliably (links, redirects, version entries, split parts) fall
+        back to per-entry :meth:`read` automatically.
+
+        Each request owns an independent result slot: dropping one
+        member from *members* never removes the data still needed by
+        another member.
+
+        Parameters:
+
+            members
+                filenames or :class:`RarInfo` instances, in any order.
+                Passing :class:`RarInfo` objects distinguishes entries
+                that share a filename; plain names resolve to the entry
+                kept by the lookup.
+            pwd
+                password to use for extracting.
+
+        Returns:
+
+            Uncompressed byte strings in the same order as *members*.
+            Repeating one entry yields one result slot per occurrence.
+        """
+        requests = list(members)
+        if not requests:
+            return []
+
+        assert self._file_parser is not None
+        parser = self._file_parser
+
+        # identity map keeps duplicate names apart: a RarInfo is accepted
+        # only when it is literally one of this archive's entries, while
+        # plain names go through the normal lookup
+        info_list = parser.infolist()
+        by_identity = {id(inf): inf for inf in info_list}
+
+        # resolve to concrete entry objects, keeping request positions
+        entries: list[RarInfo] = []
+        for member in requests:
+            if isinstance(member, RarInfo):
+                inf = by_identity.get(id(member))
+                if inf is None:
+                    raise NoRarEntry(
+                        "RarInfo is not part of this archive: %s" % member.filename)
+            else:
+                inf = self.getinfo(member)
+            if inf.is_dir():
+                raise io.UnsupportedOperation(
+                    "Directory does not have any data: " + inf.filename)
+            entries.append(inf)
+
+        results: list[bytes | None] = [None] * len(requests)
+
+        if self.is_solid() and parser.solid_batch_ok(entries):
+            # one batch per solid segment, ordered by archive position
+            plan = parser.plan_solid_batches(entries)
+            self._read_solid_batch(parser, info_list, entries, plan, results, pwd)
+        else:
+            for pos, inf in enumerate(entries):
+                results[pos] = self._read_one(inf, pwd)
+
+        return cast("list[bytes]", results)
+
+    def _read_one(self, inf: RarInfo, pwd: str | None) -> bytes:
+        """Single-entry read, matching :meth:`open` password rules."""
+        if inf.needs_password():
+            pwd = pwd or self._password
+            if pwd is None:
+                raise PasswordRequired("File %s requires password" % inf.filename)
+        else:
+            pwd = None
+        with self.open(inf, "r", pwd) as f:
+            return f.read()
+
+    def _read_solid_batch(self, parser: RAR3Parser | RAR5Parser,
+                          info_list: Sequence[RarInfo], entries: Sequence[RarInfo],
+                          plan: Sequence[Sequence[int]], results: list[bytes | None],
+                          pwd: str | None) -> None:
+        """Decode the solid archive once and distribute slices to slots.
+
+        *plan* groups request positions by solid segment; a single tool
+        process still serves every segment so the shared prefix is
+        decoded only once.
+        """
+        # request positions keyed by entry identity, so duplicate names
+        # and repeated requests are told apart and never share a slot
+        wanted: dict[int, list[int]] = {}
+        for batch in plan:
+            for pos in batch:
+                wanted.setdefault(id(entries[pos]), []).append(pos)
+
+        batch_pwd: str | None = None
+        for inf in entries:
+            if inf.needs_password():
+                batch_pwd = pwd or self._password
+                if batch_pwd is None:
+                    raise PasswordRequired(
+                        "File %s requires password" % inf.filename)
+                break
+
+        index_by_id = {id(inf): idx for idx, inf in enumerate(info_list)}
+        last_index = max(index_by_id[id(inf)] for inf in entries)
+
+        stream = parser.open_solid_batch(batch_pwd)
+        try:
+            for index, inf in enumerate(info_list):
+                if index > last_index:
+                    break
+                slots = wanted.get(id(inf))
+                if slots is None:
+                    # solid prefix or entry nobody requested: the bytes
+                    # must still be decoded, but are discarded
+                    stream.discard(inf.file_size)
+                    continue
+                data = stream.read_exact(inf.file_size)
+                self._check_batch_crc(inf, data)
+                for pos in slots:
+                    results[pos] = data
+        finally:
+            # draining the pipe keeps the single shared decode alive
+            # until every requested slice has been collected
+            stream.close()
+        stream.check_returncode()
+
+    def _check_batch_crc(self, inf: RarInfo, data: bytes) -> None:
+        """Verify a batch slice the same way a single read would."""
+        if not self._crc_check:
+            return
+        md_class = inf._md_class
+        expect = inf._md_expect
+        if md_class is None or expect is None:
+            return
+        md = md_class()
+        md.update(data)
+        if md.digest() != expect:
+            raise BadRarFile(
+                "Corrupt file - CRC check failed: %s" % inf.filename)
 
     def close(self) -> None:
         """Release open resources."""
