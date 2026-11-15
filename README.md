@@ -41,6 +41,44 @@ Note the length of the `evtx_dump.py` script: its only 20 lines.  Now, review th
 
 Working with python-evtx is really easy!
 
+Collection Job Chains
+---------------------
+Events that describe a collection job often come from different providers. The
+start, handoff, and end records share an `ActivityID`, and a handoff carries a
+correlation identifier (`RelatedActivityID` or a `CorrelationID` field) that
+points back to the activity it came from. `Evtx.JobChain` joins those records
+into a directed activity graph:
+
+    from Evtx.JobChain import build_job_chains
+
+    report = build_job_chains(events)
+    for chain in report.chains:
+        print(chain.chain_id, chain.workload, chain.missing_start, chain.missing_end)
+        for path in chain.paths():
+            print(" -> ".join(path))
+
+Inputs may be `Evtx.Evtx.Record` objects, XML strings, or dictionaries with
+`activity_id` / `related_activity_id` (and `kind` set to `start`, `transfer`,
+or `end`). Provider and event-id role maps are supported for logs where the
+role must be inferred from metadata:
+
+    build_job_chains(
+        events,
+        provider_roles={"Collector.Start": "start", "Collector.End": "end"},
+        event_id_roles={"100": "start", "200": "transfer", "300": "end"},
+    )
+
+The result reports:
+* branches and merges: a chain may fan out from one activity and join later
+* `missing_start` and `missing_end` separately, with the affected chain heads/tails
+* `cyclic` chains with each cycle enumerated; path traversal is bounded
+* `workload`, the number of unique events, even when an event is referenced repeatedly
+
+Use the CLI for EVTX or JSON/JSONL exports:
+
+    evtx_job_chains Collection.evtx
+    evtx_job_chains events.json --event-role 100=start --event-role 300=end --json
+
 
 Installation
 ------------
