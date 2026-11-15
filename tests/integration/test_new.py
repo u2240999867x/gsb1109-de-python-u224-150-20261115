@@ -10562,3 +10562,230 @@ def test_new_write_range_overlap_detection():
     with pytest.raises(pycdlib.pycdlibexception.PyCdlibInternalError) as excinfo:
         WriteRange(0, 10) < WriteRange(5, 30)
     assert(str(excinfo.value) == 'Overlapping write WriteRange: 0 10, WriteRange: 5 30')
+
+def _breakdown_category_sum(bd):
+    return sum(v for k, v in bd.items()
+               if k not in ('logical_block_size', 'total', 'capacity', 'fits',
+                            'overflow', 'largest_files'))
+
+def test_capacity_breakdown_nofiles():
+    iso = pycdlib.PyCdlib()
+    iso.new()
+
+    out = io.BytesIO()
+    iso.write_fp(out)
+
+    bd = iso.get_capacity_breakdown()
+    assert(bd['logical_block_size'] == 2048)
+    assert(bd['system_area'] == 16 * 2048)
+    # PVD + volume descriptor set terminator + version descriptor.
+    assert(bd['volume_descriptors'] == 3 * 2048)
+    # Little-endian and big-endian path tables for the PVD, two extents each.
+    assert(bd['path_tables'] == 4 * 2048)
+    # Just the root directory.
+    assert(bd['directories'] == 2048)
+    assert(bd['directory_alignment'] == 0)
+    assert(bd['eltorito_catalog'] == 0)
+    assert(bd['file_data'] == 0)
+    assert(bd['total'] == len(out.getvalue()))
+    assert(_breakdown_category_sum(bd) == bd['total'])
+    iso.close()
+
+def test_capacity_breakdown_onefile():
+    iso = pycdlib.PyCdlib()
+    iso.new()
+    foostr = b'foo\n'
+    iso.add_fp(io.BytesIO(foostr), len(foostr), '/FOO.;1')
+
+    out = io.BytesIO()
+    iso.write_fp(out)
+
+    bd = iso.get_capacity_breakdown()
+    # A 4-byte file still occupies a whole Logical Block.
+    assert(bd['file_data'] == 2048)
+    assert(bd['total'] == len(out.getvalue()))
+    assert(_breakdown_category_sum(bd) == bd['total'])
+    iso.close()
+
+def test_capacity_breakdown_hard_link_counted_once():
+    iso = pycdlib.PyCdlib()
+    iso.new()
+    iso.add_fp(io.BytesIO(b'a' * 5000), 5000, '/BIG.;1')
+    before = iso.get_capacity_breakdown()
+
+    iso.add_hard_link(iso_old_path='/BIG.;1', iso_new_path='/BIG2.;1')
+    after = iso.get_capacity_breakdown()
+
+    # The hard link shares the inode, so the data is only counted once.
+    assert(after['file_data'] == before['file_data'])
+
+    out = io.BytesIO()
+    iso.write_fp(out)
+    assert(after['total'] == len(out.getvalue()))
+    assert(_breakdown_category_sum(after) == after['total'])
+    iso.close()
+
+def test_capacity_breakdown_zero_byte_files_grow_directories():
+    iso = pycdlib.PyCdlib()
+    iso.new()
+    before = iso.get_capacity_breakdown()
+    assert(before['directories'] == 2048)
+
+    # Zero-byte files have no data extents, but their directory records
+    # still take space; enough of them push the root directory into a
+    # second extent.
+    for i in range(100):
+        iso.add_fp(io.BytesIO(b''), 0, '/F%03d.;1' % i)
+
+    after = iso.get_capacity_breakdown()
+    assert(after['file_data'] == 0)
+    assert(after['directories'] == 4096)
+
+    out = io.BytesIO()
+    iso.write_fp(out)
+    assert(after['total'] == len(out.getvalue()))
+    assert(_breakdown_category_sum(after) == after['total'])
+    iso.close()
+
+def test_capacity_breakdown_joliet():
+    iso = pycdlib.PyCdlib()
+    iso.new(joliet=3)
+    iso.add_fp(io.BytesIO(b'x' * 100), 100, '/J.;1', joliet_path='/j')
+
+    out = io.BytesIO()
+    iso.write_fp(out)
+
+    bd = iso.get_capacity_breakdown()
+    # Path tables for both the PVD and Joliet, two extents per table.
+    assert(bd['path_tables'] == 8 * 2048)
+    # The PVD and Joliet root directories.
+    assert(bd['directories'] == 2 * 2048)
+    # The file data is shared between the PVD and Joliet views.
+    assert(bd['file_data'] == 2048)
+    assert(bd['total'] == len(out.getvalue()))
+    assert(_breakdown_category_sum(bd) == bd['total'])
+    iso.close()
+
+def test_capacity_breakdown_rock_ridge():
+    iso = pycdlib.PyCdlib()
+    iso.new(rock_ridge='1.09')
+    iso.add_fp(io.BytesIO(b'y' * 10), 10, '/R.;1', rr_name='r')
+
+    out = io.BytesIO()
+    iso.write_fp(out)
+
+    bd = iso.get_capacity_breakdown()
+    # The Rock Ridge 'ER' sector shows up as other metadata.
+    assert(bd['other_metadata'] == 2048)
+    assert(bd['total'] == len(out.getvalue()))
+    assert(_breakdown_category_sum(bd) == bd['total'])
+    iso.close()
+
+def test_capacity_breakdown_udf():
+    iso = pycdlib.PyCdlib()
+    iso.new(udf='2.60')
+    iso.add_fp(io.BytesIO(b'z' * 10), 10, udf_path='/u')
+
+    out = io.BytesIO()
+    iso.write_fp(out)
+
+    bd = iso.get_capacity_breakdown()
+    # UDF reserves a lot of metadata (descriptor sequences, anchors, the
+    # File Set Descriptor, and File Entries).
+    assert(bd['other_metadata'] > 200 * 2048)
+    assert(bd['file_data'] == 2048)
+    assert(bd['total'] == len(out.getvalue()))
+    assert(_breakdown_category_sum(bd) == bd['total'])
+    iso.close()
+
+def test_capacity_breakdown_eltorito():
+    iso = pycdlib.PyCdlib()
+    iso.new()
+    bootstr = b'boot' * 512
+    iso.add_fp(io.BytesIO(bootstr), len(bootstr), '/BOOT.;1')
+    iso.add_eltorito('/BOOT.;1', bootcatfile='/BOOT.CAT;1')
+
+    out = io.BytesIO()
+    iso.write_fp(out)
+
+    bd = iso.get_capacity_breakdown()
+    assert(bd['eltorito_catalog'] == 2048)
+    assert(bd['file_data'] == 2048)
+    assert(bd['total'] == len(out.getvalue()))
+    assert(_breakdown_category_sum(bd) == bd['total'])
+    iso.close()
+
+def test_capacity_breakdown_parsed_iso():
+    iso = pycdlib.PyCdlib()
+    iso.new()
+    iso.add_fp(io.BytesIO(b'foo\n'), 4, '/FOO.;1')
+    out = io.BytesIO()
+    iso.write_fp(out)
+    iso.close()
+
+    out.seek(0)
+    iso2 = pycdlib.PyCdlib()
+    iso2.open_fp(out)
+    bd = iso2.get_capacity_breakdown()
+    assert(bd['total'] == len(out.getvalue()))
+    assert(_breakdown_category_sum(bd) == bd['total'])
+
+    # Modifying the parsed ISO invalidates the layout; the breakdown must
+    # still match what would be written.
+    iso2.add_fp(io.BytesIO(b'n' * 3000), 3000, '/NEW.;1')
+    bd = iso2.get_capacity_breakdown()
+    out2 = io.BytesIO()
+    iso2.write_fp(out2)
+    assert(bd['total'] == len(out2.getvalue()))
+    assert(_breakdown_category_sum(bd) == bd['total'])
+    iso2.close()
+
+def test_capacity_breakdown_capacity_fits():
+    iso = pycdlib.PyCdlib()
+    iso.new()
+    iso.add_fp(io.BytesIO(b'foo\n'), 4, '/FOO.;1')
+
+    bd = iso.get_capacity_breakdown()
+    total = bd['total']
+
+    bd = iso.get_capacity_breakdown(capacity=total)
+    assert(bd['capacity'] == total)
+    assert(bd['fits'])
+    assert(bd['overflow'] == 0)
+
+    bd = iso.get_capacity_breakdown(capacity=total + 1000)
+    assert(bd['fits'])
+    assert(bd['overflow'] == 0)
+    iso.close()
+
+def test_capacity_breakdown_capacity_overflow():
+    iso = pycdlib.PyCdlib()
+    iso.new()
+    iso.add_fp(io.BytesIO(b'a' * 5000), 5000, '/BIG.;1')
+    iso.add_fp(io.BytesIO(b'foo\n'), 4, '/FOO.;1')
+
+    total = iso.get_capacity_breakdown()['total']
+
+    bd = iso.get_capacity_breakdown(capacity=total - 1000)
+    assert(not bd['fits'])
+    assert(bd['overflow'] == 1000)
+    # The sources of the overflow are reported, largest first; the 5000-byte
+    # file occupies 3 Logical Blocks.
+    assert(bd['largest_files'][0] == ('/BIG.;1', 3 * 2048))
+    assert(bd['largest_files'][1] == ('/FOO.;1', 2048))
+    iso.close()
+
+def test_capacity_breakdown_not_initialized():
+    iso = pycdlib.PyCdlib()
+    with pytest.raises(pycdlib.pycdlibexception.PyCdlibInvalidInput) as excinfo:
+        iso.get_capacity_breakdown()
+    assert(str(excinfo.value) == 'This object is not initialized; call either open() or new() to create an ISO')
+
+def test_capacity_breakdown_invalid_capacity():
+    iso = pycdlib.PyCdlib()
+    iso.new()
+    for bad in (0, -1, 1.5, '700MB', True):
+        with pytest.raises(pycdlib.pycdlibexception.PyCdlibInvalidInput) as excinfo:
+            iso.get_capacity_breakdown(capacity=bad)
+        assert(str(excinfo.value) == 'capacity must be a positive integer number of bytes')
+    iso.close()

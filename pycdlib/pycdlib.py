@@ -4931,6 +4931,198 @@ class PyCdlib:
 
         return extents
 
+    def _inode_display_path(self, ino):
+        # type: (inode.Inode) -> str
+        """
+        An internal method to get a human-readable path for an inode, for
+        capacity reporting.  ISO9660 (PVD) records are preferred, then any
+        other directory record or UDF File Entry linked to the inode.
+
+        Args:
+            ino: The inode to get the display path for.
+        Returns:
+            A string path for the inode, or a placeholder if the inode is
+            only referenced by El Torito boot entries.
+        """
+        for rec, is_pvd in ino.linked_records:
+            if is_pvd and isinstance(rec, dr.DirectoryRecord):
+                return self.full_path_from_dirrecord(rec)
+        for rec, is_pvd_unused in ino.linked_records:
+            if isinstance(rec, (dr.DirectoryRecord, udfmod.UDFFileEntry)):
+                return self.full_path_from_dirrecord(rec)
+        return '<boot image>'
+
+    def _largest_file_contributors(self, limit):
+        # type: (int) -> List[Tuple[str, int]]
+        """
+        An internal method to get the files that contribute the most
+        allocated space to the ISO, for capacity reporting.  Each unique
+        inode is reported once, no matter how many hard links point at it.
+
+        Args:
+            limit: The maximum number of entries to return.
+        Returns:
+            A list of (path, allocated bytes) tuples, largest first.
+        """
+        contributors = []  # type: List[Tuple[str, int]]
+        for ino in self.inodes:
+            data_length = ino.get_data_length()
+            if data_length == 0:
+                continue
+            allocated = utils.ceiling_div(data_length,
+                                          self.logical_block_size) * self.logical_block_size
+            contributors.append((self._inode_display_path(ino), allocated))
+        contributors.sort(key=lambda item: item[1], reverse=True)
+        return contributors[:limit]
+
+    def get_capacity_breakdown(self, capacity=None):
+        # type: (Optional[int]) -> Dict[str, Any]
+        """
+        Compute how much space the ISO will occupy when written out, broken
+        down by category, so it is possible to tell whether the data fits on
+        the target disc *before* mastering it.
+
+        The returned dictionary maps category names to the number of bytes
+        each occupies in the written ISO:
+
+        - ``logical_block_size``: The Logical Block size used for all of the
+          per-extent sizes below.
+        - ``system_area``: The System Area (sectors 0-15); empty unless the
+          ISO is isohybrid.
+        - ``volume_descriptors``: The volume descriptors (PVD, boot records,
+          supplementary and terminator descriptors, UDF recognition
+          sequence, version descriptor).
+        - ``path_tables``: The little-endian and big-endian Path Tables for
+          the PVD and, if present, Joliet.
+        - ``directories``: The directory extents of the PVD and Joliet
+          trees.  Directory records for zero-byte files live here, so empty
+          files can still grow the ISO.
+        - ``directory_alignment``: Padding inserted so that directories
+          start on Logical Sector boundaries (only non-zero when the
+          Logical Block size is smaller than 2048).
+        - ``eltorito_catalog``: The El Torito boot catalog, if present.
+        - ``file_data``: The extents holding file contents.  Hard links (and
+          the PVD/Joliet/UDF views of the same file) share a single inode,
+          so shared data is counted exactly once.
+        - ``other_metadata``: Everything else: UDF descriptor sequences,
+          anchors, File Entries and reserved extents, and the Rock Ridge
+          'ER' sector and Continuation Areas.
+        - ``total``: The total size of the ISO in bytes; this is exactly
+          what :meth:`write_fp` would produce.
+
+        If ``capacity`` is given, the dictionary additionally contains:
+
+        - ``capacity``: The capacity that was passed in.
+        - ``fits``: True if ``total`` is less than or equal to ``capacity``.
+        - ``overflow``: How many bytes the ISO exceeds ``capacity`` by
+          (0 when it fits).
+        - ``largest_files``: A list of (path, allocated bytes) tuples for
+          the 10 largest files, so the source of an overflow can be
+          identified without writing anything out.
+
+        Args:
+            capacity: If not None, the capacity of the target medium in
+                bytes (for example 737280000 for an 80-minute CD-R).
+        Returns:
+            A dictionary with the capacity breakdown described above.
+        """
+        if not self._initialized:
+            raise pycdlibexception.PyCdlibInvalidInput('This object is not initialized; call either open() or new() to create an ISO')
+
+        if capacity is not None:
+            if not isinstance(capacity, int) or isinstance(capacity, bool) or capacity <= 0:
+                raise pycdlibexception.PyCdlibInvalidInput('capacity must be a positive integer number of bytes')
+
+        # The sizes below come from the extent layout, which is only
+        # assigned during a reshuffle; force one if the ISO was modified
+        # since the last layout.
+        if self._needs_reshuffle:
+            self._reshuffle_extents()
+
+        log_block_size = self.logical_block_size
+
+        # The System Area (sectors 0-15) always precedes the volume
+        # descriptors.
+        system_area = _VOLUME_DESCRIPTOR_SET_START_SECTOR * _LOGICAL_SECTOR_SIZE
+
+        # Each volume descriptor occupies one Logical Sector.
+        num_descriptors = len(self.pvds) + len(self.brs) + len(self.svds) + len(self.vdsts)
+        if self._has_udf:
+            num_descriptors += len(self.udf_beas) + len(self.udf_boots) + 1 + len(self.udf_teas)
+        if self.version_vd is not None:
+            num_descriptors += 1
+        volume_descriptors = num_descriptors * _LOGICAL_SECTOR_SIZE
+
+        # The PVD (and Joliet, if present) each have a little-endian and a
+        # big-endian Path Table.
+        path_tables = self.pvd.path_table_num_extents * 2
+        if self.joliet_vd is not None:
+            path_tables += self.joliet_vd.path_table_num_extents * 2
+        path_tables *= log_block_size
+
+        # Directory extents.  Every directory occupies whole Logical Blocks;
+        # Rock Ridge child-link placeholders get no extent of their own.
+        directories = 0
+        for vd in (self.pvd, self.joliet_vd):
+            if vd is None:
+                continue
+            dirqueue = collections.deque([vd.root_directory_record()])
+            while dirqueue:
+                dirrec = dirqueue.popleft()
+                rec_rr = dirrec.rock_ridge
+                if rec_rr is None or not rec_rr.child_link_record_exists():
+                    directories += utils.ceiling_div(dirrec.data_length,
+                                                     log_block_size) * log_block_size
+                for child in dirrec.children:
+                    if child.is_dot() or child.is_dotdot():
+                        continue
+                    if child.is_dir():
+                        dirqueue.append(child)
+
+        # Padding inserted so directories start on Logical Sector boundaries.
+        directory_alignment = self._dir_alignment_blocks * log_block_size
+
+        eltorito_catalog = 0
+        if self.eltorito_boot_catalog is not None:
+            eltorito_catalog = utils.ceiling_div(self.eltorito_boot_catalog.dirrecords[0].get_data_length(),
+                                                 log_block_size) * log_block_size
+
+        # File data.  Hard links share a single inode, so summing over the
+        # unique inodes counts shared data exactly once.
+        file_data = 0
+        for ino in self.inodes:
+            file_data += utils.ceiling_div(ino.get_data_length(),
+                                           log_block_size) * log_block_size
+
+        total = self.pvd.space_size * log_block_size
+
+        accounted = (system_area + volume_descriptors + path_tables +
+                     directories + directory_alignment + eltorito_catalog +
+                     file_data)
+        other_metadata = total - accounted
+
+        breakdown = {
+            'logical_block_size': log_block_size,
+            'system_area': system_area,
+            'volume_descriptors': volume_descriptors,
+            'path_tables': path_tables,
+            'directories': directories,
+            'directory_alignment': directory_alignment,
+            'eltorito_catalog': eltorito_catalog,
+            'file_data': file_data,
+            'other_metadata': other_metadata,
+            'total': total,
+        }  # type: Dict[str, Any]
+
+        if capacity is not None:
+            overflow = max(0, total - capacity)
+            breakdown['capacity'] = capacity
+            breakdown['fits'] = overflow == 0
+            breakdown['overflow'] = overflow
+            breakdown['largest_files'] = self._largest_file_contributors(10)
+
+        return breakdown
+
     def get_and_write(self, iso_path, local_path, blocksize=8192):
         # type: (str, str, int) -> None
         """
