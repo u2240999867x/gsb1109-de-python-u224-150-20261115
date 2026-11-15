@@ -12,7 +12,6 @@ XPath 2.0 implementation - part 3 (functions)
 """
 import math
 import datetime
-import time
 import re
 import os.path
 import unicodedata
@@ -29,7 +28,8 @@ from elementpath.namespaces import XML_ID, XML_LANG, XML_NAMESPACE
 from elementpath.helpers import Patterns, is_idrefs, is_xml_codepoint, round_number
 from elementpath.datatypes import DateTime10, DateTime, Date10, Date, \
     Float, DoubleProxy, Time, Duration, DayTimeDuration, YearMonthDuration, \
-    UntypedAtomic, AnyURI, QName, NCName, Id, ArithmeticProxy, NumericProxy
+    UntypedAtomic, AnyURI, QName, NCName, Id, ArithmeticProxy, NumericProxy, \
+    UTC_TIMEZONE
 from elementpath.aliases import AtomicType, NumericType
 from elementpath.namespaces import get_namespace, split_expanded_name
 from elementpath.sequences import xlist
@@ -1414,7 +1414,10 @@ def evaluate__current_datetime(self: XPathFunction, context: ta.ContextType = No
     if self.context is not None:
         context = self.context
 
-    dt_ = datetime.datetime.now() if context is None else context.current_dt
+    if context is None:
+        dt_ = datetime.datetime.now(tz=UTC_TIMEZONE)
+    else:
+        dt_ = context.current_dt
     if self.parser.xsd_version != '1.0':
         return DateTime(dt_.year, dt_.month, dt_.day, dt_.hour, dt_.minute,
                         dt_.second, dt_.microsecond, dt_.tzinfo)
@@ -1427,7 +1430,10 @@ def evaluate__current_date(self: XPathFunction, context: ta.ContextType = None) 
     if self.context is not None:
         context = self.context
 
-    dt = datetime.datetime.now() if context is None else context.current_dt
+    if context is None:
+        dt = datetime.datetime.now(tz=UTC_TIMEZONE)
+    else:
+        dt = context.current_dt
     if self.parser.xsd_version == '1.1':
         return Date(dt.year, dt.month, dt.day, tzinfo=dt.tzinfo)
     return Date10(dt.year, dt.month, dt.day, tzinfo=dt.tzinfo)
@@ -1438,7 +1444,10 @@ def evaluate__current_time(self: XPathFunction, context: ta.ContextType = None) 
     if self.context is not None:
         context = self.context
 
-    dt = datetime.datetime.now() if context is None else context.current_dt
+    if context is None:
+        dt = datetime.datetime.now(tz=UTC_TIMEZONE)
+    else:
+        dt = context.current_dt
     return Time(dt.hour, dt.minute, dt.second, dt.microsecond, dt.tzinfo)
 
 
@@ -1448,10 +1457,11 @@ def evaluate__implicit_timezone(self: XPathFunction, context: ta.ContextType = N
     if self.context is not None:
         context = self.context
 
-    if context is not None and context.timezone is not None:
-        return DayTimeDuration.fromtimedelta(context.timezone.offset)
+    if context is not None:
+        timezone = context.implicit_timezone
     else:
-        return DayTimeDuration.fromtimedelta(datetime.timedelta(seconds=time.timezone))
+        timezone = UTC_TIMEZONE
+    return DayTimeDuration.fromtimedelta(timezone.offset)
 
 
 ###

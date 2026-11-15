@@ -26,7 +26,6 @@ import locale
 import math
 import os
 import platform
-import time
 from textwrap import dedent
 from decimal import Decimal
 
@@ -176,9 +175,10 @@ class XPath2FunctionsTest(xpath_test_class.XPathTestCase):
         self.check_value("fn:max((5, 5.0e0))", 5.0e0)
         self.check_value("fn:max((xs:float(1.0E0), xs:double(15.0)))", 15.0)
         self.wrong_type("fn:max((3,4,'Zero'))")
-        dt = datetime.datetime.now()
+        context = XPathContext(root=self.etree.XML('<A/>'), timezone='+08:00')
+        dt = context.current_dt
         self.check_value('fn:max((fn:current-date(), xs:date("2001-01-01")))',
-                         Date(dt.year, dt.month, dt.day, tzinfo=dt.tzinfo))
+                         Date(dt.year, dt.month, dt.day, tzinfo=dt.tzinfo), context)
         self.check_value('fn:max(("a", "b", "c"))', 'c')
 
         root = self.etree.XML('<a><b>1</b><b>9</b></a>')
@@ -1479,7 +1479,7 @@ class XPath2FunctionsTest(xpath_test_class.XPathTestCase):
         self.check_value(path='fn:current-time()', context=context,
                          expected=Time.fromdatetime(context.current_dt))
         self.check_value(path='fn:implicit-timezone()', context=context,
-                         expected=DayTimeDuration(seconds=time.timezone))
+                         expected=DayTimeDuration.fromstring('PT0S'))
         context.timezone = Timezone.fromstring('-05:00')
         self.check_value(path='fn:implicit-timezone()', context=context,
                          expected=DayTimeDuration.fromstring('-PT5H'))

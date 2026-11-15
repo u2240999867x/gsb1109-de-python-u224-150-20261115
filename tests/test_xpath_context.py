@@ -8,6 +8,7 @@
 #
 # @author Davide Brunato <brunato@sissa.it>
 #
+import datetime
 import unittest
 from copy import copy
 from unittest.mock import patch
@@ -57,8 +58,40 @@ class XPathContextTest(unittest.TestCase):
     def test_timezone_argument(self):
         context = XPathContext(self.root)
         self.assertIsNone(context.timezone)
+        self.assertEqual(context.implicit_timezone, datatypes.UTC_TIMEZONE)
+        self.assertEqual(context.implicit_timezone_usage, [])
         context = XPathContext(self.root, timezone='Z')
         self.assertIsInstance(context.timezone, datatypes.Timezone)
+
+    def test_default_implicit_timezone_is_utc(self):
+        context = XPathContext(self.root)
+        self.assertEqual(context.implicit_timezone, datatypes.UTC_TIMEZONE)
+        self.assertIsNotNone(context.current_dt.tzinfo)
+        self.assertEqual(context.current_dt.utcoffset(), datetime.timedelta(0))
+
+        context = XPathContext(self.root, timezone='+05:30')
+        self.assertEqual(context.implicit_timezone, datatypes.Timezone.fromstring('+05:30'))
+        self.assertEqual(context.current_dt.utcoffset(), datetime.timedelta(hours=5, minutes=30))
+
+    def test_current_dt_without_timezone(self):
+        current_dt = datetime.datetime(2020, 1, 1, 12, 0)
+        context = XPathContext(self.root, current_dt=current_dt, timezone='-05:00')
+        self.assertEqual(context.current_dt,
+                         datetime.datetime(2020, 1, 1, 12, 0,
+                                           tzinfo=datatypes.Timezone.fromstring('-05:00')))
+
+    def test_implicit_timezone_usage(self):
+        context = XPathContext(self.root, timezone='+08:00')
+        context.record_implicit_timezone_usage('2020-01-01+08:00', 'xs:date("2020-01-01")')
+        self.assertEqual(len(context.implicit_timezone_usage), 1)
+        self.assertEqual(context.implicit_timezone_usage[0], '2020-01-01+08:00')
+        self.assertEqual(context.implicit_timezone_usage[0].timezone,
+                         datatypes.Timezone.fromstring('+08:00'))
+
+        copy(context).record_implicit_timezone_usage(
+            '2020-01-02+08:00', 'xs:date("2020-01-02")'
+        )
+        self.assertEqual(len(context.implicit_timezone_usage), 2)
 
     def test_repr(self):
         self.assertEqual(repr(XPathContext(self.root)), f"XPathContext(root={self.root})")

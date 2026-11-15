@@ -659,6 +659,100 @@ class XPath2ParserTest(test_xpath1_parser.XPath1ParserTest):
         self.check_value('xs:time("24:00:00") - xs:time("23:59:59")',
                          DayTimeDuration.fromstring('-PT23H59M59S'), context)
 
+    def test_implicit_timezone_is_per_dynamic_context(self):
+        root = self.etree.XML('<A/>')
+        token = self.parser.parse('xs:date("2000-01-01") - xs:date("2000-01-01Z")')
+
+        context = XPathContext(root, timezone='+05:00')
+        self.assertEqual(token.evaluate(context), DayTimeDuration.fromstring('-PT5H'))
+        self.assertEqual([str(x) for x in context.implicit_timezone_usage],
+                         ['2000-01-01+05:00'])
+
+        context = XPathContext(root, timezone='-03:00')
+        self.assertEqual(token.evaluate(context), DayTimeDuration.fromstring('PT3H'))
+        self.assertEqual([str(x) for x in context.implicit_timezone_usage],
+                         ['2000-01-01-03:00'])
+
+        context = XPathContext(root)
+        self.assertEqual(token.evaluate(context), DayTimeDuration.fromstring('PT0S'))
+        self.assertEqual([str(x) for x in context.implicit_timezone_usage],
+                         ['2000-01-01Z'])
+
+    def test_implicit_timezone_does_not_modify_variables(self):
+        date = Date.fromstring('2000-01-01')
+        token = self.parser.parse('$date - xs:date("2000-01-01Z")')
+
+        context = XPathContext(self.etree.XML('<A/>'), variables={'date': date},
+                               timezone='+05:00')
+        self.assertEqual(token.evaluate(context), DayTimeDuration.fromstring('-PT5H'))
+        self.assertIsNone(date.tzinfo)
+
+        context = XPathContext(self.etree.XML('<A/>'), variables={'date': date})
+        self.assertEqual(token.evaluate(context), DayTimeDuration.fromstring('PT0S'))
+        self.assertIsNone(date.tzinfo)
+
+    def test_implicit_timezone_usage_records(self):
+        root = self.etree.XML('<A><date>2000-01-01</date></A>')
+        token = self.parser.parse('/A/date = xs:date("2000-01-01")')
+        context = XPathContext(root, timezone='+08:00')
+
+        self.assertTrue(token.evaluate(context))
+        usage = context.implicit_timezone_usage
+        self.assertEqual(len(usage), 2)
+        self.assertEqual({x.original for x in usage}, {'2000-01-01'})
+        self.assertEqual({x.source for x in usage}, {'/A/date', "xs:date('2000-01-01')"})
+        self.assertTrue(all(str(x) == '2000-01-01+08:00' for x in usage))
+
+    def test_implicit_timezone_usage_can_be_cleared(self):
+        context = XPathContext(self.etree.XML('<A/>'), timezone='+05:00')
+        token = self.parser.parse('xs:date("2000-01-01") - xs:date("2000-01-01Z")')
+
+        token.evaluate(context)
+        self.assertEqual(len(context.implicit_timezone_usage), 1)
+        context.clear_implicit_timezone_usage()
+        self.assertEqual(context.implicit_timezone_usage, [])
+
+        token.evaluate(context)
+        self.assertEqual([str(x) for x in context.implicit_timezone_usage],
+                         ['2000-01-01+05:00'])
+
+    def test_datetime_comparison_uses_declared_types(self):
+        context = XPathContext(self.etree.XML('<A/>'), timezone='+05:00')
+
+        self.wrong_type('xs:date("2000-01-01") eq xs:dateTime("2000-01-01T00:00:00")')
+        self.wrong_type('xs:date("2000-01-01") = xs:dateTime("2000-01-01T00:00:00")')
+        self.wrong_type('xs:time("10:00:00") eq xs:dateTime("2000-01-01T10:00:00")')
+        self.wrong_type('xs:gYear("2000") = xs:gYearMonth("2000-01")')
+        self.wrong_type('xs:gMonthDay("--01-01") = xs:date("2020-01-01")')
+
+        self.check_value('xs:date("2000-01-01") eq xs:date("2000-01-01")', True, context)
+        self.check_value('xs:dateTime("2000-01-01T00:00:00") '
+                         'eq xs:dateTime("2000-01-01T00:00:00")', True, context)
+        self.check_value('xs:time("10:00:00") eq xs:time("10:00:00")', True, context)
+
+    def test_untyped_values_are_cast_to_declared_type(self):
+        root = self.etree.XML('<A><date>2000-01-01</date><time>10:00:00</time></A>')
+        context = XPathContext(root, timezone='+08:00')
+
+        self.check_value('/A/date = xs:date("2000-01-01")', True, context)
+        self.check_value('/A/date = xs:date("2000-01-01+08:00")', True, context)
+        self.check_value('/A/time = xs:time("10:00:00")', True, context)
+        self.check_value('/A/time = xs:time("02:00:00Z")', True, context)
+
+        self.wrong_type('/A/date eq xs:date("2000-01-01")', context=context)
+        self.wrong_value('/A/date = xs:dateTime("2000-01-01T00:00:00")', context=context)
+
+    def test_current_functions_use_context_timezone(self):
+        context = XPathContext(self.etree.XML('<A/>'), timezone='+05:00')
+        self.assertEqual(self.parser.parse('implicit-timezone()').evaluate(context),
+                         DayTimeDuration.fromstring('PT5H'))
+        self.assertEqual(self.parser.parse('current-dateTime()').evaluate(context).tzinfo,
+                         Timezone.fromstring('+05:00'))
+
+        context = XPathContext(self.etree.XML('<A/>'))
+        self.assertEqual(self.parser.parse('implicit-timezone()').evaluate(context),
+                         DayTimeDuration.fromstring('PT0S'))
+
     def test_add_year_month_duration_to_datetime(self):
         self.check_value('xs:dateTime("2000-10-30T11:12:00") + xs:yearMonthDuration("P1Y2M")',
                          DateTime.fromstring("2001-12-30T11:12:00"))

@@ -14,7 +14,7 @@ from typing import Any, Optional, Union
 
 from elementpath.aliases import NamespacesType, InputType, ParserClassType, \
     RootArgType, ItemArgType
-from elementpath.xpath_context import XPathContext
+from elementpath.xpath_context import XPathContext, ImplicitTimezoneUsage
 from elementpath.xpath2 import XPath2Parser
 from elementpath.datatypes import Timezone
 from elementpath.schema_proxy import AbstractSchemaProxy
@@ -61,7 +61,7 @@ def select(root: Optional[RootArgType],
     :param variables: dictionary of context variables that maps a QName to a value.
     :param current_dt: current dateTime of the implementation, including explicit timezone.
     :param timezone: implicit timezone to be used when a date, time, or dateTime value does \
-    not have a timezone.
+    not have a timezone. If not provided the implicit timezone is UTC.
     :param kwargs: other optional parameters for the parser instance.
     :return: a list with XPath nodes or a basic type for expressions based \
     on a function or literal.
@@ -119,7 +119,7 @@ def iter_select(root: Optional[RootArgType],
     :param variables: dictionary of context variables that maps a QName to a value.
     :param current_dt: current dateTime of the implementation, including explicit timezone.
     :param timezone: implicit timezone to be used when a date, time, or dateTime value does \
-    not have a timezone.
+    not have a timezone. If not provided the implicit timezone is UTC.
     :param kwargs: other optional parameters for the parser instance.
     :return: a generator of the XPath expression results.
     """
@@ -166,6 +166,7 @@ class Selector(object):
         self.parser = (parser or XPath2Parser)(namespaces, **kwargs)
         self.path = path
         self.root_token = self.parser.parse(path)
+        self._implicit_timezone_usage: list[ImplicitTimezoneUsage] = []
 
     def __repr__(self) -> str:
         return '%s(path=%r, parser=%s)' % (
@@ -193,7 +194,17 @@ class Selector(object):
             kwargs['variables'] = self._variables
 
         context = XPathContext(root, **kwargs)
-        return self.root_token.get_results(context)
+        result = self.root_token.get_results(context)
+        self._implicit_timezone_usage = context.implicit_timezone_usage
+        return result
+
+    def get_implicit_timezone_usage(self) -> list[ImplicitTimezoneUsage]:
+        """
+        Returns the date/time values that borrowed the implicit timezone in the
+        last select/iter_select call. Each call starts from a new dynamic context,
+        so records never accumulate across batches.
+        """
+        return self._implicit_timezone_usage
 
     def iter_select(self, root: Optional[RootArgType], **kwargs: Any) -> Iterator[Any]:
         """
@@ -211,4 +222,13 @@ class Selector(object):
             kwargs['variables'] = self._variables
 
         context = XPathContext(root, **kwargs)
-        return self.root_token.select_results(context)
+        generator = self.root_token.select_results(context)
+        self._implicit_timezone_usage = context.implicit_timezone_usage
+
+        def iter_results() -> Iterator[Any]:
+            try:
+                yield from generator
+            finally:
+                self._implicit_timezone_usage = context.implicit_timezone_usage
+
+        return iter_results()

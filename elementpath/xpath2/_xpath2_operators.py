@@ -25,7 +25,7 @@ from elementpath.namespaces import XSD_NAMESPACE, XSD_NOTATION, XSD_ANY_ATOMIC_T
 from elementpath.helpers import numeric_equal, numeric_not_equal, \
     node_position, get_double
 from elementpath.namespaces import XSD_ERROR, get_namespace, get_expanded_name
-from elementpath.datatypes import UntypedAtomic, QName, AnyURI, \
+from elementpath.datatypes import AbstractDateTime, UntypedAtomic, QName, AnyURI, \
     Duration, Integer, DoubleProxy10
 from elementpath.xpath_nodes import ElementNode, DocumentNode, XPathNode, AttributeNode
 from elementpath.sequences import xlist
@@ -519,6 +519,9 @@ def evaluate__value_comparison_operators(self: XPathToken, context: ta.ContextTy
 
     if any(x is None for x in operands):
         return []
+    elif isinstance(operands[0], AbstractDateTime) \
+            and isinstance(operands[1], AbstractDateTime):
+        operands = list(self.get_datetime_operands(context, *operands))
     elif any(isinstance(x, XPathFunction) for x in operands):
         raise self.error('FOTY0013', "cannot compare a function item")
     elif all(isinstance(x, DoubleProxy10) for x in operands):

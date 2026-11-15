@@ -21,13 +21,41 @@ from elementpath.protocols import ElementProtocol, DocumentProtocol
 from elementpath.exceptions import ElementPathTypeError
 from elementpath.tdop import Token
 from elementpath.sequences import XSequence
-from elementpath.datatypes import AnyAtomicType, Timezone, Language
+from elementpath.datatypes import AnyAtomicType, Timezone, Language, UTC_TIMEZONE
 from elementpath.etree import is_etree_element, is_etree_element_instance, is_etree_document
 from elementpath.xpath_nodes import XPathNode, AttributeNode, NamespaceNode, \
     CommentNode, ProcessingInstructionNode, ElementNode, DocumentNode
 from elementpath.tree_builders import get_node_tree
 
-__all__ = ['XPathContext', 'XPathSchemaContext']
+__all__ = ['XPathContext', 'XPathSchemaContext', 'ImplicitTimezoneUsage']
+
+
+class ImplicitTimezoneUsage(str):
+    """
+    A record of a date/time value that borrowed the implicit timezone.
+
+    The string representation is the value with the borrowed timezone applied,
+    so usage records can be compared directly with formatted values.
+    """
+    timezone: Timezone
+    source: str | None
+    original: str
+
+    def __new__(cls, value: Any, timezone: Timezone,
+                source: str | None = None,
+                original: str | None = None) -> 'ImplicitTimezoneUsage':
+        obj = super().__new__(cls, str(value))
+        obj.timezone = timezone
+        obj.source = source
+        obj.original = str(value) if original is None else original
+        return obj
+
+    @property
+    def value(self) -> str:
+        return str(self)
+
+    def __repr__(self) -> str:
+        return f"ImplicitTimezoneUsage({str(self)!r}, timezone={self.timezone!r})"
 
 
 class XPathContext:
@@ -62,7 +90,9 @@ class XPathContext:
     :param variables: Dictionary of context variables that maps a QName to a value.
     :param current_dt: Current dateTime of the implementation, including explicit timezone.
     :param timezone: Implicit timezone to be used when a date, time, or dateTime value does \
-    not have a timezone.
+    not have a timezone. If not provided the implicit timezone is UTC, so that the evaluation \
+    is independent from the timezone of the machine that runs the query. Values that borrow \
+    the implicit timezone are recorded in the *implicit_timezone_usage* list.
     :param documents: Available documents. This is a mapping of absolute URI \
     strings into document nodes. Used by the function fn:doc.
     :param collections: Available collections. This is a mapping of absolute URI \
@@ -89,6 +119,8 @@ class XPathContext:
     documents: dict[str, DocumentNode] | None = None
     collections: dict[str, list[XPathNode]] | None = None
     default_collection: list[XPathNode] | None = None
+
+    implicit_timezone_usage: list['ImplicitTimezoneUsage']
 
     __slots__ = ('document', 'root', 'item', 'namespaces', 'size',
                  'position', 'variables', 'axis', '__dict__')
@@ -153,7 +185,14 @@ class XPathContext:
             self.timezone = timezone
         else:
             self.timezone = Timezone.fromstring(timezone)
-        self.current_dt = current_dt or datetime.datetime.now(tz=self.timezone)
+
+        self.implicit_timezone_usage: list[ImplicitTimezoneUsage] = []
+        if current_dt is None:
+            self.current_dt = datetime.datetime.now(tz=self.implicit_timezone)
+        elif current_dt.tzinfo is None:
+            self.current_dt = current_dt.replace(tzinfo=self.implicit_timezone)
+        else:
+            self.current_dt = current_dt
 
         if documents is not None:
             # Assume that are all documents because type checking is done by fn:doc().
@@ -190,6 +229,30 @@ class XPathContext:
                    "in the next major release.")
             warnings.warn(DeprecationWarning(msg))
 
+    @property
+    def implicit_timezone(self) -> Timezone:
+        """
+        The implicit timezone of the dynamic context. If the context has no
+        explicit timezone, the UTC timezone is used, so that evaluation is
+        independent from the timezone of the machine that runs the query.
+        """
+        return self.timezone if self.timezone is not None else UTC_TIMEZONE
+
+    def record_implicit_timezone_usage(self, value: Any,
+                                       source: str | None = None,
+                                       original: str | None = None) -> None:
+        """Records a date/time value that borrowed the context implicit timezone."""
+        usage = ImplicitTimezoneUsage(
+            value, self.implicit_timezone, source, original
+        )
+        if not any(x == usage and x.source == source
+                   for x in self.implicit_timezone_usage):
+            self.implicit_timezone_usage.append(usage)
+
+    def clear_implicit_timezone_usage(self) -> None:
+        """Clears the records of date/time values that borrowed the implicit timezone."""
+        self.implicit_timezone_usage.clear()
+
     def __repr__(self) -> str:
         if self.root is not None:
             return f'{self.__class__.__name__}(root={self.root.value})'
@@ -209,6 +272,7 @@ class XPathContext:
         obj.axis = None
         obj.namespaces = self.namespaces
         obj.variables = self.variables
+        obj.implicit_timezone_usage = self.implicit_timezone_usage
         return obj
 
     @cached_property

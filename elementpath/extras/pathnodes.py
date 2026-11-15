@@ -19,7 +19,7 @@ from elementpath.protocols import XsdElementProtocol
 from elementpath.xpath_nodes import XPathNodeTree, AttributeNode, DocumentNode, ElementNode
 from elementpath.helpers import match_wildcard
 from elementpath.namespaces import XSD_NAMESPACE
-from elementpath.datatypes import DateTime
+from elementpath.datatypes import DateTime, UTC_TIMEZONE
 
 
 class PathElementNode(ElementNode):
@@ -76,7 +76,8 @@ class PathElementNode(ElementNode):
                 if name[:3] != 'st_':
                     continue
                 elif name in ('st_atime_ns', 'st_ctime_ns', 'st_mtime_ns', 'st_birthtime_ns'):
-                    dt = datetime.fromtimestamp(getattr(self.stat, name) / 1e9)
+                    dt = datetime.fromtimestamp(getattr(self.stat, name) / 1e9,
+                                                tz=UTC_TIMEZONE)
                     self._attributes.append(DatetimeAttributeNode(name[3:-3], dt, self))
                 elif name[-4:] != 'time':
                     value: int = getattr(self.stat, name)

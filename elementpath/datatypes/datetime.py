@@ -9,6 +9,7 @@
 #
 from abc import abstractmethod
 from collections.abc import Callable
+from copy import copy
 import math
 import operator
 import datetime
@@ -126,6 +127,9 @@ class Timezone(datetime.tzinfo):
 
 
 _UTC_TIMEZONE = Timezone(datetime.timedelta(0))
+
+#: The default implicit timezone, used when a dynamic context doesn't provide one.
+UTC_TIMEZONE = _UTC_TIMEZONE
 
 
 def get_comparable_datetimes(dt1: datetime.datetime, dt2: datetime.datetime) \
@@ -254,18 +258,26 @@ class AbstractDateTime(AnyAtomicType):
     def __sub__(self, other: object) -> Union['DayTimeDuration', 'AbstractDateTime']:
         return self._operation(other, operator.sub)
 
+    @property
+    def value_space(self) -> str:
+        """The declared XSD value space used for comparing date/time values."""
+        if isinstance(self, DateTime):
+            return 'dateTime'
+        return self.name
+
+    def is_comparable_with(self, other: object) -> bool:
+        """Returns `True` if the other value belongs to the same declared value space."""
+        return isinstance(other, AbstractDateTime) and self.value_space == other.value_space
+
     def _compare(self, other: object, op: Callable[[Any, Any], bool]) -> bool:
         if isinstance(other, datetime.datetime):
             dt, year = other, other.year
         elif isinstance(other, AbstractDateTime):
-            match (self.name, other.name):
-                case ('time', 'date') | ('date', 'time'):
-                    if op is operator.eq:
-                        raise TypeError("wrong type %r for operand %r" % (type(other), other))
-                case ('dateTime', 'date') | ('date', 'dateTime'):
-                    if op is not operator.eq:
-                        raise TypeError("wrong type %r for operand %r" % (type(other), other))
-
+            if self.value_space != other.value_space:
+                if op is operator.eq:
+                    return False
+                msg = "wrong type %r for operand %r (%s vs %s)"
+                raise TypeError(msg % (type(other), other, self.value_space, other.value_space))
             dt, year = other._dt, other._year
         elif op is operator.eq:
             return False
@@ -274,14 +286,9 @@ class AbstractDateTime(AnyAtomicType):
 
         if self._year != year:
             return op(self._year, year)
-        elif self._dt.tzinfo is dt.tzinfo:
-            return op(self._dt, dt)
-        elif self.tzinfo is None:
-            return op(self._dt.replace(tzinfo=_UTC_TIMEZONE), dt)
-        elif other.tzinfo is None:
-            return op(self._dt, dt.replace(tzinfo=_UTC_TIMEZONE))
-        else:
-            return op(self._dt, dt)
+
+        dt1, dt2 = get_comparable_datetimes(self._dt, dt)
+        return op(dt1, dt2)
 
     def _operation(self, other: object, op: Callable[[Any, Any], Any]) \
             -> Union['DayTimeDuration', 'AbstractDateTime']:
@@ -381,6 +388,12 @@ class AbstractDateTime(AnyAtomicType):
 
     def tzname(self) -> str | None:
         return self._dt.tzname()
+
+    def with_timezone(self, tzinfo: datetime.tzinfo | None) -> 'AbstractDateTime':
+        """Returns a copy of the value with the provided timezone information."""
+        value = copy(self)
+        value.tzinfo = tzinfo
+        return value
 
     def astimezone(self, tz: datetime.tzinfo | None = None) -> datetime.datetime:
         return self._dt.astimezone(tz)

@@ -30,7 +30,7 @@ from .binary import AbstractBinary, Base64Binary, HexBinary
 from .datetime import AbstractDateTime, DateTime10, DateTime, DateTimeStamp, \
     Date10, Date, GregorianDay, GregorianMonth, GregorianYear, GregorianYear10, \
     GregorianMonthDay, GregorianYearMonth, GregorianYearMonth10, Time, Timezone, \
-    Duration, DayTimeDuration, YearMonthDuration
+    UTC_TIMEZONE, Duration, DayTimeDuration, YearMonthDuration
 from .proxies import ErrorProxy, BooleanProxy, DecimalProxy, DoubleProxy, \
     DoubleProxy10, StringProxy, NumericProxy, ArithmeticProxy
 
@@ -50,5 +50,6 @@ __all__ = ['AbstractBinary', 'AbstractDateTime', 'ListType', 'AbstractQName',
            'NonPositiveInteger', 'NormalizedString', 'Notation', 'NumericProxy',
            'OrderedDateTime', 'PositiveInteger', 'QName', 'Short', 'StringProxy', 'Time',
            'Timezone', 'UnsignedByte', 'UnsignedInt', 'UnsignedLong', 'UnsignedShort',
-           'UntypedAtomic', 'XsdToken', 'YearMonthDuration', 'ListType', 'XSequence',
+           'UntypedAtomic', 'UTC_TIMEZONE', 'XsdToken', 'YearMonthDuration', 'ListType',
+           'XSequence',
            'builtin_atomic_types', 'builtin_list_types', 'AnyType', 'AnySimpleType']

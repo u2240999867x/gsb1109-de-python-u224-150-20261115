@@ -565,6 +565,9 @@ class XPathToken(Token[ta.XPathTokenType]):
             right_values = self._items[1].atomization(context)
 
         for op1, op2 in product(left_values, right_values):
+            if isinstance(op1, AbstractDateTime) or isinstance(op2, AbstractDateTime):
+                op1, op2 = self.get_datetime_operands(context, op1, op2)
+
             match op1:
                 case str() | AnyURI():
                     if not isinstance(op2, (str, UntypedAtomic, AnyURI)):
@@ -593,6 +596,50 @@ class XPathToken(Token[ta.XPathTokenType]):
 
             yield op1, op2
 
+    def get_datetime_operand(self, context: ta.ContextType, value: Any,
+                             source: str | None = None) -> Any:
+        """
+        Returns a date/time operand with the implicit timezone of the dynamic
+        context applied, if the value has no explicit timezone. The original
+        value is never modified, so a compiled expression can be evaluated on
+        another dynamic context without inheriting a previous timezone.
+
+        :param context: the XPath dynamic context.
+        :param value: the operand value.
+        :param source: an optional source description of the value.
+        """
+        if not isinstance(value, AbstractDateTime) or value.tzinfo is not None:
+            return value
+
+        timezone = getattr(context, 'implicit_timezone', None)
+        if timezone is None:
+            return value
+
+        result = value.with_timezone(timezone)
+        if context is not None and hasattr(context, 'record_implicit_timezone_usage'):
+            original = getattr(value, 'original', None) or str(value)
+            context.record_implicit_timezone_usage(result, source, original)
+        return result
+
+    def get_datetime_operands(self, context: ta.ContextType, op1: Any, op2: Any) -> Any:
+        """
+        Casts untyped values to the declared type of the other operand, applies
+        the implicit timezone to date/time operands and checks that they belong
+        to the same declared value space.
+        """
+        if isinstance(op1, UntypedAtomic) and isinstance(op2, AbstractDateTime):
+            op1 = type(op2).make(op1.value, parser=self.parser)
+        elif isinstance(op2, UntypedAtomic) and isinstance(op1, AbstractDateTime):
+            op2 = type(op1).make(op2.value, parser=self.parser)
+
+        op1 = self.get_datetime_operand(context, op1, self._items[0].source)
+        op2 = self.get_datetime_operand(context, op2, self._items[1].source)
+
+        if isinstance(op1, AbstractDateTime) and not op1.is_comparable_with(op2):
+            msg = "cannot compare {!r} with {!r}".format(op1, op2)
+            raise self.error('XPTY0004', msg)
+        return op1, op2
+
     def get_operands(self, context: ta.ContextType, cls: type[Any] | None = None) -> Any:
         """
         Returns the operands for a binary operator. Float arguments are converted
@@ -616,11 +663,7 @@ class XPathToken(Token[ta.XPathTokenType]):
             op2 = self._items[1].data_value(op2)
 
         if isinstance(op1, AbstractDateTime) and isinstance(op2, AbstractDateTime):
-            if context is not None and context.timezone is not None:
-                if op1.tzinfo is None:
-                    op1.tzinfo = context.timezone
-                if op2.tzinfo is None:
-                    op2.tzinfo = context.timezone
+            op1, op2 = self.get_datetime_operands(context, op1, op2)
         else:
             if isinstance(op1, UntypedAtomic):
                 op1 = self.cast_to_double(op1.value)
@@ -725,7 +768,7 @@ class XPathToken(Token[ta.XPathTokenType]):
             item = self.get_argument(context, cls=cls)
             if item is None:
                 return []
-            timezone = getattr(context, 'timezone', None)
+            timezone = getattr(context, 'implicit_timezone', None)
         else:
             item = self.get_argument(context, cls=cls)
             timezone = self.get_argument(context, 1, cls=DayTimeDuration)
@@ -743,6 +786,11 @@ class XPathToken(Token[ta.XPathTokenType]):
 
         _item = copy(item)
         _tzinfo = _item.tzinfo
+        if _tzinfo is None and len(self) == 1 and isinstance(timezone, Timezone) \
+                and context is not None:
+            context.record_implicit_timezone_usage(
+                _item.with_timezone(timezone), self.source
+            )
         try:
             if isinstance(_tzinfo, Timezone) and isinstance(timezone, Timezone):
                 if isinstance(_item, DateTime):

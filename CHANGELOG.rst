@@ -2,6 +2,13 @@
 CHANGELOG
 *********
 
+Unreleased
+==========
+* Dynamic context: the implicit timezone is now explicit per context, defaulting to UTC,
+  and values that borrow it are recorded in *implicit_timezone_usage*
+* Date/time comparisons use the declared XSD value space, also for untyped comparisons
+* Fix in-place timezone assignment on operands, that leaked between evaluations
+
 `v5.1.4`_ (2026-08-08)
 ======================
 * Add *allow_environment* and *allow_external_resources* arguments to XPath30Parser

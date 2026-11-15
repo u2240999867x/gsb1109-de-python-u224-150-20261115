@@ -8,11 +8,13 @@
 #
 # @author Davide Brunato <brunato@sissa.it>
 #
+import datetime
 import os.path
 import unittest
 import pathlib
 
 from elementpath import XPath2Parser, XPathContext
+from elementpath.datatypes import UTC_TIMEZONE
 from elementpath.extras.pathnodes import PathElementNode, PathDocumentNode
 
 
@@ -46,6 +48,17 @@ class PathNodesTest(unittest.TestCase):
 
         for attr in node.attributes:
             self.assertEqual(attr.path, f'/{os.path.basename(__file__)}/@{attr.name}')
+
+    def test_datetime_attributes_are_utc(self):
+        node = PathElementNode(self.path, fragment=True)
+        for attr in node.attributes:
+            if attr.name.endswith('time'):
+                value = next(attr.iter_typed_values)
+                self.assertEqual(value.tzinfo, UTC_TIMEZONE)
+                self.assertEqual(
+                    value.astimezone(datetime.timezone.utc).utcoffset(),
+                    datetime.timedelta(0)
+                )
 
     def test_find_mtime(self):
         node = PathElementNode(self.path)

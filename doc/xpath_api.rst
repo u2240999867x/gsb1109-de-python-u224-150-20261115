@@ -54,6 +54,8 @@ XPath tokens
     .. automethod:: get_atomized_operand
     .. automethod:: iter_comparison_data
     .. automethod:: get_operands
+    .. automethod:: get_datetime_operand
+    .. automethod:: get_datetime_operands
     .. automethod:: get_results
     .. automethod:: select_results
     .. automethod:: adjust_datetime
@@ -80,7 +82,13 @@ XPath contexts
 ==============
 
 .. autoclass:: elementpath.XPathContext
+
+    .. autoattribute:: implicit_timezone
+    .. automethod:: record_implicit_timezone_usage
+    .. automethod:: clear_implicit_timezone_usage
+
 .. autoclass:: elementpath.XPathSchemaContext
+.. autoclass:: elementpath.xpath_context.ImplicitTimezoneUsage
 
 
 XML Schema proxy

@@ -25,7 +25,7 @@ from .exceptions import ElementPathError, MissingContextError, ElementPathKeyErr
     ElementPathRuntimeError, ElementPathSyntaxError, ElementPathTypeError, \
     ElementPathValueError, ElementPathLocaleError, UnsupportedFeatureError
 
-from .xpath_context import XPathContext, XPathSchemaContext
+from .xpath_context import XPathContext, XPathSchemaContext, ImplicitTimezoneUsage
 from .xpath_nodes import XPathNode, AttributeNode, NamespaceNode, CommentNode, \
     ProcessingInstructionNode, TextNode, ElementNode, LazyElementNode, \
     SchemaElementNode, DocumentNode
@@ -47,7 +47,7 @@ __all__ = ['datatypes', 'protocols', 'etree', 'ElementPathError', 'MissingContex
            'ProcessingInstructionNode', 'TextNode', 'ElementNode',
            'LazyElementNode', 'SchemaElementNode', 'DocumentNode', 'get_node_tree',
            'build_node_tree', 'build_lxml_node_tree', 'build_schema_node_tree',
-           'XPathContext', 'XPathSchemaContext', 'XPathToken',
+           'XPathContext', 'XPathSchemaContext', 'ImplicitTimezoneUsage', 'XPathToken',
            'XPathFunction', 'XPath1Parser', 'XPath2Parser', 'select', 'iter_select',
            'Selector', 'AbstractSchemaProxy', 'RegexError', 'translate_pattern',
            'install_unicode_data', 'unicode_version']
