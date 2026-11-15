@@ -42,6 +42,40 @@ Note the length of the `evtx_dump.py` script: its only 20 lines.  Now, review th
 Working with python-evtx is really easy!
 
 
+Incremental Collection
+----------------------
+When a log is collected repeatedly, remembering only the largest `EventRecordID`
+is not enough. Windows may rotate or clear the log at the same path, and an old
+file can receive backfilled events whose IDs are below the previous maximum.
+`Evtx.Collector` checkpoints a file generation instead of a high-water mark:
+
+    from Evtx.Collector import EvtxCollector
+
+    with open("events.jsonl", "a", encoding="utf-8") as sink:
+        collector = EvtxCollector(r"C:\Windows\System32\winevt\Logs\Security.evtx", "security.checkpoint.json")
+        result = collector.collect(on_record=lambda event: sink.write(event.xml + "\n"))
+        print(result.change, len(result.emitted), result.barrier)
+
+The checkpoint records, per generation, a content-derived identity, the last
+record in the verified prefix of the file, and a ledger of exactly which
+records were delivered. A chunk is trusted only after its header and data
+checksums verify and its records exactly fill the used region; the checkpoint
+never advances past the first chunk that fails verification. Re-reading an
+unchanged file emits nothing, appends emit only new records, backfills emit
+their historical records once, and a record is never delivered twice.
+
+Checkpoint states for older generations are retained, so an archived log that
+is supplied again can contribute newly backfilled history without replaying
+events already sent. `EvtxCollector` binds a checkpoint to one source path and
+refuses to mix different files; call `CollectorCheckpoint.reset()` to start a
+fresh history intentionally.
+
+`evtx_collect` exposes the same behavior on the command line:
+
+    evtx_collect Security.evtx --checkpoint security.checkpoint.json --summary
+    evtx_collect Security.evtx --checkpoint security.checkpoint.json -o events.jsonl
+
+
 Installation
 ------------
 Updates to python-evtx are pushed to PyPi, so you can install the module using `pip`.  For example:
