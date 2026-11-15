@@ -1,0 +1,8 @@
+{
+  "reference": "A",
+  "correspondences": [
+    {"label": "c1 A->B", "from": ["A", 100.0], "to": ["B", 106.5], "delay": [1.0, 2.0]},
+    {"label": "c2 B->C", "from": ["B", 205.0], "to": ["C", 198.0], "delay": [0.5, 1.5]},
+    {"label": "c3 A->C", "from": ["A", 300.0], "to": ["C", 300.0], "delay": [2.0, 4.0]}
+  ]
+}
