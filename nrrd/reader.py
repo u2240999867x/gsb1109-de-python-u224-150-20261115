@@ -1,16 +1,17 @@
 import bz2
 import io
+import itertools
 import os
 import re
 import shlex
 import warnings
 import zlib
 from collections import OrderedDict
-from typing import IO, Any, AnyStr, Iterable, Tuple
+from typing import IO, Any, AnyStr, Iterable, Optional, Sequence, Tuple, Union
 
 import nrrd
 from nrrd.parsers import *
-from nrrd.types import IndexOrder, NRRDFieldMap, NRRDFieldType, NRRDHeader
+from nrrd.types import IndexOrder, NRRDFieldMap, NRRDFieldType, NRRDHeader, Region, RegionAxis, RegionInfo
 
 # Older versions of Python had issues when uncompressed data was larger than 4GB (2^32). This should be fixed in latest
 # version of Python 2.7 and all versions of Python 3. The fix for this issue is to read the data in smaller chunks.
@@ -306,40 +307,8 @@ def read_header(file: Union[str, Iterable[AnyStr]], custom_field_map: Optional[N
     return header
 
 
-def read_data(header: NRRDHeader, fh: Optional[IO] = None, filename: Optional[str] = None,
-              index_order: IndexOrder = 'F') -> npt.NDArray:
-    """Read data from file into :class:`numpy.ndarray`
-
-    The two parameters :obj:`fh` and :obj:`filename` are optional depending on the parameters but it never hurts to
-    specify both. The file handle (:obj:`fh`) is necessary if the header is attached with the NRRD data. However, if
-    the NRRD data is detached from the header, then the :obj:`filename` parameter is required to obtain the absolute
-    path to the data file.
-
-    See :ref:`background/how-to-use:reading nrrd files` for more information on reading NRRD files.
-
-    Parameters
-    ----------
-    header : :class:`dict` (:class:`str`, :obj:`Object`)
-        Parsed fields/values obtained from :meth:`read_header` function
-    fh : file-object, optional
-        File object pointing to first byte of data. Only necessary if data is attached to header.
-    filename : :class:`str`, optional
-        Filename of the header file. Only necessary if data is detached from the header. This is used to get the
-        absolute data path.
-    index_order : {'C', 'F'}, optional
-        Specifies the index order of the resulting data array. Either 'C' (C-order) where the dimensions are ordered
-        from slowest-varying to fastest-varying (e.g. (z, y, x)), or 'F' (Fortran-order) where the dimensions are
-        ordered from fastest-varying to slowest-varying (e.g. (x, y, z)).
-
-    Returns
-    -------
-    data : :class:`numpy.ndarray`
-        Data read from NRRD file
-
-    See Also
-    --------
-    :meth:`read`, :meth:`read_header`
-    """
+def _validate_data_header(header: NRRDHeader, index_order: IndexOrder) -> np.dtype:
+    """Validate the header fields that are required to read data and return the NumPy dtype."""
 
     if index_order not in ['F', 'C']:
         raise NRRDError('Invalid index order')
@@ -356,8 +325,24 @@ def read_data(header: NRRDHeader, fh: Optional[IO] = None, filename: Optional[st
     if header['dimension'] < 1 or np.any(header['sizes'] <= 0):
         raise NRRDError('Dimension and sizes must be positive')
 
-    # Determine the data type from the header
-    dtype = _determine_datatype(header)
+    return _determine_datatype(header)
+
+
+def _close_data_source(fh: IO, data_filename: Optional[str]):
+    """Close the file handle only when this module opened the detached data file."""
+
+    if data_filename is not None:
+        fh.close()
+
+
+def _prepare_data_source(header: NRRDHeader, fh: Optional[IO], filename: Optional[str], dtype: np.dtype) \
+        -> Tuple[IO, Optional[str], int, int]:
+    """Open the data source (if detached) and consume line/byte skips.
+
+    Returns the file handle to read from, the detached data filename (or :obj:`None` when :obj:`fh` is used), the
+    total number of data points, and the effective byte skip. Non-negative byte skips have already been consumed; the
+    only remaining case is the negative skip that applies after decompression.
+    """
 
     # Determine the byte skip, line skip and the data file
     # These all can be written with or without the space according to the NRRD spec, so we check them both
@@ -390,8 +375,7 @@ def read_data(header: NRRDHeader, fh: Optional[IO] = None, filename: Optional[st
     else:
         # Must close the file because if the file was opened above from detached filename, there is no "with" block to
         # close it for us
-        if data_filename is not None:
-            fh.close()
+        _close_data_source(fh, data_filename)
 
         raise NRRDError('Invalid lineskip, allowed values are greater than or equal to 0')
 
@@ -399,8 +383,7 @@ def read_data(header: NRRDHeader, fh: Optional[IO] = None, filename: Optional[st
     if byte_skip < -1:
         # Must close the file because if the file was opened above from detached filename, there is no "with" block to
         # close it for us
-        if data_filename is not None:
-            fh.close()
+        _close_data_source(fh, data_filename)
 
         raise NRRDError('Invalid byteskip, allowed values are greater than or equal to -1')
     elif byte_skip >= 0:
@@ -408,8 +391,71 @@ def read_data(header: NRRDHeader, fh: Optional[IO] = None, filename: Optional[st
     elif byte_skip == -1 and header['encoding'] not in ['gzip', 'gz', 'bzip2', 'bz2']:
         fh.seek(-dtype.itemsize * total_data_points, os.SEEK_END)
     else:
-        # The only case left should be: byte_skip == -1 and header['encoding'] == 'gzip'
+        # The only case left should be: byte_skip == -1 and the encoding is compressed
         byte_skip = -dtype.itemsize * total_data_points
+
+    return fh, data_filename, total_data_points, byte_skip
+
+
+def read_data(header: NRRDHeader, fh: Optional[IO] = None, filename: Optional[str] = None,
+              index_order: IndexOrder = 'F', region: Optional[Region] = None) -> npt.NDArray:
+    """Read data from file into :class:`numpy.ndarray`
+
+    The two parameters :obj:`fh` and :obj:`filename` are optional depending on the parameters but it never hurts to
+    specify both. The file handle (:obj:`fh`) is necessary if the header is attached with the NRRD data. However, if
+    the NRRD data is detached from the header, then the :obj:`filename` parameter is required to obtain the absolute
+    path to the data file.
+
+    See :ref:`background/how-to-use:reading nrrd files` for more information on reading NRRD files.
+
+    Parameters
+    ----------
+    header : :class:`dict` (:class:`str`, :obj:`Object`)
+        Parsed fields/values obtained from :meth:`read_header` function
+    fh : file-object, optional
+        File object pointing to first byte of data. Only necessary if data is attached to header.
+    filename : :class:`str`, optional
+        Filename of the header file. Only necessary if data is detached from the header. This is used to get the
+        absolute data path.
+    index_order : {'C', 'F'}, optional
+        Specifies the index order of the resulting data array. Either 'C' (C-order) where the dimensions are ordered
+        from slowest-varying to fastest-varying (e.g. (z, y, x)), or 'F' (Fortran-order) where the dimensions are
+        ordered from fastest-varying to slowest-varying (e.g. (x, y, z)).
+    region : sequence, optional
+        Index region to read, with one entry per axis expressed in :obj:`index_order`. Each entry may be an inclusive
+        ``(start, stop)`` pair, a :class:`slice` with unit step, a single integer, or a sequence of contiguous
+        integers. :obj:`None` selects the full extent of an axis. When :obj:`None` (the default) the whole data set is
+        read and the behavior is identical to previous releases.
+
+        For the ``raw`` encoding only the bytes of the selected region are read, following the actual storage layout
+        (the first NRRD axis varies fastest). ``gzip``/``bzip2`` and ``ASCII`` data are decoded in full before the
+        region is extracted, and a :class:`UserWarning` reports that cost.
+
+    Returns
+    -------
+    data : :class:`numpy.ndarray`
+        Data read from NRRD file. When :obj:`region` is given only the selected values are returned, in
+        :obj:`index_order`.
+
+    See Also
+    --------
+    :meth:`read`, :meth:`read_header`, :meth:`read_region`
+    """
+
+    if region is None:
+        return _read_data_full(header, fh, filename, index_order)
+
+    data, _, _ = _read_data_region(header, fh, filename, region, index_order)
+    return data
+
+
+def _read_data_full(header: NRRDHeader, fh: Optional[IO], filename: Optional[str],
+                    index_order: IndexOrder) -> npt.NDArray:
+    """Read the complete data set (used when no region is requested)."""
+
+    # Determine the data type from the header
+    dtype = _validate_data_header(header, index_order)
+    fh, data_filename, total_data_points, byte_skip = _prepare_data_source(header, fh, filename, dtype)
 
     # If a compression encoding is used, then byte skip AFTER decompressing
     if header['encoding'] == 'raw':
@@ -424,57 +470,10 @@ def read_data(header: NRRDHeader, fh: Optional[IO] = None, filename: Optional[st
         else:
             data = np.fromfile(fh, dtype, sep=' ')
     else:
-        # Handle compressed data now
-        # Construct the decompression object based on encoding
-        if header['encoding'] in ['gzip', 'gz']:
-            decompobj = zlib.decompressobj(zlib.MAX_WBITS | 16)
-        elif header['encoding'] in ['bzip2', 'bz2']:
-            decompobj = bz2.BZ2Decompressor()
-        else:
-            # Must close the file because if the file was opened above from detached filename, there is no "with" block
-            # to close it for us
-            if data_filename is not None:
-                fh.close()
-
-            raise NRRDError(f'Unsupported encoding: {header["encoding"]}')
-
-        # Loop through the file and read a chunk at a time (see _READ_CHUNKSIZE why it is read in chunks)
-        decompressed_data = bytearray()
-
-        # Read all the remaining data from the file
-        # Obtain the length of the compressed data since we will be using it repeatedly, more efficient
-        compressed_data = fh.read()
-        compressed_data_len = len(compressed_data)
-        start_index = 0
-
-        # Loop through data and decompress it chunk by chunk
-        while start_index < compressed_data_len:
-            # Calculate the end index = start index plus chunk size
-            # Set to the string length to read the remaining chunk at the end
-            end_index = min(start_index + _READ_CHUNKSIZE, compressed_data_len)
-
-            # Decompress and append data
-            decompressed_data += decompobj.decompress(compressed_data[start_index:end_index])
-
-            # Update start index
-            start_index = end_index
-
-        # Delete the compressed data since we do not need it anymore
-        # This could potentially be using a lot of memory
-        del compressed_data
-
-        if not decompobj.eof:
-            if data_filename is not None:
-                fh.close()
-            raise NRRDError('Data ended before reaching the end of the compressed stream')
-
-        # Byte skip is applied AFTER the decompression. Skip first x bytes of the decompressed data and parse it using
-        # NumPy
-        data = np.frombuffer(decompressed_data[byte_skip:], dtype)
+        data = _read_compressed_data(header, fh, data_filename, dtype, byte_skip)
 
     # Close the file if we opened it
-    if data_filename is not None:
-        fh.close()
+    _close_data_source(fh, data_filename)
 
     if total_data_points != data.size:
         raise NRRDError(f'Size of the data does not equal the product of all the dimensions: '
@@ -494,8 +493,351 @@ def read_data(header: NRRDHeader, fh: Optional[IO] = None, filename: Optional[st
     return data
 
 
-def read(filename: str, custom_field_map: Optional[NRRDFieldMap] = None, index_order: IndexOrder = 'F') \
-        -> Tuple[npt.NDArray, NRRDHeader]:
+def _read_compressed_data(header: NRRDHeader, fh: IO, data_filename: Optional[str], dtype: np.dtype,
+                          byte_skip: int) -> npt.NDArray:
+    """Decompress an entire gzip or bzip2 stream and return the raw element buffer."""
+
+    # Construct the decompression object based on encoding
+    if header['encoding'] in ['gzip', 'gz']:
+        decompobj = zlib.decompressobj(zlib.MAX_WBITS | 16)
+    elif header['encoding'] in ['bzip2', 'bz2']:
+        decompobj = bz2.BZ2Decompressor()
+    else:
+        # Must close the file because if the file was opened above from detached filename, there is no "with" block to
+        # close it for us
+        _close_data_source(fh, data_filename)
+
+        raise NRRDError(f'Unsupported encoding: {header["encoding"]}')
+
+    # Loop through the file and read a chunk at a time (see _READ_CHUNKSIZE why it is read in chunks)
+    decompressed_data = bytearray()
+
+    # Read all the remaining data from the file
+    # Obtain the length of the compressed data since we will be using it repeatedly, more efficient
+    compressed_data = fh.read()
+    compressed_data_len = len(compressed_data)
+    start_index = 0
+
+    # Loop through data and decompress it chunk by chunk
+    while start_index < compressed_data_len:
+        # Calculate the end index = start index plus chunk size
+        # Set to the string length to read the remaining chunk at the end
+        end_index = min(start_index + _READ_CHUNKSIZE, compressed_data_len)
+
+        # Decompress and append data
+        decompressed_data += decompobj.decompress(compressed_data[start_index:end_index])
+
+        # Update start index
+        start_index = end_index
+
+    # Delete the compressed data since we do not need it anymore
+    # This could potentially be using a lot of memory
+    del compressed_data
+
+    if not decompobj.eof:
+        _close_data_source(fh, data_filename)
+        raise NRRDError('Data ended before reaching the end of the compressed stream')
+
+    # Byte skip is applied AFTER the decompression. Skip first x bytes of the decompressed data and parse it using
+    # NumPy
+    return np.frombuffer(decompressed_data[byte_skip:], dtype)
+
+
+def _is_integral(value: Any) -> bool:
+    return isinstance(value, (int, np.integer)) and not isinstance(value, bool)
+
+
+def _normalize_axis_range(axis: RegionAxis, size: int, axis_index: int) -> Tuple[int, int]:
+    """Normalize one axis selection to an inclusive ``(start, stop)`` pair.
+
+    An empty selection is normalized to ``(start, start - 1)``.
+    """
+
+    if axis is None:
+        return 0, size - 1
+
+    if isinstance(axis, slice):
+        if axis.step not in (None, 1):
+            raise NRRDError(f'Region axis {axis_index} has a step of {axis.step}. Only contiguous selections with a '
+                            'step of 1 are supported')
+        start, stop, _ = axis.indices(size)
+        return start, stop - 1
+
+    if _is_integral(axis):
+        index = int(axis)
+        if index < 0:
+            index += size
+        if not 0 <= index < size:
+            raise NRRDError(f'Region index {axis} is out of bounds for axis {axis_index} with size {size}')
+        return index, index
+
+    if isinstance(axis, np.ndarray):
+        if axis.ndim != 1:
+            raise NRRDError(f'Region axis {axis_index} must be one-dimensional')
+        values = axis.tolist()
+    elif isinstance(axis, range):
+        if axis.step not in (1, -1):
+            raise NRRDError(f'Region axis {axis_index} has a step of {axis.step}. Only contiguous selections with a '
+                            'step of 1 are supported')
+        values = list(axis)
+    elif isinstance(axis, (tuple, list)):
+        values = list(axis)
+    else:
+        raise NRRDError(f'Invalid region specification for axis {axis_index}: {axis!r}')
+
+    # A 2-tuple is an inclusive ``(start, stop)`` range. ``stop == start - 1`` represents an empty selection,
+    # including the conventional ``(0, -1)`` and ``(size, size - 1)`` forms. A list (or any other sequence) is a
+    # sequence of explicit indices.
+    if isinstance(axis, tuple) and len(values) == 2 and all(value is None or _is_integral(value) for value in values):
+        start = 0 if values[0] is None else int(values[0])
+        stop = size - 1 if values[1] is None else int(values[1])
+        if start < 0 or start > size:
+            raise NRRDError(f'Region start {values[0]} is out of bounds for axis {axis_index} with size {size}')
+        if stop < -1 or stop >= size:
+            raise NRRDError(f'Region stop {values[1]} is out of bounds for axis {axis_index} with size {size}')
+        if stop < start - 1:
+            raise NRRDError(f'Region range ({values[0]}, {values[1]}) is not a valid contiguous range for axis '
+                            f'{axis_index} with size {size}')
+        return start, stop
+
+    if len(values) == 0:
+        return 0, -1
+
+    if not all(_is_integral(value) for value in values):
+        raise NRRDError(f'Region axis {axis_index} must contain integers')
+    indices = [int(value) + size if int(value) < 0 else int(value) for value in values]
+    if any(index < 0 or index >= size for index in indices):
+        raise NRRDError(f'Region indices {values} are out of bounds for axis {axis_index} with size {size}')
+    if any(b != a + 1 for a, b in zip(indices, indices[1:])) or indices != sorted(indices):
+        raise NRRDError(f'Region indices for axis {axis_index} are not contiguous: {values}')
+    return indices[0], indices[-1]
+
+
+def _normalize_region(region: Region, sizes: Sequence[int], index_order: IndexOrder) -> Tuple[Tuple[int, int], ...]:
+    """Normalize a caller-ordered region into inclusive ranges in NRRD (fastest-first) axis order."""
+
+    if isinstance(region, (str, bytes)) or not hasattr(region, '__len__'):
+        raise NRRDError('Region must be a sequence with one entry per axis')
+
+    if len(region) != len(sizes):
+        raise NRRDError(f'Region has {len(region)} axes but the data has {len(sizes)} dimensions')
+
+    # The caller expresses the region in its own index order. Axes in the NRRD header are fastest-varying first.
+    caller_sizes = sizes if index_order == 'F' else sizes[::-1]
+    caller_ranges = tuple(_normalize_axis_range(axis, int(size), index)
+                          for index, (axis, size) in enumerate(zip(region, caller_sizes)))
+    if index_order == 'F':
+        return caller_ranges
+    return caller_ranges[::-1]
+
+
+def _read_raw_region(fh: IO, dtype: np.dtype, sizes: np.ndarray, ranges: Tuple[Tuple[int, int], ...]) \
+        -> npt.NDArray:
+    """Read a region of raw data directly, one read per contiguous run in storage layout."""
+
+    sizes = np.asarray(sizes, dtype=np.int64)
+    starts = np.array([start for start, _ in ranges], dtype=np.int64)
+    lengths = np.array([stop - start + 1 for start, stop in ranges], dtype=np.int64)
+
+    # Element stride of each axis in the on-disk layout. Axis 0 varies fastest, as required by NRRD.
+    strides = np.ones(len(sizes), dtype=np.int64)
+    if len(sizes) > 1:
+        strides[1:] = np.cumprod(sizes[:-1]).astype(np.int64)
+
+    itemsize = dtype.itemsize
+    data_start = fh.tell()
+    buffer = bytearray()
+
+    for offset, count in _iter_region_blocks(sizes, starts, lengths, strides):
+        start_byte = offset * itemsize
+        nbytes = count * itemsize
+        fh.seek(data_start + start_byte)
+        chunk = fh.read(nbytes)
+
+        if len(chunk) != nbytes:
+            raise NRRDError(f'Data ended before reaching the end of the selected region: expected {nbytes} bytes, '
+                            f'read {len(chunk)}')
+        buffer += chunk
+
+    return np.frombuffer(buffer, dtype).reshape(tuple(int(length) for length in lengths), order='F')
+
+
+def _iter_region_blocks(sizes: np.ndarray, starts: np.ndarray, lengths: np.ndarray, strides: np.ndarray):
+
+    selected_points = int(np.prod(lengths, dtype=np.int64))
+    if selected_points == 0:
+        return
+
+    # Axes faster than the first partially selected axis are fully covered, so each outer index selects one
+    # contiguous run of values. Coalescing those axes keeps the number of reads proportional to the number of
+    # selected rows/slices rather than to the number of selected values.
+    first_partial = 0
+    while first_partial < len(sizes) and lengths[first_partial] == sizes[first_partial]:
+        first_partial += 1
+
+    if first_partial == len(sizes):
+        yield 0, selected_points
+        return
+
+    block_axis = first_partial
+    block_length = int(lengths[block_axis] * strides[block_axis])
+    base_offset = int(starts[block_axis] * strides[block_axis])
+
+    # Iterate the slower axes from slowest to fastest so reads are issued in ascending storage order.
+    higher_axes = list(range(block_axis + 1, len(sizes)))
+    if higher_axes:
+        outer_ranges = [range(int(starts[axis]), int(starts[axis] + lengths[axis]))
+                        for axis in reversed(higher_axes)]
+        combinations = itertools.product(*outer_ranges)
+    else:
+        combinations = [()]
+
+    for combination in combinations:
+        offset = base_offset
+        for axis, index in zip(higher_axes, reversed(combination)):
+            offset += index * int(strides[axis])
+        yield offset, block_length
+
+
+def _crop_header(header: NRRDHeader, ranges: Tuple[Tuple[int, int], ...], data: npt.NDArray) -> NRRDHeader:
+    """Build a copy of the header describing the selected region."""
+
+    cropped = OrderedDict(header)
+    cropped_sizes = [stop - start + 1 for start, stop in ranges]
+    cropped['sizes'] = np.array(cropped_sizes, dtype=np.int64)
+
+    # Per-axis fields such as spacings, kinds, labels and space directions keep one entry per axis. Their values are
+    # properties of the axes and do not change when a sub-range is selected.
+
+    # Shift the space origin by the number of voxels removed along each (spatial) axis.
+    if 'space origin' in cropped and 'space directions' in cropped and len(ranges) == header['dimension']:
+        directions = cropped['space directions']
+        origin = np.asarray(cropped['space origin'], dtype=float).copy()
+        try:
+            for axis, (start, _) in enumerate(ranges):
+                vector = directions[axis]
+                if vector is None:
+                    continue
+                vector = np.asarray(vector, dtype=float)
+                if vector.shape and np.all(np.isfinite(vector)):
+                    origin += start * vector
+            cropped['space origin'] = origin
+        except (TypeError, IndexError, ValueError):
+            # Leave the origin untouched for headers whose space directions cannot be interpreted.
+            pass
+
+    # These fields describe how to locate the original (uncropped) data in the file; they do not apply to the crop.
+    for field in ['datafile', 'data file', 'byteskip', 'byte skip', 'lineskip', 'line skip',
+                  'oldmin', 'old min', 'oldmax', 'old max']:
+        cropped.pop(field, None)
+
+    # The min/max now describe the selected values, not the full data set.
+    if ('min' in cropped or 'max' in cropped) and data.dtype.kind in 'iuf':
+        if data.size > 0:
+            if 'min' in cropped:
+                cropped['min'] = float(data.min())
+            if 'max' in cropped:
+                cropped['max'] = float(data.max())
+        else:
+            cropped.pop('min', None)
+            cropped.pop('max', None)
+
+    return cropped
+
+
+def _read_data_region(header: NRRDHeader, fh: Optional[IO], filename: Optional[str], region: Region,
+                      index_order: IndexOrder) -> Tuple[npt.NDArray, NRRDHeader, RegionInfo]:
+    """Read a bounded region, returning the data, the cropped header, and the original range."""
+
+    dtype = _validate_data_header(header, index_order)
+    sizes = np.asarray(header['sizes'], dtype=np.int64)
+    ranges = _normalize_region(region, sizes, index_order)
+
+    if fh is None and header.get('datafile', header.get('data file', None)) is None:
+        raise NRRDError('File handle must be specified to read data that is attached to the header')
+
+    caller_ranges = ranges if index_order == 'F' else ranges[::-1]
+    caller_sizes = sizes if index_order == 'F' else sizes[::-1]
+    region_info = RegionInfo(sizes=tuple(int(size) for size in caller_sizes),
+                             starts=tuple(int(start) for start, _ in caller_ranges),
+                             stops=tuple(int(stop) for _, stop in caller_ranges),
+                             index_order=index_order,
+                             full_decode=header['encoding'] != 'raw')
+
+    if header['encoding'] == 'raw':
+        fh, opened_filename, _, _ = _prepare_data_source(header, fh, filename, dtype)
+        try:
+            if not hasattr(fh, 'seek') or not hasattr(fh, 'tell'):
+                raise NRRDError('Bounded reads of raw data require a seekable file handle')
+            selected = _read_raw_region(fh, dtype, sizes, ranges)
+        finally:
+            _close_data_source(fh, opened_filename)
+
+        data = selected if index_order == 'F' else selected.T
+        return data, _crop_header(header, ranges, data), region_info
+
+    # Compressed and ASCII encodings cannot be decoded partially: the whole stream has to be consumed before the
+    # selected region can be extracted. Report that cost rather than implying a bounded read.
+    selected_points = int(np.prod([stop - start + 1 for start, stop in ranges], dtype=np.int64))
+    if selected_points != int(sizes.prod(dtype=np.int64)):
+        encoding = header['encoding']
+        cost = int(sizes.prod(dtype=np.int64)) * dtype.itemsize
+        warnings.warn(f"Encoding '{encoding}' cannot be read partially. The file must be decompressed/parsed in full "
+                      f"({int(sizes.prod(dtype=np.int64))} values, {cost} bytes after decoding) to return the selected "
+                      f"{selected_points} values.", UserWarning, stacklevel=3)
+
+    full_data = _read_data_full(header, fh, filename, index_order)
+    slices = tuple(slice(start, stop + 1) for start, stop in caller_ranges)
+    data = full_data[slices]
+    return data, _crop_header(header, ranges, data), region_info
+
+
+def read_region(filename: str, region: Region, custom_field_map: Optional[NRRDFieldMap] = None,
+                index_order: IndexOrder = 'F') -> Tuple[npt.NDArray, NRRDHeader, RegionInfo]:
+    """Read one index region from a NRRD file and return it with its cropped header and original range
+
+    For the uncompressed ``raw`` encoding, only the bytes of the selected region are read. Reads follow the actual
+    storage layout: each contiguous run of selected values becomes one read, and runs are coalesced when all faster
+    axes are fully covered. For ``gzip``/``bzip2`` and ``ASCII`` encodings the whole stream must be decoded first; a
+    :class:`UserWarning` is issued and :attr:`RegionInfo.full_decode` is set to :obj:`True`.
+
+    Parameters
+    ----------
+    filename : :class:`str`
+        Filename of the NRRD file
+    region : sequence
+        Index region with one entry per axis, expressed in :obj:`index_order`. Each entry may be an inclusive
+        ``(start, stop)`` pair, a :class:`slice` with unit step, a single integer, or a contiguous sequence of
+        integers. A value of :obj:`None` selects the full extent of that axis.
+    custom_field_map : :class:`dict` (:class:`str`, :class:`str`), optional
+        Dictionary used for parsing custom field types.
+    index_order : {'C', 'F'}, optional
+        Index order in which :obj:`region` is expressed and in which the returned data is ordered.
+
+    Returns
+    -------
+    data : :class:`numpy.ndarray`
+        The selected values, with shape matching the region.
+    header : :class:`dict` (:class:`str`, :obj:`Object`)
+        Copy of the header cropped to the region. ``sizes`` and other per-axis fields describe the returned data, and
+        ``space origin`` is shifted accordingly.
+    region_info : :class:`nrrd.types.RegionInfo`
+        The full data sizes and the inclusive range of the selected region, in :obj:`index_order`, so that local
+        indices can be mapped back to the original data.
+
+    See Also
+    --------
+    :meth:`read`, :meth:`read_data`
+    """
+
+    with open(filename, 'rb') as fh:
+        header = read_header(fh, custom_field_map)
+        return _read_data_region(header, fh, filename, region, index_order)
+
+
+def read(filename: str, custom_field_map: Optional[NRRDFieldMap] = None, index_order: IndexOrder = 'F',
+         region: Optional[Region] = None) \
+        -> Union[Tuple[npt.NDArray, NRRDHeader], Tuple[npt.NDArray, NRRDHeader, RegionInfo]]:
     """Read a NRRD file and return the header and data
 
     See :ref:`background/how-to-use:reading nrrd files` for more information on reading NRRD files.
@@ -516,21 +858,33 @@ def read(filename: str, custom_field_map: Optional[NRRDFieldMap] = None, index_o
         Specifies the index order of the resulting data array. Either 'C' (C-order) where the dimensions are ordered
         from slowest-varying to fastest-varying (e.g. (z, y, x)), or 'F' (Fortran-order) where the dimensions are
         ordered from fastest-varying to slowest-varying (e.g. (x, y, z)).
+    region : sequence, optional
+        Index region to read, with one entry per axis expressed in :obj:`index_order`. See :meth:`read_region` for the
+        accepted forms and the cost of each encoding. When given, the returned header is cropped to the region and a
+        third :class:`nrrd.types.RegionInfo` value describing the original range is returned as well.
 
     Returns
     -------
     data : :class:`numpy.ndarray`
         Data read from NRRD file
     header : :class:`dict` (:class:`str`, :obj:`Object`)
-        Dictionary containing the header fields and their corresponding parsed value
+        Dictionary containing the header fields and their corresponding parsed value. When :obj:`region` is given,
+        the header is cropped to the selected region.
+    region_info : :class:`nrrd.types.RegionInfo`
+        Only returned when :obj:`region` is given. Contains the original full sizes and the inclusive selected range,
+        in :obj:`index_order`.
 
     See Also
     --------
-    :meth:`write`, :meth:`read_header`, :meth:`read_data`
+    :meth:`write`, :meth:`read_header`, :meth:`read_data`, :meth:`read_region`
     """
 
     with open(filename, 'rb') as fh:
         header = read_header(fh, custom_field_map)
-        data = read_data(header, fh, filename, index_order)
 
-    return data, header
+        if region is None:
+            data = read_data(header, fh, filename, index_order)
+            return data, header
+
+        data, cropped_header, region_info = _read_data_region(header, fh, filename, region, index_order)
+        return data, cropped_header, region_info

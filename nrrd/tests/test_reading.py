@@ -2,6 +2,7 @@ import bz2
 import gzip
 import io
 import unittest
+import warnings
 from tempfile import TemporaryDirectory
 from typing import ClassVar
 
@@ -568,6 +569,206 @@ class Abstract:
                 header = nrrd.read_header(fh)
                 nrrd.read_data(header, fh)
                 self.assertFalse(fh.closed)
+
+
+class _CountingBytesIO(io.BytesIO):
+    """BytesIO that records how many bytes are actually handed to the caller."""
+
+    def __init__(self, data):
+        super().__init__(data)
+        self.bytes_read = 0
+        self.read_calls = 0
+
+    def read(self, size=-1):
+        chunk = super().read(size)
+        self.bytes_read += len(chunk)
+        self.read_calls += 1
+        return chunk
+
+
+class TestReadRegion(unittest.TestCase):
+    def setUp(self):
+        self.data_f, self.header_f = nrrd.read(RAW_NRRD_FILE_PATH, index_order='F')
+        self.data_c, self.header_c = nrrd.read(RAW_NRRD_FILE_PATH, index_order='C')
+
+    def _slice(self, region):
+        slices = []
+        for axis in region:
+            if axis is None:
+                slices.append(slice(None))
+            elif isinstance(axis, int):
+                slices.append(slice(axis, axis + 1))
+            elif isinstance(axis, tuple):
+                slices.append(slice(axis[0], axis[1] + 1))
+            else:
+                slices.append(axis)
+        return tuple(slices)
+
+    def test_region_matches_full_read(self):
+        cases = [
+            [(2, 5), (0, 29), (10, 20)],
+            [slice(2, 6), slice(3, 29), slice(10, 21)],
+            [(5, 5), None, (0, 29)],
+            [None, None, None],
+            [0, 0, 0],
+            [(0, 29), (0, 29), (0, 0)],
+            [(0, 0), (0, 29), (0, 29)],
+            [(29, 29), (29, 29), (29, 29)],
+            [slice(1, 29, 1), slice(2, 29, 1), slice(3, 29, 1)],
+        ]
+        with open(RAW_NRRD_FILE_PATH, 'rb') as fh:
+            header = nrrd.read_header(fh)
+            data_start = fh.tell()
+            for region in cases:
+                with self.subTest(index_order='F', region=region):
+                    fh.seek(data_start)
+                    actual = nrrd.read_data(header, fh, RAW_NRRD_FILE_PATH, 'F', region)
+                    np.testing.assert_array_equal(actual, self.data_f[self._slice(region)])
+
+                reversed_region = tuple(reversed(region))
+                with self.subTest(index_order='C', region=reversed_region):
+                    fh.seek(data_start)
+                    actual = nrrd.read_data(header, fh, RAW_NRRD_FILE_PATH, 'C', reversed_region)
+                    np.testing.assert_array_equal(actual, self.data_c[self._slice(reversed_region)])
+
+    def test_region_is_transposed_for_c_order(self):
+        data, header, info = nrrd.read(RAW_NRRD_FILE_PATH, index_order='C', region=[(10, 20), (0, 29), (2, 5)])
+        np.testing.assert_array_equal(data, self.data_c[10:21, :, 2:6])
+        self.assertEqual((11, 30, 4), data.shape)
+        np.testing.assert_array_equal(header['sizes'], [4, 30, 11])
+        self.assertEqual((11, 30, 4), info.shape)
+        self.assertEqual((10, 0, 2), info.starts)
+        self.assertEqual((20, 29, 5), info.stops)
+        self.assertEqual('C', info.index_order)
+        self.assertFalse(info.full_decode)
+
+    def test_region_range_and_header(self):
+        data, header, info = nrrd.read(RAW_NRRD_FILE_PATH, region=[(2, 5), (0, 29), (10, 20)])
+        np.testing.assert_array_equal(data, self.data_f[2:6, :, 10:21])
+        np.testing.assert_array_equal(header['sizes'], [4, 30, 11])
+        # Space origin is shifted by the number of removed voxels along each spatial axis.
+        np.testing.assert_allclose(header['space origin'], [2, 0, 10])
+        self.assertEqual((30, 30, 30), info.sizes)
+        self.assertEqual((2, 0, 10), info.starts)
+        self.assertEqual((5, 29, 20), info.stops)
+        self.assertEqual((4, 30, 11), info.shape)
+        self.assertEqual((2, 0, 10), info.to_original((0, 0, 0)))
+        self.assertEqual((5, 29, 20), info.to_original((3, 29, 10)))
+
+    def test_raw_region_reads_only_selected_bytes(self):
+        raw = open(RAW_NRRD_FILE_PATH, 'rb').read()
+        stream = _CountingBytesIO(raw)
+        header = nrrd.read_header(stream)
+        start = stream.bytes_read
+
+        data = nrrd.read_data(header, stream, RAW_NRRD_FILE_PATH, 'F', [(2, 5), (0, 29), (10, 20)])
+
+        # The selected block spans 4 rows x 11 columns of the (x, y) plane for every z in range, i.e. 330 disjoint
+        # 4-value runs. Only those bytes may be read.
+        self.assertEqual(data.size * data.dtype.itemsize, stream.bytes_read - start)
+        self.assertLess(stream.bytes_read - start, 30 * 30 * 30 * data.dtype.itemsize)
+
+    def test_raw_region_coalesces_fully_selected_fast_axes(self):
+        raw = open(RAW_NRRD_FILE_PATH, 'rb').read()
+        stream = _CountingBytesIO(raw)
+        header = nrrd.read_header(stream)
+        start = stream.bytes_read
+
+        data = nrrd.read_data(header, stream, RAW_NRRD_FILE_PATH, 'F', [(0, 29), (0, 29), (5, 5)])
+
+        # x and y are fully covered, so a single contiguous read per slice suffices.
+        self.assertEqual(1, stream.read_calls)
+        self.assertEqual(data.size * data.dtype.itemsize, stream.bytes_read - start)
+
+    def test_region_on_non_cubic_data(self):
+        with TemporaryDirectory() as directory:
+            filename = os.path.join(directory, 'non_cubic.nrrd')
+            shape_f = (7, 5, 3)
+            data_f = np.arange(np.prod(shape_f), dtype=np.int32).reshape(shape_f[::-1]).T
+            nrrd.write(filename, data_f, {'encoding': 'raw'}, index_order='F')
+
+            data_c = nrrd.read(filename, index_order='C')[0]
+
+            for region in [[(1, 3), (0, 4), (2, 2)], [(3, 6), (1, 2), None], [(6, 6), (4, 4), (2, 2)]]:
+                with self.subTest(index_order='F', region=region):
+                    actual = nrrd.read(filename, region=region)[0]
+                    expected = data_f[tuple(slice(axis[0], axis[1] + 1) if isinstance(axis, tuple) else slice(None)
+                                            for axis in region)]
+                    np.testing.assert_array_equal(actual, expected)
+
+            for region in [[(0, 2), (0, 4), (1, 3)], [(2, 2), (3, 4), (0, 6)], [(2, 2), (4, 4), (6, 6)]]:
+                with self.subTest(index_order='C', region=region):
+                    actual = nrrd.read(filename, index_order='C', region=region)[0]
+                    expected = data_c[tuple(slice(axis[0], axis[1] + 1) if isinstance(axis, tuple) else slice(None)
+                                            for axis in region)]
+                    np.testing.assert_array_equal(actual, expected)
+
+    def test_region_axis_forms(self):
+        with open(RAW_NRRD_FILE_PATH, 'rb') as fh:
+            header = nrrd.read_header(fh)
+            data_start = fh.tell()
+
+            # A 2-tuple is an inclusive (start, stop) range.
+            fh.seek(data_start)
+            actual = nrrd.read_data(header, fh, RAW_NRRD_FILE_PATH, 'F', [(0, 1), (2, 3), (4, 5)])
+            np.testing.assert_array_equal(actual, self.data_f[0:2, 2:4, 4:6])
+
+            # Lists/arrays/ranges are explicit contiguous indices.
+            for axis in [[0, 1, 2], np.array([0, 1, 2]), range(0, 3)]:
+                with self.subTest(type=type(axis).__name__):
+                    fh.seek(data_start)
+                    actual = nrrd.read_data(header, fh, RAW_NRRD_FILE_PATH, 'F', [axis, None, None])
+                    np.testing.assert_array_equal(actual, self.data_f[0:3, :, :])
+
+    def test_empty_region(self):
+        data, header, info = nrrd.read(RAW_NRRD_FILE_PATH, region=[(0, -1), None, None])
+        self.assertEqual((0, 30, 30), data.shape)
+        np.testing.assert_array_equal(header['sizes'], [0, 30, 30])
+        self.assertEqual((0, 30, 30), info.shape)
+
+    def test_invalid_regions(self):
+        cases = [
+            ('Region has 2 axes', [(0, 1), None]),
+            ('not contiguous', [(0, 29, 29), None, None]),
+            ('step of 2', [slice(None, None, 2), None, None]),
+            ('out of bounds', [(0, 99), None, None]),
+        ]
+        with open(RAW_NRRD_FILE_PATH, 'rb') as fh:
+            header = nrrd.read_header(fh)
+            for message, region in cases:
+                with self.subTest(region=region):
+                    with self.assertRaisesRegex(nrrd.NRRDError, message):
+                        nrrd.read_data(header, fh, RAW_NRRD_FILE_PATH, 'F', region)
+
+    def test_detached_data_region(self):
+        data, header, info = nrrd.read(RAW_NHDR_FILE_PATH, region=[(2, 5), (0, 29), (10, 20)])
+        np.testing.assert_array_equal(data, self.data_f[2:6, :, 10:21])
+        np.testing.assert_array_equal(header['sizes'], [4, 30, 11])
+
+    def test_byteskip_minus_one_region(self):
+        data, _, _ = nrrd.read(RAW_BYTESKIP_NHDR_FILE_PATH, region=[(2, 5), None, (10, 20)])
+        np.testing.assert_array_equal(data, self.data_f[2:6, :, 10:21])
+
+    def test_compressed_region_warns_about_full_decode(self):
+        for filename, encoding in [(GZ_NRRD_FILE_PATH, 'gzip'), (BZ2_NRRD_FILE_PATH, 'bzip2')]:
+            with self.subTest(encoding=encoding):
+                with self.assertWarnsRegex(UserWarning, 'cannot be read partially'):
+                    data, header, info = nrrd.read(filename, region=[(2, 5), (0, 29), (10, 20)])
+                np.testing.assert_array_equal(data, self.data_f[2:6, :, 10:21])
+                self.assertTrue(info.full_decode)
+
+    def test_full_compressed_region_does_not_warn(self):
+        with warnings.catch_warnings(record=True) as caught:
+            warnings.simplefilter('always')
+            data, _, _ = nrrd.read(GZ_NRRD_FILE_PATH, region=[(0, 29), (0, 29), (0, 29)])
+        self.assertEqual([], [warning for warning in caught if issubclass(warning.category, UserWarning)])
+        np.testing.assert_array_equal(data, self.data_f)
+
+    def test_read_region_convenience(self):
+        data, header, info = nrrd.read_region(RAW_NRRD_FILE_PATH, [(2, 5), (0, 29), (10, 20)])
+        np.testing.assert_array_equal(data, self.data_f[2:6, :, 10:21])
+        np.testing.assert_array_equal(header['sizes'], [4, 30, 11])
+        self.assertEqual((30, 30, 30), info.sizes)
 
 
 class TestCompressedDataIntegrity(unittest.TestCase):

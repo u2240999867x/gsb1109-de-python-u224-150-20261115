@@ -13,6 +13,26 @@ The :meth:`read` and :meth:`read_header` methods accept an optional parameter :o
 
 The :meth:`read_data` will typically be called in conjunction with :meth:`read_header` because header information is required in order to read the data. The function returns a :class:`numpy.ndarray` of the data saved in the given NRRD file.
 
+Reading an index region
+-----------------------
+:meth:`read_region` (and :meth:`read`/:meth:`read_data` with the :obj:`region` argument) reads a single contiguous index region instead of the whole data set. The region has one entry per axis and is expressed in the same :obj:`index_order` as the returned array, so C-order callers pass C-order ranges and Fortran-order callers pass Fortran-order ranges. Each entry may be an inclusive ``(start, stop)`` pair, a :class:`slice` with unit step, a single integer, or a contiguous sequence of indices; :obj:`None` selects the whole axis.
+
+.. code-block:: python
+
+    # Fortran-order: (x, y, z) selection
+    data, header, info = nrrd.read_region('file.nrrd', [(10, 19), None, (5, 9)])
+
+    # C-order: (z, y, x) selection
+    data, header, info = nrrd.read_region('file.nrrd', [(5, 9), None, (10, 19)], index_order='C')
+
+The returned header is cropped: ``sizes`` describes the selected region, ``space origin`` is shifted by the removed voxels, and location fields such as ``data file``/``byteskip`` are dropped. ``info`` is a :class:`nrrd.types.RegionInfo` containing the original full ``sizes`` plus the inclusive ``starts``/``stops`` of the selection, so region-local indices can be mapped back with :meth:`nrrd.types.RegionInfo.to_original`.
+
+For the uncompressed ``raw`` encoding only the selected bytes are read. Reads follow the actual storage layout (in a NRRD file the first axis varies fastest): each contiguous run of selected values is fetched with one seek/read, and runs are coalesced when all faster axes are fully selected. Selecting one slice of a 3D volume therefore reads one contiguous block rather than the whole file.
+
+.. note::
+
+    Bounded reads apply to the ``raw`` encoding only. ``gzip``/``bzip2`` streams have ``sizes`` in the header but no index into the decompressed stream, and ``ASCII`` data must be tokenized, so those encodings are decoded in full before the region is extracted. In that case a :class:`UserWarning` states how much data had to be decoded, and ``info.full_decode`` is :obj:`True`. The library does not claim to read only the selected region for these encodings.
+
 Some NRRD files, while prohibited by specification, may contain duplicated header fields causing an exception to be raised. Changing :data:`nrrd.reader.ALLOW_DUPLICATE_FIELD` to :obj:`True` will show a warning instead of an error while trying to read the file.
 
 Writing NRRD files
