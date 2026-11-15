@@ -134,6 +134,45 @@ of reassign the value to the existing key.
   >>> d.has_duplicates()
   False
 
+Applying daily updates (manifests and patches)
+----------------------------------------------
+
+The ``vdf.patch`` module merges *daily* VDF updates into a single state. An
+update is either a *full manifest* (a complete snapshot replacing the state)
+or a *partial patch* (a delta). A patch explicitly lists its replacement
+scope (``replace``) and its deletion items (``delete``) under the
+``__update__`` metadata key.
+
+.. code:: python
+
+  from vdf.patch import DailyVDF, META_KEY
+
+  daily = DailyVDF()
+
+  # full manifest: replaces the whole state
+  daily.apply({META_KEY: {'kind': 'manifest', 'source': 'feed', 'version': 1},
+               'app': {'name': 'old', 'depots': {'1': 'a'}}})
+
+  # partial patch: merges into the state
+  daily.apply({META_KEY: {'kind': 'patch', 'source': 'feed', 'version': 2,
+                          'replace': ['app.depots'],   # swap subtree wholesale
+                          'delete': [('app', 'name')]}, # delete a single entry
+               'app': {'depots': {'2': 'b'}}})
+
+Rules:
+
+* updates are applied per ``source`` and matched by the key under which
+  entries appear;
+* keys outside the replacement scope that are missing from a patch keep
+  their current values;
+* a deletion removes only the specified entry -- for duplicate keys use a
+  ``(index, key)`` tuple as the last path component to pick the exact
+  occurrence;
+* a newer version that arrived first is never overwritten by a late, older
+  patch from the same source;
+* conflicting entries without comparable versions are kept on both sides as
+  duplicate keys in the ``VDFDict`` state.
+
 
 .. |pypi| image:: https://img.shields.io/pypi/v/vdf.svg?style=flat&label=latest%20version
     :target: https://pypi.org/project/vdf/
