@@ -1,0 +1,328 @@
+{
+  "root": "/Users/guo/Documents/GSB/1109/batches/de-python-u224-150-20261115/control/questions/GSB1109-20261115-U224-DE-PY-086/workspace",
+  "mains": [
+    "test/test_2_latex2text.py"
+  ],
+  "resolution": {
+    "relative_to": "directory of the referrer",
+    "extensions": [
+      "",
+      ".tex",
+      ".latex"
+    ],
+    "root_boundary": "realpath must stay within root",
+    "cycle_policy": "abort only when a file repeats within the same expansion chain"
+  },
+  "fragments": [
+    {
+      "id": "f1",
+      "parent_id": null,
+      "role": "main",
+      "path": "test/test_2_latex2text.py",
+      "line_range": [
+        458,
+        462
+      ],
+      "directive": null,
+      "raw_target": null,
+      "chain": [
+        "test/test_2_latex2text.py"
+      ],
+      "segments": [
+        {
+          "kind": "text",
+          "text": "ABCDEF fdksanfkld safnkd anfklsa\n\n",
+          "line_range": [
+            458,
+            460
+          ]
+        },
+        {
+          "kind": "include",
+          "fragment_id": "f2",
+          "edge": {
+            "from": "test/test_2_latex2text.py",
+            "from_line": 460,
+            "directive": "\\input{test_input_1.tex}",
+            "raw_target": "test_input_1.tex",
+            "status": "ok",
+            "resolved": "test/test_input_1.tex"
+          }
+        },
+        {
+          "kind": "text",
+          "text": "\n\nMORENKFDNSN",
+          "line_range": [
+            460,
+            462
+          ]
+        }
+      ]
+    },
+    {
+      "id": "f2",
+      "parent_id": "f1",
+      "role": "included",
+      "path": "test/test_input_1.tex",
+      "line_range": [
+        1,
+        7
+      ],
+      "directive": "\\input{test_input_1.tex}",
+      "raw_target": "test_input_1.tex",
+      "chain": [
+        "test/test_2_latex2text.py",
+        "test/test_input_1.tex"
+      ],
+      "segments": [
+        {
+          "kind": "text",
+          "text": "\\textit{hi there!} This is {\\em an equation}:\n\\begin{equation}\n    x + y i = 0\n\\end{equation}\n\nwhere $i$ is the imaginary unit.\n",
+          "line_range": [
+            1,
+            7
+          ]
+        }
+      ]
+    },
+    {
+      "id": "f3",
+      "parent_id": null,
+      "role": "main",
+      "path": "test/test_2_latex2text.py",
+      "line_range": [
+        485,
+        489
+      ],
+      "directive": null,
+      "raw_target": null,
+      "chain": [
+        "test/test_2_latex2text.py"
+      ],
+      "segments": [
+        {
+          "kind": "text",
+          "text": "ABCDEF fdksanfkld safnkd anfklsa\n\n",
+          "line_range": [
+            485,
+            487
+          ]
+        },
+        {
+          "kind": "include",
+          "fragment_id": "f4",
+          "edge": {
+            "from": "test/test_2_latex2text.py",
+            "from_line": 487,
+            "directive": "\\input{test_input_1}",
+            "raw_target": "test_input_1",
+            "status": "ok",
+            "resolved": "test/test_input_1.tex"
+          }
+        },
+        {
+          "kind": "text",
+          "text": "\n\nMORENKFDNSN",
+          "line_range": [
+            487,
+            489
+          ]
+        }
+      ]
+    },
+    {
+      "id": "f4",
+      "parent_id": "f3",
+      "role": "included",
+      "path": "test/test_input_1.tex",
+      "line_range": [
+        1,
+        7
+      ],
+      "directive": "\\input{test_input_1}",
+      "raw_target": "test_input_1",
+      "chain": [
+        "test/test_2_latex2text.py",
+        "test/test_input_1.tex"
+      ],
+      "segments": [
+        {
+          "kind": "text",
+          "text": "\\textit{hi there!} This is {\\em an equation}:\n\\begin{equation}\n    x + y i = 0\n\\end{equation}\n\nwhere $i$ is the imaginary unit.\n",
+          "line_range": [
+            1,
+            7
+          ]
+        }
+      ]
+    },
+    {
+      "id": "f5",
+      "parent_id": null,
+      "role": "main",
+      "path": "test/test_2_latex2text.py",
+      "line_range": [
+        496,
+        500
+      ],
+      "directive": null,
+      "raw_target": null,
+      "chain": [
+        "test/test_2_latex2text.py"
+      ],
+      "segments": [
+        {
+          "kind": "text",
+          "text": "ABCDEF fdksanfkld safnkd anfklsa\n\n",
+          "line_range": [
+            496,
+            498
+          ]
+        },
+        {
+          "kind": "placeholder",
+          "reason": "missing-file",
+          "edge": {
+            "from": "test/test_2_latex2text.py",
+            "from_line": 498,
+            "directive": "\\input{../test_input_1}",
+            "raw_target": "../test_input_1",
+            "status": "missing",
+            "resolved": "test_input_1"
+          }
+        },
+        {
+          "kind": "text",
+          "text": "\n\nMORENKFDNSN",
+          "line_range": [
+            498,
+            500
+          ]
+        }
+      ]
+    },
+    {
+      "id": "f6",
+      "parent_id": null,
+      "role": "main",
+      "path": "test/test_2_latex2text.py",
+      "line_range": [
+        2114,
+        2114
+      ],
+      "directive": null,
+      "raw_target": null,
+      "chain": [
+        "test/test_2_latex2text.py"
+      ],
+      "segments": [
+        {
+          "kind": "placeholder",
+          "reason": "missing-file",
+          "edge": {
+            "from": "test/test_2_latex2text.py",
+            "from_line": 2114,
+            "directive": "\\input{../dir-evil/secret}",
+            "raw_target": "../dir-evil/secret",
+            "status": "missing",
+            "resolved": "dir-evil/secret"
+          }
+        }
+      ]
+    },
+    {
+      "id": "f7",
+      "parent_id": null,
+      "role": "main",
+      "path": "test/test_2_latex2text.py",
+      "line_range": [
+        2121,
+        2121
+      ],
+      "directive": null,
+      "raw_target": null,
+      "chain": [
+        "test/test_2_latex2text.py"
+      ],
+      "segments": [
+        {
+          "kind": "placeholder",
+          "reason": "missing-file",
+          "edge": {
+            "from": "test/test_2_latex2text.py",
+            "from_line": 2121,
+            "directive": "\\input{ok}",
+            "raw_target": "ok",
+            "status": "missing",
+            "resolved": "test/ok"
+          }
+        }
+      ]
+    }
+  ],
+  "edges": [
+    {
+      "from": "test/test_2_latex2text.py",
+      "from_line": 460,
+      "directive": "\\input{test_input_1.tex}",
+      "raw_target": "test_input_1.tex",
+      "status": "ok",
+      "resolved": "test/test_input_1.tex"
+    },
+    {
+      "from": "test/test_2_latex2text.py",
+      "from_line": 487,
+      "directive": "\\input{test_input_1}",
+      "raw_target": "test_input_1",
+      "status": "ok",
+      "resolved": "test/test_input_1.tex"
+    },
+    {
+      "from": "test/test_2_latex2text.py",
+      "from_line": 498,
+      "directive": "\\input{../test_input_1}",
+      "raw_target": "../test_input_1",
+      "status": "missing",
+      "resolved": "test_input_1"
+    },
+    {
+      "from": "test/test_2_latex2text.py",
+      "from_line": 2114,
+      "directive": "\\input{../dir-evil/secret}",
+      "raw_target": "../dir-evil/secret",
+      "status": "missing",
+      "resolved": "dir-evil/secret"
+    },
+    {
+      "from": "test/test_2_latex2text.py",
+      "from_line": 2121,
+      "directive": "\\input{ok}",
+      "raw_target": "ok",
+      "status": "missing",
+      "resolved": "test/ok"
+    }
+  ],
+  "warnings": [
+    {
+      "kind": "missing-file",
+      "message": "reference '../test_input_1' does not resolve to a readable file",
+      "referrer": "test/test_2_latex2text.py",
+      "line": 498,
+      "resolved": "test_input_1"
+    },
+    {
+      "kind": "missing-file",
+      "message": "reference '../dir-evil/secret' does not resolve to a readable file",
+      "referrer": "test/test_2_latex2text.py",
+      "line": 2114,
+      "resolved": "dir-evil/secret"
+    },
+    {
+      "kind": "missing-file",
+      "message": "reference 'ok' does not resolve to a readable file",
+      "referrer": "test/test_2_latex2text.py",
+      "line": 2121,
+      "resolved": "test/ok"
+    }
+  ]
+}
