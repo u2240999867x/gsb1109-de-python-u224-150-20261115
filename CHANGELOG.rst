@@ -2,6 +2,20 @@
 CHANGELOG
 *********
 
+Unreleased
+==========
+* Add incremental node-tree updates: `XPathNodeTree.attach()`, `detach()` and \
+`move_node()`, exposed as `attach_child()`, `detach_child()` and `move_child()` \
+on element and document nodes
+* Add `XPathNodeTree.sync()`/`Node.sync_tree()` to reconcile a node tree after the \
+wrapped XML is corrected directly with the ElementTree API, and \
+`build_element_subtree()` for building a detachable node subtree
+* Add a per-tree revision counter separating node-tree caches from compiled XPath \
+rules: structural changes refresh positions, the element map and lazy node caches \
+of the affected tree only, while compiled token trees stay reusable and other trees \
+are not invalidated; detached nodes keep their wrapped value as provenance but can \
+no longer be resolved as current nodes
+
 `v5.1.4`_ (2026-08-08)
 ======================
 * Add *allow_environment* and *allow_external_resources* arguments to XPath30Parser

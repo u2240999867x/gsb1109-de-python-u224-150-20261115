@@ -43,6 +43,11 @@ _XSD_SPECIAL_TYPES = frozenset((XSD_ANY_TYPE, XSD_ANY_SIMPLE_TYPE, XSD_ANY_ATOMI
 class XPathNodeTree:
     """
     Status of the node tree structure, shared between nodes.
+
+    :cvar version: monotonic revision counter, incremented at each structural \
+    change. Node-tree caches (positions, element map, lazy attributes/namespace \
+    nodes) are valid only for the current revision, while compiled XPath token \
+    trees are not bound to a revision and can be re-run after each change.
     """
     root: ta.ParentNodeType
     elements: ta.ElementMapType
@@ -50,7 +55,8 @@ class XPathNodeTree:
     schema: Optional[ta.SchemaProxyType]
     uri: str | None
 
-    __slots__ = ('root_node', 'uri', 'namespaces', 'ns_offset', 'elements', 'schema', 'position')
+    __slots__ = ('root_node', 'uri', 'namespaces', 'ns_offset',
+                 'elements', 'schema', 'position', 'version')
 
     def __init__(self, root: ta.ParentNodeType,
                  uri: str | None = None,
@@ -63,6 +69,263 @@ class XPathNodeTree:
         self.uri = uri
         self.elements = {} if elements is None else elements
         self.schema = schema
+        self.version = 0
+
+    def bump(self) -> None:
+        """Mark the tree as structurally changed."""
+        self.version += 1
+
+    @staticmethod
+    def _iter_subtree(node: ta.ChildNodeType) -> Iterator[XPathNode]:
+        if isinstance(node, (ElementNode, DocumentNode)):
+            yield from node.iter_lazy()
+        else:
+            yield node
+
+    def _register_subtree(self, node: ta.ChildNodeType) -> None:
+        """Adds the nodes of a subtree to the element map of this tree."""
+        for descendant in self._iter_subtree(node):
+            if isinstance(descendant, (ElementNode, CommentNode, ProcessingInstructionNode)):
+                self.elements[descendant.value] = descendant
+
+    def _unregister_subtree(self, node: ta.ChildNodeType) -> None:
+        """Removes a detached subtree from the element map of this tree."""
+        for descendant in self._iter_subtree(node):
+            value = descendant.value
+            if self.elements.get(value) is descendant:
+                del self.elements[value]
+
+    def _adopt(self, node: ta.ChildNodeType) -> None:
+        """Binds a subtree built by another tree to this tree."""
+        if getattr(node, 'tree', None) is self:
+            return
+        for descendant in self._iter_subtree(node):
+            if hasattr(descendant, 'tree'):
+                descendant.tree = self
+
+    def reindex(self) -> None:
+        """
+        Recomputes the document-order positions of all nodes, dropping the
+        lazy node caches (namespace and attribute nodes) that embed positions.
+        Only this tree is affected: other trees keep their caches untouched.
+        """
+        position = 1
+        stack: list[XPathNode] = [self.root_node]
+
+        while stack:
+            node = stack.pop()
+            node.position = position
+            position += 1
+
+            if isinstance(node, ElementNode):
+                nsmap = node.nsmap or {}
+                attrib = getattr(node.value, 'attrib', None) or {}
+                position += len(nsmap) + int('xml' not in nsmap) + len(attrib)
+                if hasattr(node, '_attributes'):
+                    delattr(node, '_attributes')
+                if hasattr(node, '_namespace_nodes'):
+                    delattr(node, '_namespace_nodes')
+
+            children = getattr(node, 'children', None)
+            if children:
+                stack.extend(reversed(children))
+
+    @staticmethod
+    def _etree_parent(parent: ta.ParentNodeType) -> Any:
+        """The wrapped etree element of a parent, if it supports child mutations."""
+        value = getattr(parent, 'value', None)
+        return value if hasattr(value, 'insert') and hasattr(value, 'remove') else None
+
+    @staticmethod
+    def _etree_child_index(parent: ta.ParentNodeType, index: int) -> int:
+        """Maps a node-children index onto the wrapped etree element child index."""
+        children = getattr(parent, 'children', None) or ()
+        return sum(1 for child in children[:index] if not isinstance(child, TextNode))
+
+    def attach(self, parent: ta.ParentNodeType, index: int, node: ta.ChildNodeType) -> None:
+        """
+        Inserts *node* at *index* of *parent* children, registering the subtree
+        in the element map and refreshing positions and lazy node caches. When the
+        parent wraps an ElementTree element the wrapped XML is corrected in the same
+        way, keeping node tree and XML aligned.
+        """
+        if getattr(parent, 'children', None) is None:
+            raise ElementPathValueError(f"{parent!r} has no children")
+        elif node.parent is not None and node in node.parent.children:
+            raise ElementPathValueError(f"{node!r} is still attached to {node.parent!r}")
+
+        et_parent = self._etree_parent(parent)
+        if et_parent is not None and \
+                isinstance(node, (ElementNode, CommentNode, ProcessingInstructionNode)):
+            et_parent.insert(self._etree_child_index(parent, index), node.value)
+
+        self._adopt(node)
+        parent.children.insert(index, node)
+        node.parent = parent
+
+        # An element/comment/PI tail is represented as a following text sibling
+        tail = getattr(node.value, 'tail', None)
+        if isinstance(node, (ElementNode, CommentNode, ProcessingInstructionNode)) and tail:
+            tail_node = TextNode(tail)
+            parent.children.insert(index + 1, tail_node)
+            tail_node.parent = cast(Any, parent)
+
+        self._register_subtree(node)
+        self.bump()
+        self.reindex()
+
+    def detach(self, node: ta.ChildNodeType) -> None:
+        """
+        Detaches *node* from its parent and removes the subtree from the element
+        map, so the wrapped elements can't be resolved as current nodes anymore.
+        The detached node keeps its wrapped value and tree reference as provenance.
+        When the parent wraps an ElementTree element the wrapped XML is corrected too.
+        """
+        parent = node.parent
+        if parent is None or node not in parent.children:
+            raise ElementPathValueError(f"{node!r} is not attached to a parent node")
+
+        index = parent.children.index(node)
+        et_parent = self._etree_parent(parent)
+        if et_parent is not None and \
+                isinstance(node, (ElementNode, CommentNode, ProcessingInstructionNode)) \
+                and node.value in list(et_parent):
+            et_parent.remove(node.value)
+
+        parent.children.remove(node)
+        node.parent = None
+
+        # Remove the text node representing the tail of the detached wrapped element
+        has_tail = getattr(node.value, 'tail', None)
+        if has_tail and index < len(parent.children) \
+                and isinstance(parent.children[index], TextNode):
+            tail_node = parent.children[index]
+            parent.children.remove(tail_node)
+            tail_node.parent = None
+
+        self._unregister_subtree(node)
+        self.bump()
+        self.reindex()
+
+    def move_node(self, node: ta.ChildNodeType,
+                  target: ta.ParentNodeType, index: int) -> None:
+        """
+        Moves *node* to *index* of *target* children. A move into a descendant
+        of the moved node is refused because it would break the tree structure.
+        """
+        ancestor: Any = target
+        while ancestor is not None:
+            if ancestor is node:
+                raise ElementPathValueError("cannot move a node into its own subtree")
+            ancestor = ancestor.parent
+
+        source_tree = getattr(node, 'tree', None)
+        if source_tree is None:
+            raise ElementPathValueError(f"{node!r} does not belong to a node tree")
+        source_tree.detach(node)
+        self.attach(target, index, node)
+
+    def _get_or_build(self, elem: Any) -> ta.TaggedNodeType:
+        """
+        Returns the current node for *elem*. Unknown elements get a bare wrapper
+        bound to this tree; their descendants are reconciled recursively so that
+        already tracked elements keep their single wrapper identity.
+        """
+        existing = self.elements.get(elem)
+        if existing is not None:
+            return existing
+
+        if callable(elem.tag):
+            if elem.tag.__name__ == 'Comment':
+                node: ta.TaggedNodeType = CommentNode(elem)
+            else:
+                node = ProcessingInstructionNode(elem, None)
+        else:
+            node = EtreeElementNode(elem)
+            node.tree = self
+
+        self.elements[elem] = node
+        return node
+
+    def _reconcile_element(self, node: 'EtreeElementNode',
+                           reachable: set[Any]) -> None:
+        """Rebuilds the children of an element node from its current etree state."""
+        elem = node.value
+        new_children: list[ta.ChildNodeType] = []
+
+        if (text := getattr(elem, 'text', None)) is not None:
+            text_node = TextNode(text)
+            text_node.parent = node
+            new_children.append(text_node)
+
+        for child_elem in elem:
+            child_node = self._get_or_build(child_elem)
+            child_node.parent = node
+            reachable.add(child_elem)
+            new_children.append(child_node)
+
+            if (tail := getattr(child_elem, 'tail', None)) is not None:
+                tail_node = TextNode(tail)
+                tail_node.parent = node
+                new_children.append(tail_node)
+
+        node.children = new_children
+
+    def sync(self) -> None:
+        """
+        Reconciles the node tree with the current state of the wrapped XML.
+
+        Nodes wrapping unchanged elements keep their identity (their cached
+        results stay valid as provenance), new XML elements get wrapped and
+        registered, moved elements follow the new document order and removed
+        elements are unregistered so they cannot be resolved as current nodes.
+        Only this tree is affected; compiled XPath rules and other trees are
+        left untouched.
+        """
+        root = self.root_node
+        reachable: set[Any] = set()
+
+        if isinstance(root, EtreeElementNode):
+            stack: list[EtreeElementNode] = [root]
+            reachable.add(root.value)
+            while stack:
+                node = stack.pop()
+                self._reconcile_element(node, reachable)
+                for child in node.children:
+                    if isinstance(child, EtreeElementNode):
+                        stack.append(child)
+
+        elif isinstance(root, EtreeDocumentNode):
+            root_elem = root.value.getroot()
+            if root_elem is None:
+                root.children = []
+            else:
+                root_wrapper = self._get_or_build(root_elem)
+                root_wrapper.parent = root
+                reachable.add(root_elem)
+                root.children = [root_wrapper]
+
+                if isinstance(root_wrapper, EtreeElementNode):
+                    stack = [root_wrapper]
+                    while stack:
+                        node = stack.pop()
+                        self._reconcile_element(node, reachable)
+                        for child in node.children:
+                            if isinstance(child, EtreeElementNode):
+                                stack.append(child)
+        else:
+            # Schema, lazy or path-based trees are not etree-backed: keep structure
+            self.bump()
+            self.reindex()
+            return
+
+        for value in [k for k in self.elements if k not in reachable]:
+            stale = self.elements[value]
+            stale.parent = None
+            del self.elements[value]
+
+        self.bump()
+        self.reindex()
 
 
 ###
@@ -1052,6 +1315,43 @@ class ElementNode(XPathNode):
                 except IndexError:
                     return
 
+    ###
+    # Incremental tree updates
+    #
+
+    def attach_child(self, node: ta.ChildNodeType, index: int | None = None) -> None:
+        """
+        Attaches a detached *node* (typically built with :func:`build_element_subtree`)
+        to this element at *index*, or as last child if *index* is `None`. Positions
+        and lazy node caches are refreshed, keeping compiled XPath rules reusable.
+        """
+        if index is None:
+            index = len(self.children)
+        self.tree.attach(self, index, node)
+
+    def detach_child(self, node: ta.ChildNodeType) -> None:
+        """
+        Detaches *node* from this element. The subtree keeps its wrapped value as
+        provenance but is removed from the element map, so it cannot be resolved
+        as a current node of the tree.
+        """
+        if node.parent is not self:
+            raise ElementPathValueError(f"{node!r} is not a child of {self!r}")
+        self.tree.detach(node)
+
+    def move_child(self, node: ta.ChildNodeType, index: int) -> None:
+        """Moves a child *node* to *index* within this element."""
+        if node.parent is not self:
+            raise ElementPathValueError(f"{node!r} is not a child of {self!r}")
+        self.tree.move_node(node, self, index)
+
+    def sync_tree(self) -> None:
+        """
+        Reconciles the node tree with the wrapped XML after it has been changed
+        directly with the ElementTree API, without rebuilding unchanged nodes.
+        """
+        self.tree.sync()
+
 
 class EtreeElementNode(ElementNode):
     """
@@ -1675,6 +1975,38 @@ class DocumentNode(XPathNode):
                 yield from e.iter_descendants()
             else:
                 yield e
+
+    ###
+    # Incremental tree updates
+    #
+
+    def attach_child(self, node: ta.ChildNodeType, index: int | None = None) -> None:
+        """
+        Attaches a detached *node* at *index* of the document children, or as
+        last child if *index* is `None`.
+        """
+        if index is None:
+            index = len(self.children)
+        self.tree.attach(self, index, node)
+
+    def detach_child(self, node: ta.ChildNodeType) -> None:
+        """Detaches *node* from the document, unregistering its subtree."""
+        if node.parent is not self:
+            raise ElementPathValueError(f"{node!r} is not a child of {self!r}")
+        self.tree.detach(node)
+
+    def move_child(self, node: ta.ChildNodeType, index: int) -> None:
+        """Moves a child *node* to *index* within the document."""
+        if node.parent is not self:
+            raise ElementPathValueError(f"{node!r} is not a child of {self!r}")
+        self.tree.move_node(node, self, index)
+
+    def sync_tree(self) -> None:
+        """
+        Reconciles the node tree with the wrapped document after it has been
+        changed directly with the ElementTree API, without rebuilding unchanged nodes.
+        """
+        self.tree.sync()
 
     @property
     def is_typed(self) -> bool:

@@ -30,7 +30,7 @@ from .xpath_nodes import XPathNode, AttributeNode, NamespaceNode, CommentNode, \
     ProcessingInstructionNode, TextNode, ElementNode, LazyElementNode, \
     SchemaElementNode, DocumentNode
 from .tree_builders import get_node_tree, build_node_tree, build_lxml_node_tree, \
-    build_schema_node_tree
+    build_schema_node_tree, build_element_subtree
 from .xpath_tokens import XPathToken, XPathFunction
 from .xpath1 import XPath1Parser
 from .xpath2 import XPath2Parser
@@ -47,6 +47,7 @@ __all__ = ['datatypes', 'protocols', 'etree', 'ElementPathError', 'MissingContex
            'ProcessingInstructionNode', 'TextNode', 'ElementNode',
            'LazyElementNode', 'SchemaElementNode', 'DocumentNode', 'get_node_tree',
            'build_node_tree', 'build_lxml_node_tree', 'build_schema_node_tree',
+           'build_element_subtree',
            'XPathContext', 'XPathSchemaContext', 'XPathToken',
            'XPathFunction', 'XPath1Parser', 'XPath2Parser', 'select', 'iter_select',
            'Selector', 'AbstractSchemaProxy', 'RegexError', 'translate_pattern',

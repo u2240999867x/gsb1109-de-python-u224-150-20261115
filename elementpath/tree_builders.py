@@ -19,8 +19,8 @@ from elementpath.protocols import LxmlElementProtocol, DocumentProtocol, \
 from elementpath.etree import is_etree_document, is_etree_element, is_etree_element_instance
 from elementpath.xpath_nodes import TextNode, ElementNode, SchemaElementNode, DocumentNode, \
     EtreeElementNode, EtreeDocumentNode, CommentNode, ProcessingInstructionNode
-
-__all__ = ['get_node_tree', 'build_node_tree', 'build_lxml_node_tree', 'build_schema_node_tree']
+__all__ = ['get_node_tree', 'build_node_tree', 'build_lxml_node_tree',
+           'build_schema_node_tree', 'build_element_subtree']
 
 ElementTreeRootType = Union[DocumentType, ElementType]
 LxmlRootType = Union[LxmlDocumentProtocol, LxmlElementProtocol]
@@ -426,3 +426,83 @@ def build_schema_node_tree(root: SchemaElemType,
                         )
 
                 return root_node
+
+
+def build_element_subtree(elem: ElementType,
+                          namespaces: Optional[ta.NamespacesType] = None,
+                          nsmap: Optional[ta.NsmapType] = None) -> ta.ChildNodeType:
+    """
+    Builds a detached node subtree wrapping an ElementTree element, reusing the
+    same position conventions of a full tree build. The result is not linked to
+    any parent, so it can be attached incrementally to an existing node tree.
+
+    :param elem: the wrapped Element (or a Comment/ProcessingInstruction element).
+    :param namespaces: the namespaces mapping of the target tree, used to compute \
+    the namespace-node position offset.
+    :param nsmap: an optional element namespace map (for elements without the \
+    lxml *nsmap* attribute).
+    """
+    if namespaces is None:
+        namespaces = {}
+    ns_pos_offset = len(namespaces) + int('xml' not in namespaces) + 1
+
+    position = 1
+    if callable(elem.tag):
+        if elem.tag.__name__ == 'Comment':
+            root_node: ta.ChildNodeType = CommentNode(elem, None, position)
+        else:
+            root_node = ProcessingInstructionNode(elem, None, None, position)
+        position += 1
+    else:
+        root_node = EtreeElementNode(elem, None, position, nsmap)
+        position += ns_pos_offset + len(elem.attrib)
+
+        if elem.text is not None:
+            TextNode(elem.text, root_node, position)
+            position += 1
+
+    if not len(elem):
+        return root_node
+
+    children = iter(elem)
+    iterators: deque[Any] = deque()
+    ancestors: deque[Any] = deque()
+    parent: Any = root_node
+
+    while True:
+        for child_elem in children:
+            child: ta.ChildNodeType
+            if not callable(child_elem.tag):
+                child = EtreeElementNode(child_elem, parent, position)
+                position += ns_pos_offset + len(child_elem.attrib)
+
+                if child_elem.text is not None:
+                    TextNode(child_elem.text, child, position)
+                    position += 1
+
+            elif child_elem.tag.__name__ == 'Comment':
+                child = CommentNode(child_elem, parent, position)
+                position += 1
+            else:
+                child = ProcessingInstructionNode(child_elem, None, parent, position)
+                position += 1
+
+            if len(child_elem):
+                ancestors.append(parent)
+                parent = child
+                iterators.append(children)
+                children = iter(child_elem)
+                break
+
+            if child_elem.tail is not None:
+                TextNode(child_elem.tail, parent, position)
+                position += 1
+        else:
+            try:
+                children, parent = iterators.pop(), ancestors.pop()
+            except IndexError:
+                return root_node
+            else:
+                if (tail := parent.children[-1].elem.tail) is not None:
+                    TextNode(tail, parent, position)
+                    position += 1

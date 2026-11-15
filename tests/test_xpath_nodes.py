@@ -31,8 +31,10 @@ from elementpath.etree import is_etree_element, etree_iter_strings, \
 from elementpath.datatypes import UntypedAtomic
 from elementpath.xpath_nodes import DocumentNode, ElementNode, AttributeNode, TextNode, \
     NamespaceNode, CommentNode, ProcessingInstructionNode, EtreeElementNode, TextAttributeNode
-from elementpath.tree_builders import get_node_tree
+from elementpath.tree_builders import get_node_tree, build_element_subtree
 from elementpath.xpath_context import XPathContext, XPathSchemaContext
+from elementpath.xpath_selectors import Selector
+from elementpath.xpath2 import XPath2Parser
 
 
 class DummyXsdType:
@@ -485,6 +487,229 @@ class XPathNodesTest(unittest.TestCase):
             (root[2][1], '/Q{}b3[1]/comment()[1]'),
             (root[2][2], '/Q{}b3[1]/Q{}c3[2]')
         ])
+
+
+class IncrementalTreeUpdatesTest(unittest.TestCase):
+    """Incremental attach/detach/move and reuse of compiled rules."""
+
+    def assertPositionsConsistent(self, root):
+        for k, node in enumerate(root.iter(), start=1):
+            self.assertEqual(k, node.position, msg=node)
+
+    def assertMatchesRebuild(self, root, elem):
+        current = [n.position for n in root.iter_lazy() if isinstance(n, ElementNode)]
+        rebuilt = [n.position for n in get_node_tree(elem).iter_lazy()
+                   if isinstance(n, ElementNode)]
+        self.assertEqual(current, rebuilt)
+
+    def test_compiled_rule_reused_after_tree_change(self):
+        elem = ElementTree.XML('<root><a>1</a><a>2</a></root>')
+        root = get_node_tree(elem)
+        selector = Selector('/root/a', parser=XPath2Parser)
+        compiled_token = selector.root_token
+
+        self.assertEqual([e.text for e in selector.select(root)], ['1', '2'])
+        version = root.tree.version
+
+        new_node = build_element_subtree(ElementTree.fromstring('<a>0</a>'),
+                                         root.tree.namespaces)
+        root.attach_child(new_node, 0)
+
+        # Expression cache (compiled token tree) is untouched...
+        self.assertIs(selector.root_token, compiled_token)
+        # ...while the node-tree cache revision advanced and results reflect the change
+        self.assertEqual(root.tree.version, version + 1)
+        self.assertEqual([e.text for e in selector.select(root)], ['0', '1', '2'])
+
+    def test_insert_updates_order_positions_and_map(self):
+        elem = ElementTree.XML('<root><a>1</a><a>2</a><a>3</a></root>')
+        root = get_node_tree(elem)
+
+        new_elem = ElementTree.Element('a')
+        new_elem.text = '0'
+        new_node = build_element_subtree(new_elem, root.tree.namespaces)
+        root.attach_child(new_node, 0)
+
+        self.assertIs(root.tree.elements.get(new_elem), new_node)
+        self.assertEqual([n.value.text for n in root if isinstance(n, EtreeElementNode)],
+                         ['0', '1', '2', '3'])
+        self.assertEqual(list(elem)[0], new_elem)  # XML corrected as well
+        self.assertPositionsConsistent(root)
+        self.assertMatchesRebuild(root, elem)
+
+    def test_detach_keeps_provenance_but_not_current_identity(self):
+        elem = ElementTree.XML('<root><b>x</b><b>y</b></root>')
+        root = get_node_tree(elem)
+        selector = Selector('/root/b', parser=XPath2Parser)
+        old_elem = elem[0]
+        remaining_elem = elem[1]
+        detached = root.tree.elements[old_elem]
+
+        root.detach_child(detached)
+
+        self.assertIsNone(detached.parent)
+        self.assertIs(detached.value, old_elem)        # provenance retained
+        self.assertNotIn(old_elem, root.tree.elements)  # cannot pass as current node
+        self.assertIs(root.tree.elements.get(remaining_elem),
+                      root.tree.elements[remaining_elem])
+        self.assertEqual([e.text for e in selector.select(root)], ['y'])
+        self.assertPositionsConsistent(root)
+        self.assertMatchesRebuild(root, elem)
+
+        root.attach_child(detached, 0)
+        self.assertIs(root.tree.elements.get(old_elem), detached)
+        self.assertEqual([e.text for e in selector.select(root)], ['x', 'y'])
+
+    def test_move_reflects_new_sibling_order(self):
+        elem = ElementTree.XML('<root><x>1</x><y>2</y></root>')
+        root = get_node_tree(elem)
+        selector = Selector('/root/*', parser=XPath2Parser)
+
+        x_node = root.tree.elements[elem[0]]
+        root.move_child(x_node, 1)
+
+        self.assertEqual([e.tag for e in selector.select(root)], ['y', 'x'])
+        self.assertEqual([e.tag for e in selector.select(get_node_tree(elem))], ['y', 'x'])
+        self.assertPositionsConsistent(root)
+
+    def test_move_into_own_subtree_is_refused(self):
+        root = get_node_tree(ElementTree.XML('<root><a><b/></a></root>'))
+        a_node = root.tree.elements[root.elem[0]]
+        with self.assertRaises(ValueError):
+            root.tree.move_node(a_node, a_node, 0)
+
+    def test_detach_and_attach_manage_tail_text(self):
+        elem = ElementTree.XML('<root><a>1</a>tail<b>2</b></root>')
+        root = get_node_tree(elem)
+        a_node = root.tree.elements[elem[0]]
+
+        self.assertEqual([n.value for n in root if isinstance(n, TextNode)], ['tail'])
+        root.detach_child(a_node)
+        self.assertEqual([n.value for n in root if isinstance(n, TextNode)], [])
+        root.attach_child(a_node, 0)
+        self.assertEqual([n.value for n in root if isinstance(n, TextNode)], ['tail'])
+        self.assertPositionsConsistent(root)
+
+    def test_changing_one_tree_does_not_invalidate_another(self):
+        t1 = get_node_tree(ElementTree.XML('<r><c>one</c></r>'))
+        t2 = get_node_tree(ElementTree.XML('<r><c>two</c></r>'))
+        selector = Selector('/r/c', parser=XPath2Parser)
+        t2_positions = [n.position for n in t2.iter()]
+        t2_version = t2.tree.version
+
+        extra = build_element_subtree(ElementTree.fromstring('<c>extra</c>'),
+                                      t1.tree.namespaces)
+        t1.attach_child(extra)
+
+        self.assertEqual(t2.tree.version, t2_version)
+        self.assertEqual([n.position for n in t2.iter()], t2_positions)
+        self.assertEqual([e.text for e in selector.select(t2)], ['two'])
+        self.assertEqual([e.text for e in selector.select(t1)], ['one', 'extra'])
+
+    def test_comment_subtree_attach(self):
+        elem = ElementTree.XML('<root/>')
+        root = get_node_tree(elem)
+        comment = ElementTree.Comment('note')
+        comment.tail = 'after'
+        comment_node = build_element_subtree(comment)
+
+        root.attach_child(comment_node)
+        self.assertIs(root.tree.elements.get(comment), comment_node)
+        self.assertPositionsConsistent(root)
+
+    def test_attach_and_detach_on_document_node(self):
+        document = get_node_tree(
+            ElementTree.ElementTree(ElementTree.XML('<root><a>1</a></root>'))
+        )
+        self.assertIsInstance(document, DocumentNode)
+        node = build_element_subtree(ElementTree.fromstring('<b>2</b>'),
+                                     document.tree.namespaces)
+        document.attach_child(node)
+        self.assertPositionsConsistent(document)
+        document.detach_child(node)
+        self.assertPositionsConsistent(document)
+
+    def test_invalid_attach_and_detach(self):
+        root = get_node_tree(ElementTree.XML('<root><a/></root>'))
+        child = root.tree.elements[root.elem[0]]
+        with self.assertRaises(ValueError):
+            root.attach_child(child)  # already attached
+        detached = build_element_subtree(ElementTree.fromstring('<c/>'))
+        with self.assertRaises(ValueError):
+            root.detach_child(detached)  # not a child of root
+
+    def test_sync_after_direct_etree_insert(self):
+        elem = ElementTree.XML('<root><a>1</a><a>2</a></root>')
+        root = get_node_tree(elem)
+        selector = Selector('/root/a', parser=XPath2Parser)
+
+        new_elem = ElementTree.Element('a')
+        new_elem.text = '0'
+        elem.insert(0, new_elem)      # direct ElementTree correction
+        root.sync_tree()
+
+        self.assertIn(new_elem, root.tree.elements)
+        self.assertEqual([e.text for e in selector.select(root)], ['0', '1', '2'])
+        self.assertPositionsConsistent(root)
+        self.assertMatchesRebuild(root, elem)
+
+    def test_sync_after_direct_etree_delete_keeps_identity_boundary(self):
+        elem = ElementTree.XML('<r><b>keep</b><b>gone</b></r>')
+        root = get_node_tree(elem)
+        keep_node = root.tree.elements[elem[0]]
+        gone_elem = elem[1]
+        gone_node = root.tree.elements[gone_elem]
+
+        elem.remove(gone_elem)        # direct ElementTree correction
+        root.sync_tree()
+
+        self.assertIs(root.tree.elements.get(elem[0]), keep_node)
+        self.assertNotIn(gone_elem, root.tree.elements)
+        self.assertIs(gone_node.value, gone_elem)   # provenance retained
+        self.assertIsNone(gone_node.parent)          # but not a current node
+        self.assertEqual(
+            [e.text for e in Selector('/r/b', parser=XPath2Parser).select(root)],
+            ['keep']
+        )
+        self.assertPositionsConsistent(root)
+
+    def test_sync_after_direct_etree_move(self):
+        elem = ElementTree.XML('<root><x>1</x><y>2</y></root>')
+        root = get_node_tree(elem)
+        moved_elem = elem[0]
+        moved_node = root.tree.elements[moved_elem]
+
+        moved = elem[0]
+        elem.remove(moved)
+        elem.append(moved)
+        root.sync_tree()
+
+        self.assertIs(root.tree.elements.get(moved_elem), moved_node)
+        self.assertEqual(
+            [e.tag for e in Selector('/root/*', parser=XPath2Parser).select(root)],
+            ['y', 'x']
+        )
+        self.assertPositionsConsistent(root)
+
+    def test_sync_on_document_tree(self):
+        document = ElementTree.ElementTree(
+            ElementTree.XML('<root><a>1</a>tail<b>2</b></root>')
+        )
+        root = get_node_tree(document)
+        self.assertIsInstance(root, DocumentNode)
+
+        new_elem = ElementTree.Element('z')
+        document.getroot().insert(0, new_elem)
+        root.sync_tree()
+
+        self.assertPositionsConsistent(root)
+        self.assertEqual(
+            [e.tag for e in Selector('/root/*', parser=XPath2Parser).select(root)],
+            ['z', 'a', 'b']
+        )
+        self.assertEqual(
+            Selector('/root/text()', parser=XPath2Parser).select(root), ['tail']
+        )
 
 
 if __name__ == '__main__':
