@@ -196,6 +196,49 @@ here is a complete script to load `env:XXX` URIs from environment variables::
     result = jsonref.replace_refs(json, loader=loader)
 
 
+Extracting a minimal subtree package
+====================================
+
+Sometimes you need to hand a downstream consumer just one part of a document,
+together with everything that part depends on through JSON references.
+:func:`extract_subtree` builds that minimal local material package.
+
+- Reference objects are kept intact, so shared and recursive (cyclic)
+  references are preserved rather than inlined.
+- Only the selected subtree and its transitive dependencies are included;
+  unreferenced sibling data is pruned.
+- Internal references are rewritten to the package-local file paths, and the
+  selected location is reported as a JSON pointer in the result.
+- If a dependency cannot be loaded or a referenced fragment does not exist, the
+  broken reference is rewritten to its fully resolved URI and recorded, with the
+  full chain of references leading to it, in :attr:`ExtractionResult.missing`.
+  The package therefore never silently pretends to be self-contained.
+
+.. autofunction:: extract_subtree
+
+.. autoclass:: ExtractionResult
+
+    .. attribute:: documents
+
+        Mapping of package-relative file paths to the rewritten JSON data.
+
+    .. attribute:: root_document
+
+        Package-relative path of the document containing the selected subtree.
+
+    .. attribute:: root_pointer
+
+        JSON pointer of the selected subtree inside :attr:`root_document`.
+
+    .. attribute:: missing
+
+        Records for every reference that could not be satisfied, each including
+        the full reference chain leading to the missing target. Empty when the
+        package is self-contained.
+
+    .. automethod:: write_to
+
+
 :mod:`json` module drop in replacement functions
 ================================================
 
@@ -258,3 +301,9 @@ If there is a failure when resolving a JSON reference, a :class:`JsonRefError` w
     .. attribute:: cause
 
         The exception that caused the resolution to fail.
+
+When :func:`extract_subtree` is given a pointer that does not exist in the
+selected document, it raises :class:`ExtractionError` instead of producing a
+package.
+
+.. autoclass:: ExtractionError
