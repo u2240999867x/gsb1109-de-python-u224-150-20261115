@@ -20,14 +20,17 @@ __author__ = "Ero Carrera"
 __version__ = "2024.8.26"
 __contact__ = "ero.carrera@gmail.com"
 
+import base64
 import codecs
 import copy
+import json
 import math
 import mmap
 import os
 import string
 import struct
 import sys
+import tempfile
 import time
 import uuid
 from collections import Counter, defaultdict
@@ -246,6 +249,561 @@ debug_types = [
 ]
 
 DEBUG_TYPE = two_way_dict(debug_types)
+
+DEBUG_RECORD_SCHEMA = "pefile.debug-records/v1"
+DEBUG_RECORD_ARCHIVE_SCHEMA = "pefile.debug-records-raw/v1"
+DEBUG_RECORD_BATCH_SCHEMA = "pefile.debug-records-batch/v1"
+DEBUG_RECORD_VERSION = 1
+DEBUG_PATH_PLACEHOLDER = "<redacted>"
+# Only fields that are explicitly defined as paths are redacted. A path-like
+# string in any other field is ordinary debug data and is left untouched.
+DEBUG_PATH_FIELD_NAMES = frozenset({"PdbFileName"})
+DEBUG_PATH_POLICIES = ("redacted", "basename", "hash")
+
+
+def anonymize_debug_path(
+    value,
+    policy="basename",
+    placeholder=DEBUG_PATH_PLACEHOLDER,
+):
+    """Return a path-free representation of a debug path field.
+
+    Policies:
+
+    - ``basename`` (default): keep only the final component, with no drive or
+      directory information, and no separator characters.
+    - ``redacted``: replace the whole path with ``<redacted>``.
+    - ``hash``: replace the path with a stable, content-free label derived
+      from its SHA-256 digest.
+
+    Debug field paths are replaced according to ``policy``; the PDB identity
+    is carried by its GUID/Age (or timestamp/Age) fields, never by the file
+    name, so anonymizing the path leaves the identity untouched.
+    """
+
+    if policy not in DEBUG_PATH_POLICIES:
+        raise ValueError(f"unknown path_policy: {policy}")
+    if value is None:
+        return None
+    if isinstance(value, (bytes, bytearray, memoryview)):
+        raw = bytes(value)
+        try:
+            text = raw.decode("utf-8")
+        except UnicodeDecodeError:
+            text = raw.decode("latin-1")
+    else:
+        text = str(value)
+
+    # Empty and whitespace-only names carry no path; keep them empty.
+    if not text.strip(" \t\r\n\0"):
+        return ""
+
+    if policy == "redacted":
+        return placeholder
+
+    normalized = text.rstrip("\0")
+    if policy == "basename":
+        basename = normalized.replace("\\", "/").rsplit("/", 1)[-1]
+        # A drive-relative name such as C:foo.pdb still carries the drive.
+        if len(basename) >= 2 and basename[1] == ":":
+            basename = basename[2:]
+        if basename in ("", ".", ".."):
+            return placeholder
+        return basename
+
+    digest = sha256(normalized.encode("utf-8")).digest()
+    return f"<pdb-{digest.hex()[:12]}>"
+
+
+def _debug_json_value(value):
+    """Convert a parsed structure value into a JSON-friendly scalar."""
+
+    if isinstance(value, (bytes, bytearray, memoryview)):
+        raw = bytes(value)
+        try:
+            return raw.decode("utf-8")
+        except UnicodeDecodeError:
+            return raw.decode("latin-1")
+    return value
+
+
+def _debug_structure_fields(structure, redact_paths=False, path_policy="basename"):
+    fields = {}
+    if structure is None:
+        return fields
+    for keys in structure.__keys__:
+        for key in keys:
+            value = getattr(structure, key)
+            if redact_paths and key in DEBUG_PATH_FIELD_NAMES:
+                fields[key] = anonymize_debug_path(value, path_policy)
+            else:
+                fields[key] = _debug_json_value(value)
+    return fields
+
+
+def _debug_data_offset(pe, directory):
+    """Return the best file offset for a debug entry's payload."""
+
+    pointer = int(directory.PointerToRawData)
+    if 0 < pointer < len(pe.__data__):
+        return pointer
+
+    rva = int(directory.AddressOfRawData)
+    if rva:
+        try:
+            offset = pe.get_offset_from_rva(rva)
+        except (PEFormatError, ValueError, OverflowError):
+            return None
+        if 0 <= offset < len(pe.__data__):
+            return offset
+    return None
+
+
+def _debug_cv_identity(entry):
+    """Build the PDB identity from the CodeView fields only.
+
+    The file name is deliberately not an input. This keeps the identity
+    invariant when path anonymization changes PdbFileName.
+    """
+
+    if entry is None:
+        return None
+
+    if hasattr(entry, "Signature_String"):
+        guid = (
+            f"{entry.Signature_Data1:08X}"
+            f"{entry.Signature_Data2:04X}"
+            f"{entry.Signature_Data3:04X}"
+            f"{entry.Signature_Data4:02X}"
+            f"{entry.Signature_Data5:02X}"
+            f"{bytes(entry.Signature_Data6).hex().upper()}"
+        )
+        age = int(entry.Age)
+        return {
+            "kind": "codeview",
+            "format": "guid-age",
+            "value": guid + f"{age:X}",
+            "guid": guid,
+            "age": age,
+        }
+
+    if hasattr(entry, "Signature") and hasattr(entry, "Age"):
+        signature = int(entry.Signature)
+        age = int(entry.Age)
+        return {
+            "kind": "codeview",
+            "format": "timestamp-age",
+            "value": f"{signature:08X}{age:X}",
+            "signature": signature,
+            "age": age,
+        }
+
+    return None
+
+
+def _debug_type_name(type_id):
+    name = DEBUG_TYPE.get(type_id)
+    if not isinstance(name, str) or not name.startswith("IMAGE_DEBUG_TYPE_"):
+        return "UNKNOWN"
+    return name
+
+
+def _debug_type_label(type_id):
+    name = _debug_type_name(type_id)
+    if name == "UNKNOWN":
+        return "UNKNOWN"
+    return name[len("IMAGE_DEBUG_TYPE_") :]
+
+
+def _debug_data_range(pe, directory):
+    """Describe the payload range without reading more than the file holds."""
+
+    offset = _debug_data_offset(pe, directory)
+    size = int(directory.SizeOfData)
+    rva = int(directory.AddressOfRawData)
+
+    if offset is None:
+        available = 0
+        end = None
+    else:
+        available = max(0, min(size, len(pe.__data__) - offset))
+        end = offset + available
+
+    return {
+        "offset": offset,
+        "rva": rva,
+        "size": size,
+        "available": available,
+        "start": offset,
+        "end": end,
+        "complete": offset is not None and available == size,
+    }
+
+
+def _debug_payload(pe, range_info):
+    offset = range_info["offset"]
+    if offset is None or not range_info["available"]:
+        return b""
+    return bytes(pe.__data__[offset : offset + range_info["available"]])
+
+
+def _debug_summary(type_id, entry):
+    """Return a short, non-path summary for a debug entry."""
+
+    label = _debug_type_label(type_id)
+
+    if type_id == DEBUG_TYPE["IMAGE_DEBUG_TYPE_CODEVIEW"]:
+        signature = getattr(entry, "CvSignature", None)
+        header_signature = getattr(entry, "CvHeaderSignature", None)
+        if signature == b"RSDS":
+            return "CodeView PDB 7.0 (RSDS)"
+        if signature == b"NB10" or header_signature == 0x3031424E:  # "NB10"
+            return "CodeView PDB 2.0 (NB10)"
+        if signature is not None:
+            return f"CodeView ({_debug_json_value(signature)})"
+        return "CodeView (unrecognized payload)"
+
+    if type_id == DEBUG_TYPE["IMAGE_DEBUG_TYPE_MISC"]:
+        data_type = getattr(entry, "DataType", None)
+        if data_type is None:
+            return "MISC debug data (unrecognized payload)"
+        return f"MISC debug data (type {int(data_type)})"
+
+    if type_id == DEBUG_TYPE["IMAGE_DEBUG_TYPE_COFF"]:
+        return "COFF debug data"
+
+    if type_id == DEBUG_TYPE["IMAGE_DEBUG_TYPE_EX_DLLCHARACTERISTICS"]:
+        return "Extended DLL characteristics"
+
+    if label == "UNKNOWN":
+        return f"Unknown debug type 0x{type_id:x}"
+
+    return f"{label} debug data"
+
+
+def _build_debug_record(pe, index, debug_entry, path_policy):
+    directory = debug_entry.struct
+    entry = debug_entry.entry
+    type_id = int(directory.Type)
+    range_info = _debug_data_range(pe, directory)
+    payload = _debug_payload(pe, range_info)
+
+    # Path redaction is intentionally field-name driven. A path-looking value
+    # in any other debug field is ordinary data and must stay byte-for-byte.
+    entry_fields = _debug_structure_fields(entry, True, path_policy)
+    directory_fields = _debug_structure_fields(directory, False, path_policy)
+
+    return {
+        "index": index,
+        "type": type_id,
+        "type_name": _debug_type_name(type_id),
+        "type_label": _debug_type_label(type_id),
+        "summary": _debug_summary(type_id, entry),
+        "range": range_info,
+        "identity": _debug_cv_identity(entry),
+        "directory": directory_fields,
+        "fields": entry_fields,
+        "payload_sha256": sha256(payload).hexdigest() if payload else None,
+    }
+
+
+def _build_raw_debug_record(pe, index, debug_entry):
+    directory = debug_entry.struct
+    range_info = _debug_data_range(pe, directory)
+    payload = _debug_payload(pe, range_info)
+    record = {
+        "index": index,
+        "type": int(directory.Type),
+        "type_name": _debug_type_name(int(directory.Type)),
+        "range": range_info,
+        "identity": _debug_cv_identity(debug_entry.entry),
+        "directory": _debug_structure_fields(directory, False),
+        "entry": _debug_structure_fields(debug_entry.entry, False),
+        "payload_sha256": sha256(payload).hexdigest() if payload else None,
+    }
+    if payload:
+        record["payload_base64"] = base64.b64encode(payload).decode("ascii")
+    return record
+
+
+def _debug_source(pe):
+    data = bytes(pe.__data__)
+    return {"size": len(data), "sha256": sha256(data).hexdigest()}
+
+
+def _ensure_debug_directory(pe):
+    """Parse the debug directory for a PE created with ``fast_load``."""
+
+    if hasattr(pe, "DIRECTORY_ENTRY_DEBUG"):
+        return
+    if not hasattr(pe, "OPTIONAL_HEADER"):
+        return
+    index = DIRECTORY_ENTRY["IMAGE_DIRECTORY_ENTRY_DEBUG"]
+    try:
+        directory = pe.OPTIONAL_HEADER.DATA_DIRECTORY[index]
+    except IndexError:
+        return
+    if directory.VirtualAddress:
+        pe.parse_data_directories(
+            directories=[index]
+        )
+
+
+def _debug_records_document(pe, path_policy):
+    _ensure_debug_directory(pe)
+    records = [
+        _build_debug_record(pe, index, debug_entry, path_policy)
+        for index, debug_entry in enumerate(getattr(pe, "DIRECTORY_ENTRY_DEBUG", None) or [])
+    ]
+    return {
+        "schema": DEBUG_RECORD_SCHEMA,
+        "version": DEBUG_RECORD_VERSION,
+        "source": _debug_source(pe),
+        "record_count": len(records),
+        "records": records,
+    }
+
+
+def _debug_raw_document(pe):
+    _ensure_debug_directory(pe)
+    records = [
+        _build_raw_debug_record(pe, index, debug_entry)
+        for index, debug_entry in enumerate(getattr(pe, "DIRECTORY_ENTRY_DEBUG", None) or [])
+    ]
+    return {
+        "schema": DEBUG_RECORD_ARCHIVE_SCHEMA,
+        "version": DEBUG_RECORD_VERSION,
+        "source": _debug_source(pe),
+        "record_count": len(records),
+        "records": records,
+    }
+
+
+def default_debug_archive_path(pe):
+    """Return the default controlled location for a file's raw debug records."""
+
+    state_home = os.environ.get("XDG_STATE_HOME")
+    if not state_home:
+        state_home = os.path.join(os.path.expanduser("~"), ".local", "state")
+    archive_dir = os.path.join(state_home, "pefile", "debug-archive")
+    digest = _debug_source(pe)["sha256"]
+    return os.path.join(archive_dir, f"{digest}.raw.json")
+
+
+def _write_json(path, document, controlled=False):
+    """Write a JSON document atomically and return the exact bytes written."""
+
+    path = os.path.abspath(os.path.expanduser(os.fspath(path)))
+    parent = os.path.dirname(path) or "."
+    if not os.path.isdir(parent):
+        os.makedirs(parent, mode=0o700 if controlled else 0o777, exist_ok=True)
+
+    payload = (json.dumps(document, indent=2) + "\n").encode("utf-8")
+    mode = 0o600 if controlled else 0o644
+
+    fd, temporary = tempfile.mkstemp(prefix=".pefile-", dir=parent)
+    try:
+        if hasattr(os, "fchmod"):
+            os.fchmod(fd, mode)
+        with os.fdopen(fd, "wb") as output:
+            fd = None
+            output.write(payload)
+            output.flush()
+            os.fsync(output.fileno())
+        os.replace(temporary, path)
+    except Exception:
+        if fd is not None:
+            try:
+                os.close(fd)
+            except OSError:
+                pass
+        try:
+            os.unlink(temporary)
+        except OSError:
+            pass
+        raise
+    return payload
+
+
+def _validate_path_policy(path_policy):
+    if not isinstance(path_policy, str):
+        raise TypeError("path_policy must be a string")
+    if path_policy not in DEBUG_PATH_POLICIES:
+        raise ValueError(f"unknown path_policy: {path_policy}")
+
+
+def _export_single_debug_records(pe, output, raw_archive, path_policy):
+    document = _debug_records_document(pe, path_policy)
+
+    archive_document = _debug_raw_document(pe)
+    archive_path = _sample_archive_path(raw_archive, pe)
+    archive_payload_bytes = _write_json(
+        archive_path, archive_document, controlled=True
+    )
+    document["raw_archive"] = {
+        "schema": DEBUG_RECORD_ARCHIVE_SCHEMA,
+        "sha256": sha256(archive_payload_bytes).hexdigest(),
+        "size": len(archive_payload_bytes),
+        "record_count": archive_document["record_count"],
+    }
+
+    if output is not None:
+        _write_json(output, document)
+
+    return document
+
+
+def _iter_debug_pe_files(root, recursive=True):
+    """Yield PE files below a build directory in stable relative-path order."""
+
+    found = []
+    for dirpath, dirnames, filenames in os.walk(root):
+        if not recursive:
+            dirnames[:] = []
+        dirnames.sort()
+        for filename in sorted(filenames):
+            path = os.path.join(dirpath, filename)
+            try:
+                with open(path, "rb") as sample:
+                    magic = sample.read(2)
+            except OSError:
+                continue
+            if magic != b"MZ":
+                continue
+            relative = os.path.relpath(path, root)
+            found.append((relative.replace(os.sep, "/"), path))
+    return sorted(found)
+
+
+def _sample_archive_path(raw_archive, pe):
+    """Resolve a per-sample raw archive path.
+
+    ``raw_archive`` names the controlled archive directory. Every sample gets
+    its own file named after the sample digest, so a batch never overwrites
+    one sample's original records with another's.
+    """
+
+    if raw_archive is None:
+        return default_debug_archive_path(pe)
+
+    archive_dir = os.path.abspath(os.path.expanduser(os.fspath(raw_archive)))
+    digest = _debug_source(pe)["sha256"]
+    return os.path.join(archive_dir, f"{digest}.raw.json")
+
+
+def export_debug_records_from_directory(
+    directory,
+    output=None,
+    raw_archive=None,
+    *,
+    path_policy="basename",
+    recursive=True,
+):
+    """Export debug records for every PE file below a build directory.
+
+    The batch document reports each sample by its path relative to
+    ``directory`` only; the absolute build path is never included. Each
+    sample's raw records keep the original paths under the controlled archive
+    location.
+    """
+
+    _validate_path_policy(path_policy)
+    root = os.path.abspath(os.path.expanduser(os.fspath(directory)))
+    records = []
+
+    for relative, path in _iter_debug_pe_files(root, recursive):
+        try:
+            with PE(path) as pe:
+                document = _export_single_debug_records(
+                    pe,
+                    None,
+                    _sample_archive_path(raw_archive, pe),
+                    path_policy,
+                )
+        except (PEFormatError, ValueError, OSError) as error:
+            # One unreadable build artifact must not abort the whole export.
+            # Only the exception type is reported; messages can embed paths.
+            records.append(
+                {
+                    "path": relative,
+                    "error": type(error).__name__,
+                    "record_count": 0,
+                    "records": [],
+                }
+            )
+            continue
+
+        records.append(
+            {
+                "path": relative,
+                "source": document["source"],
+                "record_count": document["record_count"],
+                "records": document["records"],
+                "raw_archive": document.get("raw_archive"),
+            }
+        )
+
+    batch = {
+        "schema": DEBUG_RECORD_BATCH_SCHEMA,
+        "version": DEBUG_RECORD_VERSION,
+        "sample_count": len(records),
+        "samples": records,
+    }
+    if output is not None:
+        _write_json(output, batch)
+    return batch
+
+
+def export_debug_records(
+    pe,
+    output=None,
+    raw_archive=None,
+    *,
+    path_policy="basename",
+):
+    """Export structured debug records with path-free PDB identities.
+
+    ``pe`` may be a :class:`PE` instance, a PE file name, or a build
+    directory. The returned document never contains raw payloads or original
+    path fields. The original records, including the original ``PdbFileName``
+    and the raw debug payloads, are written to a separate archive with
+    owner-only permissions (0600). When ``raw_archive`` is omitted the archive
+    is placed under ``$XDG_STATE_HOME/pefile/debug-archive`` (or
+    ``~/.local/state/pefile/debug-archive``).
+    """
+
+    _validate_path_policy(path_policy)
+
+    if not isinstance(pe, PE):
+        path = os.path.abspath(os.path.expanduser(os.fspath(pe)))
+        if os.path.isdir(path):
+            return export_debug_records_from_directory(
+                path,
+                output,
+                raw_archive,
+                path_policy=path_policy,
+            )
+        with PE(path) as parsed:
+            return _export_single_debug_records(
+                parsed,
+                output,
+                raw_archive,
+                path_policy,
+            )
+
+    return _export_single_debug_records(
+        pe,
+        output,
+        raw_archive,
+        path_policy,
+    )
+
+
+def get_debug_records(pe, path_policy="basename"):
+    """Return the structured, anonymized debug records for a PE instance."""
+
+    _validate_path_policy(path_policy)
+    return _debug_records_document(pe, path_policy)["records"]
 
 
 subsystem_types = [
@@ -3489,6 +4047,38 @@ class PE:
         """
 
         return self.__warnings
+
+    def get_debug_records(self, path_policy="basename"):
+        """Return structured debug records with anonymized path fields.
+
+        The returned records preserve each debug entry's type, payload range,
+        summary and (for CodeView) GUID/Age identity. ``PdbFileName`` is
+        anonymized according to ``path_policy``; a path-looking value in any
+        other field is left untouched. Raw records are never returned here.
+        """
+
+        return get_debug_records(self, path_policy=path_policy)
+
+    def export_debug_records(
+        self,
+        output=None,
+        raw_archive=None,
+        *,
+        path_policy="basename",
+    ):
+        """Export anonymized debug records and archive the original records.
+
+        Raw records, including original paths and payload bytes, are written
+        only to the controlled owner-only archive. See
+        :func:`export_debug_records`.
+        """
+
+        return export_debug_records(
+            self,
+            output,
+            raw_archive,
+            path_policy=path_policy,
+        )
 
     def show_warnings(self):
         """Print the list of warnings.
@@ -7981,7 +8571,12 @@ class PE:
 
 def main():
     if not sys.argv[1:]:
-        print("pefile.py <filename>", "pefile.py exports <filename>", sep="\n")
+        print(
+            "pefile.py <filename>",
+            "pefile.py exports <filename>",
+            "pefile.py debug-records <filename-or-build-dir> [output.json]",
+            sep="\n",
+        )
     elif sys.argv[1] == "exports":
         if not sys.argv[2:]:
             sys.exit("error: <filename> required")
@@ -7990,6 +8585,14 @@ def main():
             print(
                 hex(pe.OPTIONAL_HEADER.ImageBase + exp.address), exp.name, exp.ordinal
             )
+    elif sys.argv[1] == "debug-records":
+        if not sys.argv[2:]:
+            sys.exit("error: <filename-or-build-dir> required")
+        document = export_debug_records(
+            sys.argv[2], sys.argv[3] if sys.argv[3:] else None
+        )
+        if not sys.argv[3:]:
+            print(json.dumps(document, indent=2))
     else:
         print(PE(sys.argv[1]).dump_info())
 

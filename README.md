@@ -63,6 +63,47 @@ To work with authenticated binaries, including **Authenticode signatures**, plea
 
 _pefile_ runs in several pipelines scanning hundreds of thousands of new PE files every day, and, while not perfect, it has grown to be pretty robust over time. That being said, small glitches are found now and then. If you bump into a PE that does not appear to be processed correctly, do report it, please! It will help make pefile a tiny bit more powerful.
 
+## Debug records and PDB paths
+
+Build outputs often carry a CodeView record whose PDB file name embeds the
+build directory. `get_debug_records()` returns a structured record per debug
+entry with the type, payload range, a short summary and, for CodeView, the
+GUID/Age identity. The PDB identity never includes the file name, so it stays
+the same regardless of the path policy.
+
+```python
+import pefile
+
+pe = pefile.PE("app.exe")
+records = pe.get_debug_records()              # basename policy
+records = pe.get_debug_records("redacted")    # no path components at all
+records = pe.get_debug_records("hash")        # stable, content-free label
+```
+
+Only fields defined as paths are anonymized. A path-looking value in any other
+field is debug data and is left untouched. Unknown debug types keep their
+numeric type, summary and payload range.
+
+`export_debug_records()` writes the anonymized document and archives the
+original records separately. The archive keeps the original `PdbFileName` and
+payload bytes and is created with owner-only permissions; it defaults to
+`$XDG_STATE_HOME/pefile/debug-archive` (or
+`~/.local/state/pefile/debug-archive`). It also accepts a build directory, in
+which case every PE below it is scanned and each sample is reported by its
+build-relative path only.
+
+```python
+pe.export_debug_records(output="debug.json", raw_archive="archive-dir")
+pefile.export_debug_records("build-dir", output="debug.json",
+                            raw_archive="archive-dir")
+```
+
+From the command line:
+
+```shell
+python pefile.py debug-records app.exe debug.json
+```
+
 ## Dependencies
 
 _pefile_ is self-contained. The module has no dependencies; it is endianness independent; and it works on Windows, macOS, and Linux.
