@@ -2,6 +2,11 @@
 
 ## 1.9.8
 **[2022-08-17]**
+- Added `dpkt.tls_archive` for archiving TLS handshake messages per
+  connection, with TCP sequence re-assembly that never bridges capture
+  gaps, support for records spanning packets and handshakes spanning
+  records, independent per-direction numbering, and full packet/record
+  provenance
 - Fixed endianness issues in PCAPNG, Loopback
 - Improved MPLS unpacking to include IPv6
 - Fixed unpacking of multiple records in TLS messages

@@ -71,6 +71,7 @@ from . import stun
 from . import tcp
 from . import telnet
 from . import tftp
+from . import tls_archive
 from . import tns
 from . import tpkt
 from . import udp
