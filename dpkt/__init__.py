@@ -73,6 +73,7 @@ from . import telnet
 from . import tftp
 from . import tns
 from . import tpkt
+from . import traffic_meter
 from . import udp
 from . import vrrp
 from . import yahoo
