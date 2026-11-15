@@ -1605,6 +1605,159 @@ class ImportData(DataContainer):
         self.__dict__[name] = val
 
 
+class ImportGraphNode(DataContainer):
+    """Holds a node of the import dependency graph.
+
+    kind:   "module" for the PE file itself or "library" for an
+            imported DLL.
+    name:   original DLL spelling as stored in the PE (bytes) for
+            library nodes, None for the module node.
+    key:    normalized association key, the lower-cased DLL name,
+            None for the module node.
+    edges:  list of ImportGraphEdge instances touching this node.
+    """
+
+
+class ImportGraphEdge(DataContainer):
+    """Holds a typed relationship between the module and a library.
+
+    source:             ImportGraphNode of the PE module.
+    target:             ImportGraphNode of the imported library.
+    import_type:        "import" for the standard import directory or
+                        "delay" for the delay import directory. The type
+                        is always recorded, so the same library reached
+                        through both directories keeps separate edges.
+    dll:                original DLL spelling as stored in the PE.
+    descriptor_index:   position of the import descriptor within its
+                        directory.
+    descriptor_rva:     RVA of the import descriptor.
+    descriptor_offset:  file offset of the import descriptor.
+    table_index:        position of the symbol within the import table.
+    name:               imported symbol name, None when imported by
+                        ordinal.
+    ordinal:            imported ordinal, None when imported by name.
+    hint:               hint from the hint/name table, if any.
+    import_by_ordinal:  whether the symbol is imported by ordinal.
+    address:            address of the IAT slot (ImageBase plus the
+                        thunk RVA).
+    bound:              bound address recorded in the IAT, if any.
+    thunk_rva:          RVA of the thunk in the import lookup table.
+    thunk_offset:       file offset of that thunk.
+    iat_rva:            RVA of the slot in the import address table.
+    iat_offset:         file offset of that IAT slot, if mapped.
+    ordinal_offset:     file offset of the ordinal field.
+    name_offset:        file offset of the symbol name, if any.
+    hint_name_table_rva: RVA of the hint/name table entry, if any.
+    """
+
+
+class ImportGraph(DataContainer):
+    """Dependency graph built from the import directories.
+
+    Merges the standard (IMAGE_DIRECTORY_ENTRY_IMPORT) and delay
+    (IMAGE_DIRECTORY_ENTRY_DELAY_IMPORT) import directories into a single
+    graph. Library entities are associated through the lower-cased DLL
+    name while the original spelling is retained on the nodes and edges.
+    Every edge keeps its import type, therefore a library imported through
+    both directories produces two distinct typed edges instead of one
+    untyped relationship.
+
+    A missing or empty import directory is not a failure: the resulting
+    graph simply contains the module node without edges.
+    """
+
+    def __init__(self, pe):
+        bare_setattr = super().__setattr__
+        bare_setattr(
+            "module", ImportGraphNode(kind="module", name=None, key=None, edges=[])
+        )
+        bare_setattr("nodes", [self.module])
+        bare_setattr("edges", [])
+        bare_setattr("_library_nodes", {})
+
+        for import_type, directory_attr in (
+            ("import", "DIRECTORY_ENTRY_IMPORT"),
+            ("delay", "DIRECTORY_ENTRY_DELAY_IMPORT"),
+        ):
+            if not hasattr(pe, directory_attr):
+                continue
+            for descriptor_index, descriptor in enumerate(getattr(pe, directory_attr)):
+                library_node = self._get_or_create_library_node(descriptor.dll)
+                self._add_descriptor_edges(
+                    pe, descriptor, library_node, import_type, descriptor_index
+                )
+
+    def _library_key(self, dll):
+        return dll.lower() if isinstance(dll, bytes) else dll.lower()
+
+    def _get_or_create_library_node(self, dll):
+        key = self._library_key(dll)
+        node = self._library_nodes.get(key)
+        if node is None:
+            node = ImportGraphNode(kind="library", name=dll, key=key, edges=[])
+            self._library_nodes[key] = node
+            self.nodes.append(node)
+        return node
+
+    def _add_descriptor_edges(
+        self, pe, descriptor, library_node, import_type, descriptor_index
+    ):
+        descriptor_offset = descriptor.struct.get_file_offset()
+        descriptor_rva = pe.get_rva_from_offset(descriptor_offset)
+        image_base = pe.OPTIONAL_HEADER.ImageBase
+
+        for table_index, symbol in enumerate(getattr(descriptor, "imports", [])):
+            iat_rva = symbol.address - image_base
+            try:
+                iat_offset = pe.get_offset_from_rva(iat_rva)
+            except PEFormatError:
+                iat_offset = None
+            edge = ImportGraphEdge(
+                source=self.module,
+                target=library_node,
+                import_type=import_type,
+                dll=descriptor.dll,
+                descriptor_index=descriptor_index,
+                descriptor_rva=descriptor_rva,
+                descriptor_offset=descriptor_offset,
+                table_index=table_index,
+                name=symbol.name,
+                ordinal=symbol.ordinal,
+                hint=symbol.hint,
+                import_by_ordinal=symbol.import_by_ordinal,
+                address=symbol.address,
+                bound=symbol.bound,
+                thunk_rva=symbol.thunk_rva,
+                thunk_offset=symbol.thunk_offset,
+                iat_rva=iat_rva,
+                iat_offset=iat_offset,
+                ordinal_offset=symbol.ordinal_offset,
+                name_offset=symbol.name_offset,
+                hint_name_table_rva=symbol.hint_name_table_rva,
+            )
+            self.edges.append(edge)
+            self.module.edges.append(edge)
+            library_node.edges.append(edge)
+
+    def get_library_node(self, dll):
+        """Return the library node associated with a DLL name, if any."""
+        if isinstance(dll, str):
+            dll = dll.encode("utf-8")
+        return self._library_nodes.get(self._library_key(dll))
+
+    def get_edges(self, dll=None, import_type=None):
+        """Return edges optionally filtered by DLL name and import type."""
+        result = self.edges
+        if dll is not None:
+            if isinstance(dll, str):
+                dll = dll.encode("utf-8")
+            dll_key = self._library_key(dll)
+            result = [edge for edge in result if self._library_key(edge.dll) == dll_key]
+        if import_type is not None:
+            result = [edge for edge in result if edge.import_type == import_type]
+        return result
+
+
 class ExportDirData(DataContainer):
     """Holds export directory information.
 
@@ -5874,6 +6027,32 @@ class PE:
                 impstrs.append(f"{libname.lower()}.{funcname.lower()}")
 
         return md5(",".join(impstrs).encode(), usedforsecurity=usedforsecurity).hexdigest()
+
+    def get_import_graph(self):
+        """Build a dependency graph from the import directories.
+
+        Both the standard import directory (DIRECTORY_ENTRY_IMPORT) and
+        the delay import directory (DIRECTORY_ENTRY_DELAY_IMPORT) are
+        collected into a single ImportGraph. Symbols imported by name or
+        by ordinal keep their original data, including the IAT slot
+        address and their position within the import table and the
+        directory.
+
+        Library entities are associated by the lower-cased DLL name,
+        while the original spelling is preserved unchanged on the nodes
+        and edges. Each edge records whether it comes from the standard
+        or the delay import directory, so a library reached through both
+        yields two separate typed edges.
+
+        A PE without an import directory, or with an empty one, is valid:
+        the returned graph contains the module node and no edges rather
+        than raising an error.
+
+        Returns:
+            An ImportGraph instance.
+        """
+
+        return ImportGraph(self)
 
     def get_exphash(self):
         """Return the exphash of the PE file.
