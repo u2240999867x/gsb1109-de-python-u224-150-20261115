@@ -4465,20 +4465,22 @@ class PE:
         for idx in range(size // dbg_size):
             try:
                 data = self.get_data(rva + dbg_size * idx, dbg_size)
+                dbg = self.__unpack_data__(
+                    self.__IMAGE_DEBUG_DIRECTORY_format__,
+                    data,
+                    file_offset=self.get_offset_from_rva(rva + dbg_size * idx),
+                )
             except PEFormatError:
                 self.__warnings.append(
                     f"Invalid debug information. Can't read data at RVA: {rva:#x}"
                 )
-                return None
-
-            dbg = self.__unpack_data__(
-                self.__IMAGE_DEBUG_DIRECTORY_format__,
-                data,
-                file_offset=self.get_offset_from_rva(rva + dbg_size * idx),
-            )
+                # The remaining entries live beyond the bytes available in the
+                # clipped upload. Keep the entries already parsed instead of
+                # discarding the whole debug directory.
+                break
 
             if not dbg:
-                return None
+                break
 
             # Apply structure according to DEBUG_TYPE
             # https://www.debuginfo.com/articles/debuginfomatch.html
@@ -4834,7 +4836,12 @@ class PE:
                 )
 
                 if not entry_directory:
-                    break
+                    # A missing or corrupt subdirectory (for example because its
+                    # pages were clipped from the upload) must not discard the
+                    # sibling entries that are still fully present. Skip this
+                    # entry and keep walking the directory.
+                    rva += res.sizeof()
+                    continue
 
                 # Ange Albertini's code to process resources' strings
                 if entry_id == RESOURCE_TYPE["RT_STRING"]:
@@ -4907,7 +4914,11 @@ class PE:
                     )
 
                 else:
-                    break
+                    # The data entry (or the pages it points to) is missing. Drop
+                    # only this leaf; the remaining entries in the directory are
+                    # independent and must stay available.
+                    rva += res.sizeof()
+                    continue
 
             # Check if this entry contains version information
             if level == 0 and res.Id == RESOURCE_TYPE["RT_VERSION"]:
