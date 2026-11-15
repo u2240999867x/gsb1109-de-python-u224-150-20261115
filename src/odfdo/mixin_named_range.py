@@ -52,17 +52,25 @@ class NRMixin(Element):
     def get_named_ranges(self) -> list[NamedRange]:
         """Retrieve all named ranges (`NamedRange` objects) global to the document.
 
+        Only named ranges declared in a ``table:named-expressions`` element
+        directly attached to the document body are returned. Named ranges
+        local to a table are ignored.
+
         Returns:
             list[NamedRange]: A list of `NamedRange` instances found in the document.
 
         """
         return cast(
             "list[NamedRange]",
-            self.get_elements("descendant::table:named-expressions/table:named-range"),
+            self.get_elements("table:named-expressions/table:named-range"),
         )
 
     def get_named_range(self, name: str) -> NamedRange | None:
         """Retrieve a specific named range global to the document by its name.
+
+        Named ranges local to a table are not considered: a same-named local
+        range of another table can never fill in for a missing global
+        declaration.
 
         Args:
             name: The name of the named range to retrieve.
@@ -74,7 +82,7 @@ class NRMixin(Element):
         named_range = cast(
             "list[NamedRange]",
             self.get_elements(
-                f'descendant::table:named-expressions/table:named-range[@table:name="{name}"][1]'
+                f'table:named-expressions/table:named-range[@table:name="{name}"][1]'
             ),
         )
         if named_range:

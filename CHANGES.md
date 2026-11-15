@@ -1,5 +1,35 @@
 # Odfdo Release Notes
 
+## [Unreleased]
+
+### Added
+
+- `NamedRange.scope`, `NamedRange.is_local`, `NamedRange.source_table_name`,
+  `NamedRange.source` and `NamedRange.address` describe where a named range is
+  declared (local to a table or global to the document) and which cell range it
+  resolves to.
+- `Table.resolve_named_range()` resolves a named range from the calling table,
+  preferring the table-local declaration and falling back to the global one.
+- `NamedRange.shift_rows()` and `NamedRange.shift_columns()` move range
+  coordinates when rows or columns are inserted or deleted.
+- Scope constants `SCOPE_LOCAL` and `SCOPE_GLOBAL` in `odfdo.named_range`.
+
+### Changed
+
+- `Table.get_named_range()` now follows ODF scope rules: the named range local
+  to the current table wins, otherwise the global document-level range is used.
+- Inserting or deleting rows and columns shifts the local named ranges of the
+  table and the global ranges referencing it; appending at the table edge does
+  not move ranges.
+- Renaming a named range only replaces same-named ranges within the same
+  declaration scope.
+
+### Fixed
+
+- Body-level named range queries no longer return named ranges local to a
+  table, so a same-named local range of another table can no longer fill in for
+  a missing global declaration.
+
 ## [3.27.3] - 2026-10-24
 
 -   Improve the filter for parasite files (`.DS_Store` and others) when savving the document.

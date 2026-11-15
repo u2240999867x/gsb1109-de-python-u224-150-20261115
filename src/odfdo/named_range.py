@@ -29,7 +29,7 @@ import contextlib
 import re
 import string
 from functools import cache
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, cast
 
 from .element import Element, register_element_class
 from .utils import convert_coordinates, digit_to_alpha
@@ -38,6 +38,14 @@ if TYPE_CHECKING:
     from .table import Table
 
 _RE_TABLE_NAME = re.compile(r"^\'|[\n\\/\*\?:\][]|\'$")
+
+# Declaration scopes of a named range: local to a table or global to the document.
+SCOPE_LOCAL = "local"
+SCOPE_GLOBAL = "global"
+
+# ODF tags used to identify the declaration scope of a named range.
+_TAG_NAMED_EXPRESSIONS = "table:named-expressions"
+_TAG_TABLE = "table:table"
 
 
 def table_name_check(name: Any) -> str:
@@ -246,8 +254,10 @@ class NamedRange(Element):
     def name(self, name: str) -> None:
         """Set the name of the named range.
 
-        If a named range with the same name already exists in the document, it
-        will be replaced.
+        If a named range with the same name already exists in the same
+        declaration scope, it will be replaced. A same-named range of another
+        scope is left untouched: local and global declarations are
+        independent.
 
         Args:
             name: The new name for the named range.
@@ -258,11 +268,113 @@ class NamedRange(Element):
             # we are not on an NR inserted in a document.
             # We know the body should contains NR mixin if
             # not exception.
-            if body := self.document_body:
-                named_range = body.get_named_range(name)
-                if named_range:
-                    named_range.delete()
+            scope = self.scope
+            if scope == SCOPE_LOCAL:
+                named_expressions = self.parent
+                owner = (
+                    named_expressions.parent if named_expressions is not None else None
+                )
+                if owner is None:
+                    raise ValueError
+                owner_table = cast("Table", owner)
+                existing = owner_table._local_named_range(name)
+                if (
+                    existing is not None
+                    and existing._xml_element is not self._xml_element
+                ):
+                    existing.delete()
+            elif scope == SCOPE_GLOBAL and (body := self.document_body):
+                existing = body.get_named_range(name)
+                if (
+                    existing is not None
+                    and existing._xml_element is not self._xml_element
+                ):
+                    existing.delete()
         self.set_attribute("table:name", name)
+
+    @property
+    def scope(self) -> str | None:
+        """Return the declaration scope of the named range.
+
+        A named range is local when declared inside a
+        ``table:named-expressions`` element child of a ``table:table``
+        element, and global when declared at the document body level.
+
+        Returns:
+            str | None: ``SCOPE_LOCAL`` or ``SCOPE_GLOBAL`` for a named range
+            attached to a document, or None for an orphaned element.
+
+        """
+        parent = self.parent
+        if parent is None or parent.tag != _TAG_NAMED_EXPRESSIONS:
+            return None
+        grand_parent = parent.parent
+        if grand_parent is not None and grand_parent.tag == _TAG_TABLE:
+            return SCOPE_LOCAL
+        return SCOPE_GLOBAL
+
+    @property
+    def is_local(self) -> bool:
+        """Return True if the named range is local to a table."""
+        return self.scope == SCOPE_LOCAL
+
+    @property
+    def source_table_name(self) -> str | None:
+        """Return the name of the table that declares the named range.
+
+        For a local named range this is the owning table. For a global named
+        range this is None, even when the range points at cells of some table:
+        the declaration itself is not local to any table.
+
+        Returns:
+            str | None: The declaring table name, or None for a global or
+            orphaned named range.
+
+        """
+        parent = self.parent
+        if parent is None or parent.tag != _TAG_NAMED_EXPRESSIONS:
+            return None
+        grand_parent = parent.parent
+        if grand_parent is not None and grand_parent.tag == _TAG_TABLE:
+            return grand_parent.get_attribute_string("table:name")
+        return None
+
+    @property
+    def source(self) -> str:
+        """Return a human readable description of the range declaration.
+
+        The description identifies the declaration scope, the owning table
+        when local, the named range name and its cell range. It is intended
+        for tracing which declaration is actually resolved by the collection
+        rules.
+
+        Returns:
+            str: A description such as ``"global Input -> Sheet2.Z9"`` or
+            ``"local Input @ Sheet1 -> Sheet1.A2"``.
+
+        """
+        scope = self.scope
+        if scope == SCOPE_LOCAL:
+            origin = f"local {self.name} @ {self.source_table_name}"
+        elif scope == SCOPE_GLOBAL:
+            origin = f"global {self.name}"
+        else:
+            origin = f"unbound {self.name}"
+        return f"{origin} -> {self.table_name}.{self.address}"
+
+    @property
+    def address(self) -> str:
+        """Return the cell range address without sheet name or ``$`` markers.
+
+        Returns:
+            str: An address such as ``"A1"`` or ``"A1:C2"``.
+
+        """
+        start = f"{digit_to_alpha(self.start[0])}{self.start[1] + 1}"
+        if self.start == self.end:
+            return start
+        end = f"{digit_to_alpha(self.end[0])}{self.end[1] + 1}"
+        return f"{start}:{end}"
 
     def set_table_name(self, name: str) -> None:
         """Set the name of the table associated with the named range.
@@ -323,6 +435,102 @@ class NamedRange(Element):
         """
         self._set_range(crange)
         self._update_attributes()
+
+    @staticmethod
+    def _shift_coordinate(
+        coordinate: int,
+        position: int,
+        delta: int,
+        keep_first: bool,
+    ) -> int:
+        """Shift one boundary coordinate after rows or columns are inserted
+        or deleted.
+
+        Args:
+            coordinate: The current 0-based boundary value.
+            position: The 0-based position of the structural change.
+            delta: The number of inserted (positive) or deleted (negative)
+                rows or columns.
+            keep_first: If True, the start boundary keeps its position when
+                the change happens exactly at the boundary; the end boundary
+                moves instead.
+
+        Returns:
+            int: The updated boundary value, never negative.
+
+        """
+        if delta > 0:
+            if coordinate > position or (coordinate == position and not keep_first):
+                return coordinate + delta
+            return coordinate
+        shift = -delta
+        if coordinate < position:
+            return coordinate
+        if coordinate >= position + shift:
+            return max(coordinate - shift, 0)
+        return max(position, 0)
+
+    def shift_rows(self, y: int, delta: int) -> bool:
+        """Shift the row boundaries of the range after rows are inserted or
+        deleted at position ``y``.
+
+        Inserting rows (``delta`` > 0) before a boundary moves it downward;
+        deleting rows (``delta`` < 0) moves it upward and may collapse the
+        range. The start boundary is not moved when rows are inserted exactly
+        at the start, while the end boundary is.
+
+        Args:
+            y: The 0-based position of the inserted or deleted rows.
+            delta: The count of inserted (positive) or deleted (negative)
+                rows.
+
+        Returns:
+            bool: True if the range coordinates changed.
+
+        """
+        if not delta:
+            return False
+        start_x, start_y, end_x, end_y = self.crange
+        # A single-row range has coincident row boundaries that must move
+        # together, otherwise the point range would be expanded.
+        keep_first = start_y != end_y
+        new_start_y = self._shift_coordinate(start_y, y, delta, keep_first)
+        new_end_y = self._shift_coordinate(end_y, y, delta, keep_first=False)
+        if (new_start_y, new_end_y) == (start_y, end_y):
+            return False
+        self.set_range((start_x, new_start_y, end_x, new_end_y))
+        return True
+
+    def shift_columns(self, x: int, delta: int) -> bool:
+        """Shift the column boundaries of the range after columns are inserted
+        or deleted at position ``x``.
+
+        Inserting columns (``delta`` > 0) before a boundary moves it rightward;
+        deleting columns (``delta`` < 0) moves it leftward and may collapse the
+        range. The start boundary is not moved when columns are inserted
+        exactly at the start, while the end boundary is.
+
+        Args:
+            x: The 0-based position of the inserted or deleted columns.
+            delta: The count of inserted (positive) or deleted (negative)
+                columns.
+
+        Returns:
+            bool: True if the range coordinates changed.
+
+        """
+        if not delta:
+            return False
+        start_x, start_y, end_x, end_y = self.crange
+        # A single-column range has coincident column boundaries that must
+        # move together, otherwise the point range would be expanded.
+        keep_first = start_x != end_x
+        new_start_x = self._shift_coordinate(start_x, x, delta, keep_first)
+        new_end_x = self._shift_coordinate(end_x, x, delta, keep_first=False)
+        if (new_start_x, new_end_x) == (start_x, end_x):
+            return False
+        self.set_range((new_start_x, start_y, new_end_x, end_y))
+        return True
 
     def _update_attributes(self) -> None:
         """Update the `table:base-cell-address` and `table:cell-range-address`

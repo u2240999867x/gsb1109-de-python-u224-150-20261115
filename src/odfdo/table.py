@@ -778,7 +778,7 @@ class Table(MDTable, FormMixin, OfficeFormsMixin, Element):
         # first, update named ranges if table already had a name
         # fixme : delete name ranges when deleting table, too.
         if self.name:
-            for named_range in self.get_named_ranges(table_name=self.name):
+            for named_range in self._named_ranges_referencing_table():
                 named_range.set_table_name(valid_name)
         self.set_attribute("table:name", valid_name)
 
@@ -1571,6 +1571,9 @@ class Table(MDTable, FormMixin, OfficeFormsMixin, Element):
             row = Row()
             clone = False
         y = self._translate_y_from_any(y)
+        # Only an insertion inside the existing rows moves named ranges;
+        # appending at or beyond the table end leaves coordinates untouched.
+        interior = y < self.height
         diff = y - self.height
         if diff < 0:
             row_back = self._table_cache.insert_row_in_cache(y, row, self)
@@ -1582,6 +1585,8 @@ class Table(MDTable, FormMixin, OfficeFormsMixin, Element):
         row_back.y = y
         # Update width if necessary
         self._update_width(row_back)
+        if interior:
+            self._shift_named_ranges_for_rows(y, 1)
         return row_back
 
     def extend_rows(self, rows: Iterable[Row] | None = None) -> None:
@@ -1653,6 +1658,7 @@ class Table(MDTable, FormMixin, OfficeFormsMixin, Element):
             return
         # Inside the defined table
         self._table_cache.delete_row_in_cache(y, self)
+        self._shift_named_ranges_for_rows(y, -1)
 
     def get_row_values(
         self,
@@ -2437,6 +2443,9 @@ class Table(MDTable, FormMixin, OfficeFormsMixin, Element):
             column = Column()
         x = self._translate_x_from_any(x)
         col_width = self._table_cache.width()
+        # Only an insertion inside the existing columns moves named ranges;
+        # appending at or beyond the table right edge leaves coordinates.
+        interior = x < col_width
         diff = x - col_width
         if diff < 0:
             column_back = self._table_cache.insert_col_in_cache(x, column, self)
@@ -2456,6 +2465,8 @@ class Table(MDTable, FormMixin, OfficeFormsMixin, Element):
             # Longer rows shouldn't exist!
         self._table_cache.clear_row_indexes()
         self._table_cache.clear_col_indexes()
+        if interior:
+            self._shift_named_ranges_for_columns(x, 1)
         return column_back
 
     def append_column(
@@ -2530,6 +2541,7 @@ class Table(MDTable, FormMixin, OfficeFormsMixin, Element):
                 row.delete_cell(x)
         self._table_cache.clear_row_indexes()
         self._table_cache.clear_col_indexes()
+        self._shift_named_ranges_for_columns(x, -1)
 
     def get_column_cells(
         self,
@@ -2761,6 +2773,37 @@ class Table(MDTable, FormMixin, OfficeFormsMixin, Element):
         if named_expressions.is_empty():
             self.delete(named_expressions)
 
+    def _named_ranges_referencing_table(self) -> list[NamedRange]:
+        """Return the named ranges whose coordinates must move with the table.
+
+        Local named ranges declared inside the table are always included.
+        Global named ranges are included only when their ``table_name`` points
+        at the current table; local ranges of other tables are never part of
+        the result.
+
+        Returns:
+            list[NamedRange]: The local ranges of the table and the global
+            ranges referencing it.
+
+        """
+        ranges = self._local_named_ranges()
+        body = self.document_body
+        if body is not None and body.allow_named_range:
+            ranges.extend(
+                nr for nr in body.get_named_ranges() if nr.table_name == self.name
+            )
+        return ranges
+
+    def _shift_named_ranges_for_rows(self, y: int, delta: int) -> None:
+        """Move named range coordinates when rows are inserted or deleted."""
+        for named_range in self._named_ranges_referencing_table():
+            named_range.shift_rows(y, delta)
+
+    def _shift_named_ranges_for_columns(self, x: int, delta: int) -> None:
+        """Move named range coordinates when columns are inserted or deleted."""
+        for named_range in self._named_ranges_referencing_table():
+            named_range.shift_columns(x, delta)
+
     def get_named_ranges(
         self,
         table_name: str | list[str] | None = None,
@@ -2808,32 +2851,55 @@ class Table(MDTable, FormMixin, OfficeFormsMixin, Element):
     ) -> NamedRange | None:
         """Return the named range with the specified name.
 
-        Named ranges can be local or global. Global named ranges are stored at
-        the body level, so do not call this on a cloned table for global
-        access.
+        Named ranges can be local or global. With the default scope
+        (``global_scope=True``), the resolution follows the ODF lookup rule:
+        the named range local to the current table is used first; if no local
+        declaration exists, the global document-level named range is used. A
+        same-named local range declared by another table is never returned.
+
+        Global named ranges are stored at the body level, so do not call this
+        on a cloned table for global access.
 
         Args:
             name: The name of the named range object.
-            global_scope: If True (default), searches the entire document.
-                If False, searches only the current table.
+            global_scope: If True (default), resolves from the local table
+                first and falls back to the document body. If False, searches
+                only the current table.
 
         Returns:
             NamedRange | None: The matching NamedRange element, or None if
                 not found.
 
         """
-        if global_scope:
-            body = self.document_body
-            if not body:
-                msg = "Table is not inside a document"
-                raise ValueError(msg)
-            if not body.allow_named_range:
-                return None
-            nr: NamedRange | None = body.get_named_range(name)
+        local_named_range = self._local_named_range(name)
+        if local_named_range is not None:
+            return local_named_range
+        if not global_scope:
+            return None
+        body = self.document_body
+        if not body:
+            msg = "Table is not inside a document"
+            raise ValueError(msg)
+        if not body.allow_named_range:
+            return None
+        return body.get_named_range(name)
 
-        else:
-            nr = self._local_named_range(name)
-        return nr
+    def resolve_named_range(self, name: str) -> NamedRange | None:
+        """Resolve a named range from the calling table using scope rules.
+
+        The lookup first searches the named range local to the current table,
+        then the global named ranges of the document body. The local ranges of
+        other tables are never used to fill in a missing declaration.
+
+        Args:
+            name: The name of the named range to resolve.
+
+        Returns:
+            NamedRange | None: The resolved NamedRange element, or None if
+            not found.
+
+        """
+        return self.get_named_range(name)
 
     def append_named_range(
         self, named_range: NamedRange, global_scope: bool = True
