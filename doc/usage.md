@@ -332,6 +332,103 @@ Now you can instantiate `PlyData` and serialize:
 >>>
 ```
 
+## Merging duplicate vertices
+
+Three-dimensional scans frequently contain several vertices at the
+same position, sometimes with different material or normal values.
+`PlyElement.merge_duplicate_vertices` merges vertices that agree on a
+configurable set of equivalence properties within configurable
+absolute tolerances, while keeping every other property and the face
+topology consistent.
+
+```Python Console
+>>> vertex = numpy.array([
+...     (0., 0., 0., 0),
+...     (0., 0., 0., 1),
+...     (1., 0., 0., 0),
+...     (1., 0., 0., 0),
+...     (0., 1., 0., 0),
+... ], dtype=[('x', 'f4'), ('y', 'f4'), ('z', 'f4'),
+...           ('material', 'i4')])
+>>> face = numpy.array([
+...     ([0, 2, 4],),
+...     ([1, 3, 4],),
+...     ([0, 1, 2],),
+... ], dtype=[('vertex_indices', 'i4', (3,))])
+>>> mesh = PlyData([PlyElement.describe(vertex, 'vertex'),
+...                 PlyElement.describe(face, 'face')])
+>>>
+```
+
+By default, only `x`, `y`, and `z` define equivalence and they must
+match exactly.  The two coincident vertices with different material
+values are therefore merged, since `material` is not an equivalence
+property:
+
+```Python Console
+>>> result = mesh['vertex'].merge_duplicate_vertices(mesh['face'])
+>>> result.vertex.count
+3
+>>> print(result.forward_map)
+[0 0 1 1 2]
+>>>
+```
+
+Each merged vertex carries the full set of original vertex indices it
+was formed from, both as the `source_vertices` attribute and as a new
+list property on the vertex element (named `source_vertex_indices` by
+default):
+
+```Python Console
+>>> print([row.tolist() for row in result.source_vertices])
+[[0, 1], [2, 3], [4]]
+>>> print(result.vertex.data['source_vertex_indices'][0])
+[0 1]
+>>>
+```
+
+All face indices are rewritten through `forward_map`.  Faces that
+become degenerate (fewer than three distinct vertices) are returned in
+a separate element instead of being silently dropped, so the topology
+change is never hidden inside the reduced vertex count:
+
+```Python Console
+>>> result.faces.count
+2
+>>> result.degenerate_faces.count
+1
+>>> print(result.degenerate_faces.data['vertex_indices'][0])
+[0 0 1]
+>>>
+```
+
+Material or normal components can be added to the equivalence
+properties so that coincident vertices with different attribute values
+stay distinct, and per-property absolute tolerances allow near-duplicates
+to merge (a missing or zero tolerance means exact equality):
+
+```Python Console
+>>> strict = mesh['vertex'].merge_duplicate_vertices(
+...     mesh['face'],
+...     equivalence_properties=('x', 'y', 'z', 'material'))
+>>> strict.vertex.count
+4
+>>> tol = mesh['vertex'].merge_duplicate_vertices(
+...     mesh['face'], tolerances={'x': 1e-6, 'y': 1e-6, 'z': 1e-6})
+>>> tol.vertex.count
+3
+>>>
+```
+
+The original elements are not modified.  The returned elements use
+distinct names, so they can be written together directly:
+
+```Python Console
+>>> PlyData([result.vertex, result.faces,
+...          result.degenerate_faces]).write('merged.ply')
+>>>
+```
+
 ## Miscellaneous
 
 ### Comments

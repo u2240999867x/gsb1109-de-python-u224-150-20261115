@@ -3,6 +3,12 @@
 All notable changes to this project will be documented here.
 
 ## [Unreleased]
+### Added
+- `PlyElement.merge_duplicate_vertices`: merge equivalent vertices
+  using configurable equivalence properties and per-property absolute
+  tolerances, retain the source vertex set of each merged vertex,
+  remap face indices, and return faces that become degenerate as a
+  separate element.
 
 ## [1.1.5] - 2026-07-25
 ### Fixed

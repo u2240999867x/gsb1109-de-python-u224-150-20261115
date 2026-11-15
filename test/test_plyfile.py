@@ -1016,3 +1016,359 @@ def test_text_io_bad_read(tet_ply_txt):
     with Raises(ValueError) as e:
         PlyData.read(stream1)
     assert str(e) == "can't read binary-format PLY from text stream"
+
+
+def _merge_mesh():
+    # Two pairs of exact duplicates plus a unique vertex, with a
+    # non-geometric material property carried alongside.
+    vertex = numpy.array([
+        (0., 0., 0., 7),
+        (0., 0., 0., 7),
+        (1., 0., 0., 8),
+        (1., 0., 0., 9),
+        (2., 0., 0., 9),
+    ], dtype=[('x', 'f4'), ('y', 'f4'), ('z', 'f4'),
+              ('material', 'i4')])
+
+    face = numpy.array([
+        ([0, 2, 4], 1),
+        ([1, 3, 4], 2),
+        ([0, 1, 2], 3),
+    ], dtype=[('vertex_indices', 'i4', (3,)), ('label', 'i4')])
+
+    return (PlyElement.describe(vertex, 'vertex'),
+            PlyElement.describe(face, 'face'))
+
+
+def test_merge_exact_duplicates():
+    (vertex, face) = _merge_mesh()
+    result = vertex.merge_duplicate_vertices(face)
+
+    assert result.vertex.count == 3
+    assert result.forward_map.tolist() == [0, 0, 1, 1, 2]
+    assert [row.tolist() for row in result.source_vertices] == \
+        [[0, 1], [2, 3], [4]]
+    assert result.vertex.data['source_vertex_indices'][0].tolist() == \
+        [0, 1]
+
+    # Representative is the first original vertex of each group, and
+    # non-equivalence properties are carried through unchanged.
+    assert result.vertex.data['material'].tolist() == [7, 8, 9]
+    assert result.vertex.data['x'].tolist() == [0., 1., 2.]
+
+    assert result.faces.count == 2
+    assert result.faces.data['label'].tolist() == [1, 2]
+    assert result.faces.data['vertex_indices'][0].tolist() == [0, 1, 2]
+    assert result.faces.data['vertex_indices'][1].tolist() == [0, 1, 2]
+
+    assert result.degenerate_faces.count == 1
+    assert result.degenerate_faces.name == 'face_degenerate'
+    assert result.degenerate_faces.data['label'].tolist() == [3]
+    degenerate = result.degenerate_faces.data['vertex_indices'][0]
+    assert degenerate.tolist() == [0, 0, 1]
+    assert degenerate.max() < result.vertex.count
+
+
+def test_merge_exact_is_default_without_tolerance():
+    vertex = numpy.array([
+        (0., 0., 0.),
+        (1e-6, 0., 0.),
+    ], dtype=[('x', 'f8'), ('y', 'f8'), ('z', 'f8')])
+    face = numpy.array([([0, 1, 0],)],
+                       dtype=[('vertex_indices', 'i4', (3,))])
+    vertex = PlyElement.describe(vertex, 'vertex')
+    face = PlyElement.describe(face, 'face')
+
+    result = vertex.merge_duplicate_vertices(face)
+    assert result.vertex.count == 2
+
+
+def test_merge_with_tolerance():
+    vertex = numpy.array([
+        (0., 0., 0.),
+        (1e-6, 0., 0.),    # within tolerance of vertex 0
+        (2e-5, 0., 0.),    # outside tolerance
+    ], dtype=[('x', 'f8'), ('y', 'f8'), ('z', 'f8')])
+    vertex = PlyElement.describe(vertex, 'vertex')
+    face = numpy.array([([0, 1, 2],)],
+                       dtype=[('vertex_indices', 'i4', (3,))])
+    face = PlyElement.describe(face, 'face')
+
+    result = vertex.merge_duplicate_vertices(
+        face, tolerances={'x': 1e-5, 'y': 1e-5, 'z': 1e-5})
+    assert result.vertex.count == 2
+    assert result.forward_map.tolist() == [0, 0, 1]
+
+    # A point exactly on the tolerance boundary is equivalent.
+    boundary = numpy.array([
+        (0., 0., 0.),
+        (1e-5, 0., 0.),
+    ], dtype=[('x', 'f8'), ('y', 'f8'), ('z', 'f8')])
+    boundary = PlyElement.describe(boundary, 'vertex')
+    boundary_face = PlyElement.describe(
+        numpy.array([([0, 1, 0],)],
+                    dtype=[('vertex_indices', 'i4', (3,))]),
+        'face')
+    boundary_result = boundary.merge_duplicate_vertices(
+        boundary_face, tolerances={'x': 1e-5})
+    assert boundary_result.vertex.count == 1
+
+
+def test_merge_across_grid_cell_boundary():
+    # The two points fall in different floor(value/tol) cells but
+    # their difference is within the tolerance, so the neighbor-cell
+    # lookup must still merge them.
+    vertex = numpy.array([
+        (0.995, 0., 0.),
+        (1.005, 0., 0.),
+    ], dtype=[('x', 'f8'), ('y', 'f8'), ('z', 'f8')])
+    vertex = PlyElement.describe(vertex, 'vertex')
+    face = PlyElement.describe(
+        numpy.array([([0, 1, 0],)],
+                    dtype=[('vertex_indices', 'i4', (3,))]),
+        'face')
+
+    result = vertex.merge_duplicate_vertices(
+        face, tolerances={'x': 0.01})
+    assert result.vertex.count == 1
+
+    # Points differing by more than the tolerance across the same
+    # boundary stay separate.
+    apart = numpy.array([
+        (0.99, 0., 0.),
+        (1.01, 0., 0.),
+    ], dtype=[('x', 'f8'), ('y', 'f8'), ('z', 'f8')])
+    apart = PlyElement.describe(apart, 'vertex')
+    apart_result = apart.merge_duplicate_vertices(
+        face, tolerances={'x': 0.01})
+    assert apart_result.vertex.count == 2
+
+
+def test_merge_tolerance_equivalence_is_not_transitive():
+    # A~B and B~C within tolerance, but A and C differ by more than
+    # the tolerance.  Equivalence is always judged against the first
+    # vertex of a group, so A and C must not be merged.
+    vertex = numpy.array([
+        (0., 0., 0.),
+        (0.8, 0., 0.),
+        (1.6, 0., 0.),
+    ], dtype=[('x', 'f8'), ('y', 'f8'), ('z', 'f8')])
+    vertex = PlyElement.describe(vertex, 'vertex')
+    face = PlyElement.describe(
+        numpy.empty(0, dtype=[('vertex_indices', 'i4', (3,))]),
+        'face')
+
+    result = vertex.merge_duplicate_vertices(
+        face, tolerances={'x': 1.0})
+    assert result.vertex.count == 2
+    assert result.forward_map.tolist() == [0, 0, 1]
+
+
+def test_merge_tolerance_keeps_first_representative():
+    vertex = numpy.array([
+        (0., 0., 0., 5),
+        (0.5, 0., 0., 6),
+    ], dtype=[('x', 'f8'), ('y', 'f8'), ('z', 'f8'),
+              ('material', 'i4')])
+    vertex = PlyElement.describe(vertex, 'vertex')
+    face = PlyElement.describe(
+        numpy.empty(0, dtype=[('vertex_indices', 'i4', (3,))]),
+        'face')
+
+    result = vertex.merge_duplicate_vertices(
+        face, tolerances={'x': 1.0, 'y': 1.0, 'z': 1.0})
+    assert result.vertex.count == 1
+    assert result.vertex.data['material'][0] == 5
+    assert result.vertex.data['x'][0] == 0.
+
+
+def test_merge_nonfinite_vertices_never_equivalent():
+    vertex = numpy.array([
+        (numpy.nan, 0., 0.),
+        (numpy.nan, 0., 0.),
+        (numpy.inf, 0., 0.),
+        (numpy.inf, 0., 0.),
+    ], dtype=[('x', 'f8'), ('y', 'f8'), ('z', 'f8')])
+    vertex = PlyElement.describe(vertex, 'vertex')
+    face = PlyElement.describe(
+        numpy.empty(0, dtype=[('vertex_indices', 'i4', (3,))]),
+        'face')
+
+    result = vertex.merge_duplicate_vertices(
+        face, tolerances={'x': 1.0, 'y': 1.0, 'z': 1.0})
+    assert result.vertex.count == 4
+    assert result.forward_map.tolist() == [0, 1, 2, 3]
+
+
+def test_merge_equivalence_properties_control_material_and_normal():
+    vertex = numpy.array([
+        (0., 0., 0., 0, 0., 0., 1.),
+        (0., 0., 0., 1, 0., 0., -1.),
+    ], dtype=[('x', 'f4'), ('y', 'f4'), ('z', 'f4'),
+              ('material', 'i4'),
+              ('nx', 'f4'), ('ny', 'f4'), ('nz', 'f4')])
+    face = numpy.array([([0, 1, 0],)],
+                       dtype=[('vertex_indices', 'i4', (3,))])
+    vertex = PlyElement.describe(vertex, 'vertex')
+    face = PlyElement.describe(face, 'face')
+
+    # Position-only equivalence merges despite material/normal split.
+    position_only = vertex.merge_duplicate_vertices(face)
+    assert position_only.vertex.count == 1
+    assert position_only.degenerate_faces.count == 1
+
+    # Including material keeps them apart.
+    with_material = vertex.merge_duplicate_vertices(
+        face, equivalence_properties=('x', 'y', 'z', 'material'))
+    assert with_material.vertex.count == 2
+
+    # Including normals also keeps them apart.
+    with_normal = vertex.merge_duplicate_vertices(
+        face,
+        equivalence_properties=('x', 'y', 'z', 'nx', 'ny', 'nz'))
+    assert with_normal.vertex.count == 2
+
+
+def test_merge_variable_length_and_preexisting_degenerate_faces():
+    vertex = numpy.array([
+        (0., 0., 0.),
+        (0., 0., 0.),
+        (1., 0., 0.),
+        (1., 0., 0.),
+        (2., 0., 0.),
+        (3., 0., 0.),
+    ], dtype=[('x', 'f4'), ('y', 'f4'), ('z', 'f4')])
+
+    face = numpy.array([
+        ([0, 2, 4, 5], 1),    # valid quad with four distinct vertices
+        ([0, 1], 2),          # pre-existing two-vertex face
+        ([0, 0, 2], 3),       # pre-existing repeated-index triangle
+        ([0, 1, 2], 4),       # becomes degenerate after merging
+    ], dtype=[('vertex_indices', object), ('label', 'i4')])
+
+    vertex = PlyElement.describe(vertex, 'vertex')
+    face = PlyElement.describe(face, 'face')
+
+    result = vertex.merge_duplicate_vertices(face)
+
+    assert result.vertex.count == 4
+    assert result.faces.count == 1
+    assert result.faces.data['label'].tolist() == [1]
+    assert result.faces.data['vertex_indices'][0].tolist() == \
+        [0, 1, 2, 3]
+
+    assert result.degenerate_faces.count == 3
+    assert result.degenerate_faces.data['label'].tolist() == [2, 3, 4]
+    for row in result.degenerate_faces.data['vertex_indices']:
+        assert row.min() >= 0
+        assert row.max() < result.vertex.count
+    assert result.degenerate_faces.data['vertex_indices'][2].tolist() \
+        == [0, 0, 1]
+
+
+def test_merge_does_not_mutate_inputs():
+    (vertex, face) = _merge_mesh()
+    original_vertex = vertex.data.copy()
+    original_face = face.data.copy()
+
+    vertex.merge_duplicate_vertices(face)
+
+    assert vertex.count == len(original_vertex)
+    assert face.count == len(original_face)
+    assert (vertex.data == original_vertex).all()
+    for k in range(len(face.data)):
+        assert face.data['vertex_indices'][k].tolist() == \
+            original_face['vertex_indices'][k].tolist()
+    assert (face.data['label'] == original_face['label']).all()
+
+
+def test_merge_is_idempotent():
+    (vertex, face) = _merge_mesh()
+    first = vertex.merge_duplicate_vertices(face)
+    second = first.vertex.merge_duplicate_vertices(
+        first.faces, source_property='src_again')
+
+    assert second.vertex.count == first.vertex.count
+    assert second.forward_map.tolist() == [0, 1, 2]
+    assert second.faces.count == first.faces.count
+    assert second.degenerate_faces.count == 0
+
+
+def test_merge_custom_names():
+    (vertex, face) = _merge_mesh()
+    result = vertex.merge_duplicate_vertices(
+        face,
+        face_index_property='vertex_indices',
+        source_property='src',
+        degenerate_face_name='bad_faces')
+
+    assert 'src' in result.vertex.data.dtype.fields
+    assert result.vertex.ply_property('src').name == 'src'
+    assert result.degenerate_faces.name == 'bad_faces'
+
+
+def test_merge_round_trip(tmpdir):
+    (vertex, face) = _merge_mesh()
+    result = vertex.merge_duplicate_vertices(face)
+    ply0 = PlyData([result.vertex, result.faces,
+                    result.degenerate_faces])
+    ply1 = write_read(ply0, tmpdir)
+
+    assert [elt.name for elt in ply1.elements] == \
+        ['vertex', 'face', 'face_degenerate']
+    assert ply1['vertex'].count == 3
+    assert ply1['vertex'].data['source_vertex_indices'][1].tolist() == \
+        [2, 3]
+    assert ply1['face'].count == 2
+    assert ply1['face_degenerate'].count == 1
+    assert ply1['face_degenerate'].data['vertex_indices'][0].tolist() \
+        == [0, 0, 1]
+
+
+def test_merge_errors():
+    (vertex, face) = _merge_mesh()
+
+    with Raises(ValueError) as e:
+        vertex.merge_duplicate_vertices(
+            face, equivalence_properties=('x', 'nope'))
+    assert 'unknown equivalence property' in str(e)
+
+    with Raises(ValueError) as e:
+        vertex.merge_duplicate_vertices(
+            face, face_index_property='nope')
+    assert "face element has no property 'nope'" == str(e)
+
+    with Raises(ValueError) as e:
+        vertex.merge_duplicate_vertices(face, source_property='x')
+    assert "already a vertex property" in str(e)
+
+    with Raises(ValueError) as e:
+        vertex.merge_duplicate_vertices(
+            face, tolerances={'x': -1.0})
+    assert 'non-negative' in str(e)
+
+    with Raises(ValueError) as e:
+        vertex.merge_duplicate_vertices(
+            face, tolerances={'material': 1.0})
+    assert 'unknown property' in str(e)
+
+    with Raises(ValueError) as e:
+        vertex.merge_duplicate_vertices(
+            face, equivalence_properties=())
+    assert 'at least one equivalence property' in str(e)
+
+    with Raises(ValueError) as e:
+        vertex.merge_duplicate_vertices(
+            face, degenerate_face_name='vertex')
+    assert 'collides with vertex element name' in str(e)
+
+
+def test_merge_out_of_range_face_index():
+    (vertex, face) = _merge_mesh()
+    bad_face = PlyElement.describe(
+        numpy.array([([0, 1, 99],)],
+                    dtype=[('vertex_indices', 'i4', (3,))]),
+        'face')
+    with Raises(IndexError):
+        vertex.merge_duplicate_vertices(bad_face)
+

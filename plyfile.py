@@ -21,6 +21,7 @@ NumPy-based PLY format input and output for Python.
 
 import io as _io
 from itertools import islice as _islice
+from itertools import product as _product
 
 import numpy as _np
 from sys import byteorder as _byteorder
@@ -722,6 +723,184 @@ class PlyElement(object):
         """
         self.data[key] = value
 
+    def merge_duplicate_vertices(self, faces,
+                                 equivalence_properties=('x', 'y', 'z'),
+                                 tolerances=None,
+                                 face_index_property='vertex_indices',
+                                 source_property=
+                                 'source_vertex_indices',
+                                 degenerate_face_name=None):
+        """
+        Merge vertices considered equivalent under the given properties
+        and tolerances, remap face indices to the merged vertices, and
+        report faces that become degenerate as a separate element.
+
+        Two vertices are merged when every equivalence property agrees
+        within the corresponding tolerance.  Properties not listed
+        (such as material or normal components) are ignored when
+        deciding equivalence, so coincident vertices with different
+        materials or normals are only merged when those properties are
+        absent from `equivalence_properties`.
+
+        The input elements are not modified.  Each merged vertex keeps
+        the full set of original vertex indices it was formed from,
+        both in the returned forward map and in a new list property on
+        the merged vertex element.
+
+        Faces whose remapped vertex indices do not describe a valid
+        polygon (fewer than three vertices or repeated vertex indices)
+        are returned in a separate element rather than silently
+        discarded, so the topology change is explicit instead of being
+        hidden by the reduced vertex count.
+
+        Parameters
+        ----------
+        faces : PlyElement
+            Face element whose `face_index_property` values index into
+            this vertex element.
+        equivalence_properties : iterable of str, optional
+            Names of vertex properties that must agree within
+            tolerance for two vertices to be merged.  Defaults to
+            `('x', 'y', 'z')`.
+        tolerances : dict of str to float, optional
+            Per-property nonnegative absolute tolerances.  A property
+            absent from the mapping (or a falsy/zero tolerance)
+            requires exact equality.
+        face_index_property : str, optional
+            Name of the face list (or fixed-shape) property holding
+            vertex indices.  Defaults to `'vertex_indices'`.
+        source_property : str, optional
+            Name of the new list property added to the merged vertex
+            element to record the original vertex indices of each
+            merged vertex.  Defaults to `'source_vertex_indices'`.
+        degenerate_face_name : str, optional
+            Element name for the returned degenerate faces.  Defaults
+            to the face element's name with `'_degenerate'` appended,
+            which keeps it distinct so the returned elements can be
+            placed together in one `PlyData`.
+
+        Returns
+        -------
+        PlyVertexMergeResult
+
+        Raises
+        ------
+        ValueError
+            If an equivalence property or the face index property does
+            not exist, the source property name is already in use, no
+            equivalence properties are given, a tolerance is negative
+            or names an unknown property, or the degenerate face
+            element name collides with the vertex element name.
+        IndexError
+            If a face references a vertex index outside the original
+            vertex range.
+        """
+        if tolerances is None:
+            tolerances = {}
+
+        vertex_data = self.data
+        num_vertices = len(vertex_data)
+
+        equivalence_properties = tuple(equivalence_properties)
+        if not equivalence_properties:
+            raise ValueError("at least one equivalence property is "
+                             "required")
+
+        missing = [name for name in equivalence_properties
+                   if name not in vertex_data.dtype.fields]
+        if missing:
+            raise ValueError("unknown equivalence property/properties: "
+                             "%r" % missing)
+
+        if face_index_property not in faces.data.dtype.fields:
+            raise ValueError("face element has no property %r" %
+                             face_index_property)
+
+        if source_property in vertex_data.dtype.fields:
+            raise ValueError("source property name %r is already a "
+                             "vertex property" % source_property)
+
+        if degenerate_face_name is None:
+            degenerate_face_name = faces.name + '_degenerate'
+        if degenerate_face_name == self.name:
+            raise ValueError("degenerate face element name %r collides "
+                             "with vertex element name" %
+                             degenerate_face_name)
+
+        unknown_tolerances = (set(tolerances) -
+                              set(equivalence_properties))
+        if unknown_tolerances:
+            raise ValueError("tolerance for unknown property/properties: "
+                             "%r" % sorted(unknown_tolerances))
+
+        tolerance_values = _np.array(
+            [tolerances.get(name, 0.0)
+             for name in equivalence_properties],
+            dtype='f8')
+        if _np.any(tolerance_values < 0):
+            raise ValueError("tolerances must be non-negative")
+
+        forward_map, representatives, source_vertices = \
+            _group_equivalent_vertices(vertex_data,
+                                       equivalence_properties,
+                                       tolerance_values)
+
+        merged_vertex = self._build_merged_vertex(
+            representatives, source_vertices, source_property)
+
+        (merged_faces, degenerate_faces) = _migrate_faces(
+            faces, face_index_property, forward_map, num_vertices,
+            degenerate_face_name)
+
+        source_vertices = [_np.asarray(sources, dtype='i4')
+                           for sources in source_vertices]
+
+        return PlyVertexMergeResult(
+            merged_vertex, merged_faces, degenerate_faces,
+            source_vertices, forward_map)
+
+    def _build_merged_vertex(self, representatives, source_vertices,
+                             source_property):
+        """
+        Construct the merged vertex element with representative data
+        and the source-vertex list property.
+
+        Parameters
+        ----------
+        representatives : numpy.ndarray
+            For each merged vertex, the original index providing its
+            property values.
+        source_vertices : list of list of int
+            For each merged vertex, the sorted original indices it
+            was formed from.
+        source_property : str
+            Name of the new list property.
+
+        Returns
+        -------
+        PlyElement
+        """
+        representative_data = self.data[representatives].copy()
+        merged_dtype = list(representative_data.dtype.descr)
+        merged_dtype.append((source_property, 'O'))
+
+        merged_data = _np.empty(len(representatives),
+                                dtype=merged_dtype)
+        for name in representative_data.dtype.names:
+            merged_data[name] = representative_data[name]
+
+        source_column = _np.empty(len(source_vertices), dtype='O')
+        for k, sources in enumerate(source_vertices):
+            source_column[k] = _np.asarray(sources, dtype='i4')
+        merged_data[source_property] = source_column
+
+        source_prop = PlyListProperty(source_property, 'u4', 'i4')
+        merged_element = PlyElement(
+            self.name, tuple(self.properties) + (source_prop,),
+            0, self.comments)
+        merged_element.data = merged_data
+        return merged_element
+
     def __str__(self):
         return self.header
 
@@ -729,6 +908,51 @@ class PlyElement(object):
         return ('PlyElement(%r, %r, count=%d, comments=%r)' %
                 (self.name, self.properties, self.count,
                  self.comments))
+
+
+class PlyVertexMergeResult(object):
+    """
+    Result of `PlyElement.merge_duplicate_vertices`.
+
+    The original vertex and face elements are left untouched.
+
+    Attributes
+    ----------
+    vertex : PlyElement
+        Merged vertex element.  In addition to the original
+        properties, it has a list property (named via the
+        `source_property` argument) giving the original vertex
+        indices represented by each merged vertex.
+    faces : PlyElement
+        Face element with all index values rewritten to indices into
+        `vertex`, with degenerate faces removed.
+    degenerate_faces : PlyElement
+        Rows of the original face element whose rewritten indices
+        became degenerate (fewer than three distinct vertices), in
+        their original order.  The indices themselves are still
+        rewritten, so every reference is valid against `vertex`.
+        This element has the same properties as `faces`.
+    source_vertices : list of numpy.ndarray
+        For each merged vertex, the sorted array of original vertex
+        indices it was formed from.  Mirrors the source list property
+        on `vertex`.
+    forward_map : numpy.ndarray
+        Array of length equal to the original vertex count, mapping
+        each original vertex index to its merged vertex index.
+    """
+
+    def __init__(self, vertex, faces, degenerate_faces,
+                 source_vertices, forward_map):
+        self.vertex = vertex
+        self.faces = faces
+        self.degenerate_faces = degenerate_faces
+        self.source_vertices = source_vertices
+        self.forward_map = forward_map
+
+    def __repr__(self):
+        return ('PlyVertexMergeResult(vertex=%r, faces=%r, '
+                'degenerate_faces=%r)' %
+                (self.vertex, self.faces, self.degenerate_faces))
 
 
 class PlyProperty(object):
@@ -1398,6 +1622,287 @@ def _check_comments(comments):
                 raise ValueError("non-ASCII character in comment")
             if char == '\n':
                 raise ValueError("embedded newline in comment")
+
+
+def _group_equivalent_vertices(vertex_data, property_names, tolerances):
+    """
+    Partition vertices into equivalence groups.
+
+    Zero-tolerance properties are matched exactly and form part of
+    the grid key.  Positive-tolerance properties are mapped to grid
+    cells of width equal to the tolerance, so a vertex can only be
+    equivalent to a group whose representative lies in the same cell
+    or a directly neighboring cell.  Group representatives are always
+    original vertices, so equivalence is always judged against actual
+    input data rather than a drifting cluster center.
+
+    Parameters
+    ----------
+    vertex_data : numpy.ndarray
+        Structured vertex data array.
+    property_names : tuple of str
+        Properties defining equivalence.
+    tolerances : numpy.ndarray
+        Nonnegative absolute tolerance per entry in `property_names`;
+        zero means exact equality.
+
+    Returns
+    -------
+    forward_map : numpy.ndarray
+        Mapping from original vertex index to merged group index.
+    representatives : numpy.ndarray
+        Original index used as the representative of each group.
+    source_vertices : list of list of int
+        Original indices belonging to each group.  Converted to
+        `numpy.ndarray` values by the caller when building output.
+    """
+    num_vertices = len(vertex_data)
+    columns = [_np.asarray(vertex_data[name], dtype='f8')
+               for name in property_names]
+    exact = tolerances == 0.0
+    tolerance_indices = _np.flatnonzero(~exact).tolist()
+
+    forward_map = _np.full(num_vertices, -1, dtype='i8')
+    representatives = []
+    source_vertices = []
+    # Grid cell key -> group indices whose representative is in the
+    # cell.  Exact properties contribute their raw values to the key
+    # and tolerance properties contribute a cell index.
+    grid = {}
+
+    for row_index in range(num_vertices):
+        candidate_groups = _candidate_groups(
+            grid, columns, exact, tolerance_indices, tolerances,
+            row_index)
+
+        group_index = _find_equivalent_group(
+            columns, exact, tolerances, row_index,
+            candidate_groups, representatives)
+
+        cell_key = _cell_key(columns, exact, tolerance_indices,
+                             tolerances, row_index)
+        if group_index == -1:
+            group_index = len(representatives)
+            representatives.append(row_index)
+            source_vertices.append([row_index])
+            grid.setdefault(cell_key, []).append(group_index)
+        else:
+            source_vertices[group_index].append(row_index)
+
+        forward_map[row_index] = group_index
+
+    representatives = _np.array(representatives, dtype='i8')
+    return (forward_map, representatives, source_vertices)
+
+
+def _cell_key(columns, exact, tolerance_indices, tolerances,
+              row_index):
+    """
+    Compute the grid key for one vertex: exact property values
+    followed by the cell index of each tolerance property.
+    """
+    exact_part = tuple(columns[k][row_index]
+                       for k in range(len(columns)) if exact[k])
+    tolerance_part = tuple(
+        _tolerance_cell(columns[k], tolerances[k], row_index)
+        for k in tolerance_indices)
+    return exact_part + tolerance_part
+
+
+def _tolerance_cell(column, tolerance, row_index):
+    """
+    Grid cell index for one tolerance property at one row.  A NaN or
+    infinite value gets a row-unique cell, since such a value is
+    never equivalent to another value (including an identical one).
+    """
+    scaled = column[row_index] / tolerance
+    if not _np.isfinite(scaled):
+        return ('nonfinite', row_index)
+    return int(_np.floor(scaled))
+
+
+def _candidate_groups(grid, columns, exact, tolerance_indices,
+                      tolerances, row_index):
+    """
+    Collect existing group indices from the cell containing the row
+    and its directly neighboring cells along every tolerance
+    dimension, in deterministic first-encounter order.
+    """
+    exact_part = tuple(columns[k][row_index]
+                       for k in range(len(columns)) if exact[k])
+    base_cells = [
+        _tolerance_cell(columns[k], tolerances[k], row_index)
+        for k in tolerance_indices]
+
+    # A NaN- or infinity-containing row cannot be equivalent to any
+    # existing row.
+    if any(isinstance(cell, tuple) for cell in base_cells):
+        return []
+
+    candidates = []
+    seen = set()
+    for offsets in _product((-1, 0, 1),
+                            repeat=len(tolerance_indices)):
+        key = exact_part + tuple(cell + offset
+                                 for cell, offset
+                                 in zip(base_cells, offsets))
+        for group_index in grid.get(key, ()):
+            if group_index not in seen:
+                seen.add(group_index)
+                candidates.append(group_index)
+    return candidates
+
+
+def _find_equivalent_group(columns, exact, tolerances, row_index,
+                           candidate_groups, representatives):
+    """
+    Find an existing group whose representative is equivalent to the
+    given row under all (possibly tolerance-based) properties.
+
+    Parameters
+    ----------
+    columns : list of numpy.ndarray
+    exact : numpy.ndarray of bool
+    tolerances : numpy.ndarray of float
+    row_index : int
+    candidate_groups : list of int
+        Group indices reachable from the row's grid cell.
+    representatives : list of int
+        Representative original index of each group.
+
+    Returns
+    -------
+    int
+        Matching group index, or -1 if none matches.
+    """
+    if not candidate_groups:
+        return -1
+
+    candidate_rows = _np.array(
+        [representatives[group_index]
+         for group_index in candidate_groups])
+    matches = _np.ones(len(candidate_rows), dtype=bool)
+
+    for k, column in enumerate(columns):
+        candidate_values = column[candidate_rows]
+        if exact[k]:
+            column_matches = candidate_values == column[row_index]
+        else:
+            column_matches = (
+                _np.abs(candidate_values - column[row_index])
+                <= tolerances[k])
+        matches &= column_matches
+        if not matches.any():
+            return -1
+
+    return candidate_groups[int(_np.flatnonzero(matches)[0])]
+
+
+def _migrate_faces(faces, index_property, forward_map, num_vertices,
+                   degenerate_face_name):
+    """
+    Rewrite face vertex indices to merged indices and split off
+    degenerate faces.
+
+    Parameters
+    ----------
+    faces : PlyElement
+    index_property : str
+        Property holding the per-face vertex indices.
+    forward_map : numpy.ndarray
+        Mapping from original to merged vertex indices.
+    num_vertices : int
+        Original vertex count, used to validate index ranges.
+    degenerate_face_name : str
+        Element name to use for the degenerate-face element.
+
+    Returns
+    -------
+    merged_faces : PlyElement
+    degenerate_faces : PlyElement
+
+    Raises
+    ------
+    IndexError
+        If a face references an index outside the vertex range.
+    """
+    face_data = faces.data
+    raw_indices = face_data[index_property]
+
+    if raw_indices.dtype == object:
+        original_rows = [_np.asarray(row) for row in raw_indices]
+    else:
+        original_rows = [row for row in raw_indices]
+
+    for face_index, row in enumerate(original_rows):
+        if row.size and (int(row.min()) < 0 or
+                         int(row.max()) >= num_vertices):
+            raise IndexError(
+                "face %d references vertex index outside [0, %d)" %
+                (face_index, num_vertices))
+
+    mapped_rows = [forward_map[row].astype(row.dtype, copy=False)
+                   for row in original_rows]
+
+    keep = []
+    drop = []
+    for face_index, mapped in enumerate(mapped_rows):
+        if mapped.size >= 3 and _np.unique(mapped).size == mapped.size:
+            keep.append(face_index)
+        else:
+            drop.append(face_index)
+
+    merged_faces = _build_face_element(
+        faces, faces.name, index_property, keep, mapped_rows)
+    degenerate_faces = _build_face_element(
+        faces, degenerate_face_name, index_property, drop, mapped_rows)
+    return (merged_faces, degenerate_faces)
+
+
+def _build_face_element(faces, element_name, index_property,
+                        row_indices, mapped_rows):
+    """
+    Build a face element from selected rows, replacing the index
+    property with the migrated index arrays.
+
+    Parameters
+    ----------
+    faces : PlyElement
+        Original face element supplying metadata and other fields.
+    element_name : str
+        Name for the new element.
+    index_property : str
+    row_indices : list of int
+        Rows of the original face element to retain.
+    mapped_rows : list of numpy.ndarray
+        Migrated index array for every original face.
+
+    Returns
+    -------
+    PlyElement
+    """
+    output_dtype = _np.dtype([
+        (name,
+         _np.dtype('O') if name == index_property
+         else faces.data.dtype.fields[name][0])
+        for name in faces.data.dtype.names])
+
+    new_data = _np.empty(len(row_indices), dtype=output_dtype)
+    if row_indices:
+        base = faces.data[_np.array(row_indices)]
+        for name in base.dtype.names:
+            if name != index_property:
+                new_data[name] = base[name]
+
+    index_column = _np.empty(len(row_indices), dtype='O')
+    for k, face_index in enumerate(row_indices):
+        index_column[k] = mapped_rows[face_index]
+    new_data[index_property] = index_column
+
+    new_element = PlyElement(element_name, faces.properties, 0,
+                             faces.comments)
+    new_element.data = new_data
+    return new_element
 
 
 def _read_array(stream, dtype, n):
