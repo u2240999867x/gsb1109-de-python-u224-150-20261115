@@ -705,6 +705,282 @@ class Reader(object):
             # just ignore other blocks
 
 
+def _idb_tsresol(idb, little_endian):
+    """Return the (divisor, tsoffset) described by the IDB timestamp options."""
+    divisor = 1000000  # pcapng default: microseconds
+    tsoffset = 0
+    fmt = '<' if little_endian else '>'
+    for opt in idb.opts:
+        if opt.code == PCAPNG_OPT_IF_TSRESOL:
+            # if MSB=0, the remaining bits is a neg power of 10 (e.g. 6 means microsecs)
+            # if MSB=1, the remaining bits is a neg power of 2 (e.g. 10 means 1/1024 of second)
+            opt_val = struct_unpack('b', opt.data)[0]
+            pow_num = 2 if opt_val & 0b10000000 else 10
+            divisor = pow_num ** (opt_val & 0b01111111)
+        elif opt.code == PCAPNG_OPT_IF_TSOFFSET:
+            # 64-bit int that specifies an offset (in seconds) that must be added to the
+            # timestamp of each packet
+            tsoffset = struct_unpack(fmt + 'q', opt.data)[0]
+    return divisor, tsoffset
+
+
+class InterfaceInfo(object):
+    """One interface within a pcapng section.
+
+    Interface ids restart at zero in every section, so an interface is
+    identified by the pair (section_id, interface_id). An unknown linktype
+    only forces ``dloff`` to zero; it never invalidates the interface or the
+    other interfaces of the same section.
+    """
+
+    def __init__(self, section_id, interface_id, idb, little_endian):
+        self.section_id = section_id
+        self.interface_id = interface_id
+        self.idb = idb
+        self.linktype = idb.linktype
+        self.snaplen = idb.snaplen
+        self.dloff = dltoff.get(idb.linktype, 0)
+        self.divisor, self.tsoffset = _idb_tsresol(idb, little_endian)
+
+    def timestamp(self, ts_high, ts_low):
+        """Convert a block timestamp to seconds using this interface's scale."""
+        raw_ts = (ts_high << 32) | ts_low
+        return self.tsoffset + raw_ts / self.divisor
+
+
+class SectionInfo(object):
+    """A single pcapng section and the interfaces it declares."""
+
+    def __init__(self, section_id, little_endian, shb=None):
+        self.section_id = section_id
+        self.little_endian = little_endian
+        self.shb = shb
+        self.interfaces = []
+
+    def add_interface(self, idb):
+        info = InterfaceInfo(self.section_id, len(self.interfaces), idb,
+                             self.little_endian)
+        self.interfaces.append(info)
+        return info
+
+    def get_interface(self, interface_id):
+        """Return the InterfaceInfo, or None if the id is not declared."""
+        if 0 <= interface_id < len(self.interfaces):
+            return self.interfaces[interface_id]
+        return None
+
+
+class PcapngRecord(object):
+    """A packet block bound to its section and interface context.
+
+    Attributes:
+        section: SectionInfo the packet belongs to
+        interface: InterfaceInfo resolved from the block iface_id, or None if
+            the section declares no such interface
+        timestamp: seconds since the Epoch computed from the interface time
+            scale, or None if the interface is unknown
+        pkt_data: captured packet bytes
+        block: parsed block, an EnhancedPacketBlock(LE) or PacketBlock(LE)
+        block_type: PCAPNG_BT_EPB or PCAPNG_BT_PB
+        block_offset: byte offset of the block within the file
+        raw_block: raw bytes of the whole block, byte-for-byte
+    """
+
+    def __init__(self, section, interface, timestamp, block, block_type,
+                 block_offset, raw_block):
+        self.section = section
+        self.interface = interface
+        self.timestamp = timestamp
+        self.pkt_data = block.pkt_data
+        self.block = block
+        self.block_type = block_type
+        self.block_offset = block_offset
+        self.raw_block = raw_block
+
+    @property
+    def iface_id(self):
+        return self.block.iface_id
+
+    @property
+    def linktype(self):
+        return None if self.interface is None else self.interface.linktype
+
+    def __iter__(self):
+        # allow `ts, buf = record`, like the tuples yielded by Reader
+        yield self.timestamp
+        yield self.pkt_data
+
+
+class FileReader(object):
+    """Section-aware offline reader for concatenated pcapng files.
+
+    A capture file may concatenate several pcapng sections, each starting
+    with its own Section Header Block. Interface numbering restarts at zero
+    in every section, and each section may use its own byte order, link
+    types and timestamp resolution/offset. This reader walks the blocks in
+    file order, keeps per-section state and yields a PcapngRecord for every
+    Enhanced Packet Block or Packet Block, bound to the section and interface
+    it actually belongs to. Each record retains its raw block and file offset,
+    so an exported packet can always be traced back to the exact section and
+    block it came from.
+
+    A block referencing an undeclared interface id is still yielded (with
+    ``interface`` and ``timestamp`` set to None); it does not affect packets
+    on the other interfaces of the same section.
+    """
+
+    def __init__(self, fileobj):
+        self.name = getattr(fileobj, 'name', '<{0}>'.format(fileobj.__class__.__name__))
+        self.__f = fileobj
+        self.sections = []
+        self.__section = None
+        self.__le = None
+
+        # open the first section so that non-pcapng files fail early
+        self.__open_section()
+        self.__iter = iter(self)
+
+    @property
+    def fd(self):
+        return self.__f.fileno()
+
+    def fileno(self):
+        return self.fd
+
+    def readpkts(self):
+        return list(self)
+
+    def __next__(self):
+        return next(self.__iter)
+    next = __next__  # Python 2 compat
+
+    def __iter__(self):
+        while 1:
+            block = self.__read_block()
+            if block is None:
+                break
+
+            block_type, block_offset, raw = block
+
+            if block_type == PCAPNG_BT_SHB:
+                # a new section restarts interface numbering and may switch
+                # byte order, so it has to be parsed from the BOM in the block
+                shb, little_endian = self.__parse_shb(raw)
+                if shb.v_major != PCAPNG_VERSION_MAJOR:
+                    raise ValueError('unknown pcapng version {0}.{1}'.format(
+                        shb.v_major, shb.v_minor))
+                self.__le = little_endian
+                self.__section = SectionInfo(len(self.sections), little_endian, shb)
+                self.sections.append(self.__section)
+                continue
+
+            if block_type == PCAPNG_BT_IDB:
+                idb = (InterfaceDescriptionBlockLE(raw) if self.__le
+                       else InterfaceDescriptionBlock(raw))
+                self.__section.add_interface(idb)
+                continue
+
+            if block_type == PCAPNG_BT_EPB:
+                parsed = (EnhancedPacketBlockLE(raw) if self.__le
+                          else EnhancedPacketBlock(raw))
+            elif block_type == PCAPNG_BT_PB:
+                parsed = PacketBlockLE(raw) if self.__le else PacketBlock(raw)
+            else:
+                # Simple Packet Block, Name Resolution Block, etc.
+                continue
+
+            interface = self.__section.get_interface(parsed.iface_id)
+            if interface is None:
+                timestamp = None
+            else:
+                timestamp = interface.timestamp(parsed.ts_high, parsed.ts_low)
+
+            yield PcapngRecord(self.__section, interface, timestamp, parsed,
+                               block_type, block_offset, raw)
+
+    def __open_section(self):
+        """Read and register the SHB at the current file position."""
+        shb = SectionHeaderBlock()
+        buf = self.__f.read(shb.__hdr_len__)
+        if len(buf) < shb.__hdr_len__:
+            raise ValueError('invalid pcapng header')
+
+        # unpack just the header since endianness is not known
+        shb.unpack_hdr(buf)
+        if shb.type != PCAPNG_BT_SHB:
+            raise ValueError('invalid pcapng header: not a SHB')
+
+        if shb.bom == BYTE_ORDER_MAGIC_LE:
+            little_endian = True
+            buf += self.__f.read(_swap32b(shb.len) - shb.__hdr_len__)
+            shb = SectionHeaderBlockLE(buf)
+        elif shb.bom == BYTE_ORDER_MAGIC:
+            little_endian = False
+            buf += self.__f.read(shb.len - shb.__hdr_len__)
+            shb = SectionHeaderBlock(buf)
+        else:
+            raise ValueError('unknown endianness')
+
+        if shb.v_major != PCAPNG_VERSION_MAJOR:
+            raise ValueError('unknown pcapng version {0}.{1}'.format(
+                shb.v_major, shb.v_minor))
+
+        self.__le = little_endian
+        self.__section = SectionInfo(len(self.sections), little_endian, shb)
+        self.sections.append(self.__section)
+
+    @staticmethod
+    def __parse_shb(raw):
+        """Parse an SHB whose byte order is given by its in-block BOM."""
+        bom = struct_unpack('>I', raw[8:12])[0]
+        if bom == BYTE_ORDER_MAGIC_LE:
+            return SectionHeaderBlockLE(raw), True
+        if bom == BYTE_ORDER_MAGIC:
+            return SectionHeaderBlock(raw), False
+        raise ValueError('unknown endianness')
+
+    def __read_block(self):
+        """Read one whole block; return (type, offset, raw) or None at EOF."""
+        block_offset = self.__f.tell()
+        head = self.__f.read(8)
+        if not head:
+            return None
+        if len(head) < 8:
+            raise dpkt.NeedData('truncated pcapng block header')
+
+        # the SHB type is byte-order independent. Its block length, however,
+        # is encoded in the byte order declared by the BOM inside the block,
+        # which may differ from the preceding section's byte order.
+        if struct_unpack('>I', head[:4])[0] == PCAPNG_BT_SHB:
+            bom_buf = self.__f.read(4)
+            if len(bom_buf) < 4:
+                raise dpkt.NeedData('truncated pcapng block')
+            bom = struct_unpack('>I', bom_buf)[0]
+            if bom == BYTE_ORDER_MAGIC_LE:
+                block_len = struct_unpack('<I', head[4:8])[0]
+            elif bom == BYTE_ORDER_MAGIC:
+                block_len = struct_unpack('>I', head[4:8])[0]
+            else:
+                raise ValueError('unknown endianness')
+
+            if block_len < 12:
+                raise dpkt.UnpackError('invalid pcapng block length {0}'.format(block_len))
+
+            rest = self.__f.read(block_len - 12)
+            if len(rest) < block_len - 12:
+                raise dpkt.NeedData('truncated pcapng block')
+            return PCAPNG_BT_SHB, block_offset, head + bom_buf + rest
+
+        block_type, block_len = struct_unpack('<II' if self.__le else '>II', head)
+        if block_len < 12:
+            raise dpkt.UnpackError('invalid pcapng block length {0}'.format(block_len))
+
+        rest = self.__f.read(block_len - 8)
+        if len(rest) < block_len - 8:
+            raise dpkt.NeedData('truncated pcapng block')
+        return block_type, block_offset, head + rest
+
+
 #########
 # TESTS #
 #########
@@ -1521,3 +1797,369 @@ def test_posttest():
         fun()
     except Exception as e:
         assert str(e) == 'No test type specified'
+
+
+# ---------------------------------------------------------------------------
+# FileReader: section-aware offline reader
+# ---------------------------------------------------------------------------
+
+def _option(code, data=b'', little_endian=True):
+    kls = PcapngOptionLE if little_endian else PcapngOption
+    return kls(code=code, data=data)
+
+
+def _endofopt(little_endian=True):
+    return _option(PCAPNG_OPT_ENDOFOPT, little_endian=little_endian)
+
+
+def _shb(little_endian=True):
+    kls = SectionHeaderBlockLE if little_endian else SectionHeaderBlock
+    return kls(opts=[_endofopt(little_endian)])
+
+
+def _idb(linktype, little_endian=True, snaplen=0x40000, tsresol=None, tsoffset=None):
+    kls = InterfaceDescriptionBlockLE if little_endian else InterfaceDescriptionBlock
+    fmt = '<' if little_endian else '>'
+    opts = []
+    if tsresol is not None:
+        opts.append(_option(PCAPNG_OPT_IF_TSRESOL, struct_pack('b', tsresol), little_endian))
+    if tsoffset is not None:
+        opts.append(_option(PCAPNG_OPT_IF_TSOFFSET, struct_pack(fmt + 'q', tsoffset), little_endian))
+    opts.append(_endofopt(little_endian))
+    return kls(linktype=linktype, snaplen=snaplen, opts=opts)
+
+
+def _pkt_block(iface_id, ts_int, pkt, little_endian=True, block_type=PCAPNG_BT_EPB):
+    if block_type == PCAPNG_BT_EPB:
+        kls = EnhancedPacketBlockLE if little_endian else EnhancedPacketBlock
+    else:
+        kls = PacketBlockLE if little_endian else PacketBlock
+    return kls(iface_id=iface_id,
+               ts_high=ts_int >> 32,
+               ts_low=ts_int & 0xffffffff,
+               pkt_data=pkt,
+               opts=[_endofopt(little_endian)])
+
+
+def _spb(pkt, little_endian=True):
+    """A Simple Packet Block (type 3), which carries no interface id."""
+    fmt = '<' if little_endian else '>'
+    pad = _padded(pkt)
+    block_len = 12 + 4 + len(pad)
+    return b''.join([
+        struct_pack(fmt + 'II', PCAPNG_BT_SPB, block_len),
+        struct_pack(fmt + 'I', len(pkt)),
+        pad,
+        struct_pack(fmt + 'I', block_len),
+    ])
+
+
+def test_filereader_basic():
+    """A single section behaves like the legacy reader, plus section binding"""
+    data = define_testdata().valid_pcapng
+    fobj = BytesIO(data)
+    reader = FileReader(fobj)
+
+    record = next(reader)
+
+    # sections/interfaces are registered while blocks are scanned
+    assert len(reader.sections) == 1
+    section = reader.sections[0]
+    assert section.section_id == 0
+    assert len(section.interfaces) == 1
+    assert section.interfaces[0].linktype == DLT_EN10MB
+    assert section.interfaces[0].dloff == 14
+    assert section.interfaces[0].divisor == 1000000
+
+    assert record.timestamp == define_testdata().valid_pkts[0][0]
+    assert record.pkt_data == define_testdata().valid_pkts[0][1]
+    assert record.section is section
+    assert record.interface is section.interfaces[0]
+    assert record.iface_id == 0
+    assert record.linktype == DLT_EN10MB
+    assert record.block_type == PCAPNG_BT_EPB
+
+    # pypcap-style tuple unpacking still works
+    ts, buf = record
+    assert (ts, buf) == define_testdata().valid_pkts[0]
+
+    # provenance points at the exact block in the file
+    assert data[record.block_offset:record.block_offset + len(record.raw_block)] == record.raw_block
+    assert record.raw_block[0:4] in (b'\x06\x00\x00\x00', b'\x00\x00\x00\x06')
+    assert bytes(record.block) == record.raw_block
+
+
+def test_filereader_multi_section():
+    """Interface ids restart at zero in every section and bind per section"""
+    # section 0: iface 0 = Ethernet (us), iface 1 = Linux SLL (ns)
+    sec0 = b''.join([
+        bytes(_shb()),
+        bytes(_idb(DLT_EN10MB, tsresol=6)),
+        bytes(_idb(DLT_LINUX_SLL, tsresol=9)),
+        bytes(_pkt_block(0, 1454725786 * 1000000, b'eth0-pkt')),
+        bytes(_pkt_block(1, 1454725787 * 1000000000, b'sll1-pkt')),
+    ])
+    # section 1: iface 0 = raw (ns), iface 1 = Ethernet (us)
+    sec1 = b''.join([
+        bytes(_shb()),
+        bytes(_idb(DLT_RAW, tsresol=9)),
+        bytes(_idb(DLT_EN10MB, tsresol=6)),
+        bytes(_pkt_block(0, 1454725788 * 1000000000, b'raw0-pkt')),
+        bytes(_pkt_block(1, 1454725789 * 1000000, b'eth1-pkt')),
+    ])
+
+    reader = FileReader(BytesIO(sec0 + sec1))
+    records = reader.readpkts()
+    assert len(records) == 4
+
+    assert [r.section.section_id for r in records] == [0, 0, 1, 1]
+    assert [r.iface_id for r in records] == [0, 1, 0, 1]
+
+    # sections are independent: same iface id resolves to different interfaces
+    assert records[0].interface is not records[2].interface
+    assert records[1].interface is not records[3].interface
+
+    assert records[0].linktype == DLT_EN10MB
+    assert records[0].interface.divisor == 1000000
+    assert records[0].timestamp == 1454725786.0
+    assert records[0].pkt_data == b'eth0-pkt'
+
+    assert records[1].linktype == DLT_LINUX_SLL
+    assert records[1].interface.dloff == 16
+    assert records[1].interface.divisor == 1000000000
+    assert records[1].timestamp == 1454725787.0
+    assert records[1].pkt_data == b'sll1-pkt'
+
+    assert records[2].linktype == DLT_RAW
+    assert records[2].interface.divisor == 1000000000
+    assert records[2].timestamp == 1454725788.0
+
+    assert records[3].linktype == DLT_EN10MB
+    assert records[3].interface.divisor == 1000000
+    assert records[3].timestamp == 1454725789.0
+
+    assert len(reader.sections) == 2
+    assert [len(s.interfaces) for s in reader.sections] == [2, 2]
+
+
+def test_filereader_unknown_linktype_isolation():
+    """An unknown linktype only zeroes dloff; other interfaces stay usable"""
+    data = b''.join([
+        bytes(_shb()),
+        bytes(_idb(3456)),                       # iface 0: unknown linktype
+        bytes(_idb(DLT_EN10MB)),                 # iface 1: known linktype
+        bytes(_pkt_block(0, 1454725786 * 1000000, b'unknown-pkt')),
+        bytes(_pkt_block(1, 1454725787 * 1000000, b'ether-pkt')),
+    ])
+    reader = FileReader(BytesIO(data))
+    records = reader.readpkts()
+
+    assert len(records) == 2
+
+    unknown_iface = reader.sections[0].interfaces[0]
+    assert unknown_iface.linktype == 3456
+    assert unknown_iface.dloff == 0
+    # timestamp scale is still applied on the unknown interface
+    assert records[0].interface is unknown_iface
+    assert records[0].linktype == 3456
+    assert records[0].timestamp == 1454725786.0
+    assert records[0].pkt_data == b'unknown-pkt'
+
+    known_iface = reader.sections[0].interfaces[1]
+    assert known_iface.linktype == DLT_EN10MB
+    assert known_iface.dloff == 14
+    assert records[1].interface is known_iface
+    assert records[1].timestamp == 1454725787.0
+
+
+def test_filereader_undeclared_iface():
+    """A packet on an undeclared interface id is kept, with None context, and
+    does not disturb packets on other interfaces of the same section"""
+    data = b''.join([
+        bytes(_shb()),
+        bytes(_idb(DLT_EN10MB)),
+        bytes(_pkt_block(0, 1454725786 * 1000000, b'good-pkt')),
+        bytes(_pkt_block(7, 1454725787 * 1000000, b'orphan-pkt')),
+        bytes(_pkt_block(0, 1454725788 * 1000000, b'good-pkt-2')),
+    ])
+    reader = FileReader(BytesIO(data))
+    records = reader.readpkts()
+
+    assert len(records) == 3
+
+    orphan = records[1]
+    assert orphan.iface_id == 7
+    assert orphan.interface is None
+    assert orphan.linktype is None
+    assert orphan.timestamp is None
+    assert orphan.pkt_data == b'orphan-pkt'
+    assert orphan.section is reader.sections[0]
+    # the orphan still carries its raw block for later re-export
+    assert bytes(orphan.block) == orphan.raw_block
+
+    # sibling interfaces are unaffected
+    assert records[0].interface is reader.sections[0].interfaces[0]
+    assert records[0].timestamp == 1454725786.0
+    assert records[2].interface is reader.sections[0].interfaces[0]
+    assert records[2].timestamp == 1454725788.0
+
+
+def test_filereader_block_provenance():
+    """Raw blocks and offsets reconstruct the original file in order"""
+    sec0 = b''.join([
+        bytes(_shb()),
+        bytes(_idb(DLT_EN10MB)),
+        bytes(_pkt_block(0, 1454725786 * 1000000, b'pkt0')),
+    ])
+    sec1 = b''.join([
+        bytes(_shb()),
+        bytes(_idb(DLT_RAW)),
+        bytes(_pkt_block(0, 1454725787 * 1000000, b'pkt1')),
+    ])
+    data = sec0 + sec1
+
+    reader = FileReader(BytesIO(data))
+    records = reader.readpkts()
+
+    # every record locates its exact bytes inside the file
+    for record in records:
+        slice_ = data[record.block_offset:record.block_offset + len(record.raw_block)]
+        assert slice_ == record.raw_block
+        assert record.block_offset == data.index(record.raw_block)
+
+    # sections and blocks round-trip: re-concatenating every block rebuilds
+    # the file byte-for-byte (records only cover packet blocks, so include
+    # their sections' SHB/IDB bytes too)
+    rebuilt = b''.join([
+        sec0[:len(sec0) - len(records[0].raw_block)], records[0].raw_block,
+        sec1[:len(sec1) - len(records[1].raw_block)], records[1].raw_block,
+    ])
+    assert rebuilt == data
+
+    assert records[0].section is not records[1].section
+    assert records[0].block_offset < records[1].block_offset
+
+
+def test_filereader_mixed_endian_sections():
+    """A new SHB may switch byte order for its section and later blocks"""
+    le_section = b''.join([
+        bytes(_shb(little_endian=True)),
+        bytes(_idb(DLT_EN10MB, little_endian=True)),
+        bytes(_pkt_block(0, 1454725786 * 1000000, b'le-pkt', little_endian=True)),
+    ])
+    be_section = b''.join([
+        bytes(_shb(little_endian=False)),
+        bytes(_idb(DLT_LINUX_SLL, little_endian=False)),
+        bytes(_pkt_block(0, 1454725787 * 1000000, b'be-pkt', little_endian=False)),
+    ])
+
+    reader = FileReader(BytesIO(le_section + be_section))
+    records = reader.readpkts()
+
+    assert reader.sections[0].little_endian is True
+    assert reader.sections[1].little_endian is False
+
+    assert records[0].pkt_data == b'le-pkt'
+    assert records[0].linktype == DLT_EN10MB
+    assert records[0].timestamp == 1454725786.0
+    assert records[0].raw_block[0:4] == b'\x06\x00\x00\x00'
+
+    assert records[1].pkt_data == b'be-pkt'
+    assert records[1].linktype == DLT_LINUX_SLL
+    assert records[1].timestamp == 1454725787.0
+    assert records[1].raw_block[0:4] == b'\x00\x00\x00\x06'
+
+
+def test_filereader_packet_block():
+    """Deprecated Packet Blocks are bound the same way as Enhanced Packet Blocks"""
+    data = b''.join([
+        bytes(_shb()),
+        bytes(_idb(DLT_EN10MB)),
+        bytes(_pkt_block(0, 1454725786 * 1000000, b'pb-pkt', block_type=PCAPNG_BT_PB)),
+        bytes(_pkt_block(0, 1454725787 * 1000000, b'epb-pkt', block_type=PCAPNG_BT_EPB)),
+    ])
+    reader = FileReader(BytesIO(data))
+    records = reader.readpkts()
+
+    assert records[0].block_type == PCAPNG_BT_PB
+    assert isinstance(records[0].block, PacketBlockLE)
+    assert records[0].pkt_data == b'pb-pkt'
+    assert records[0].timestamp == 1454725786.0
+
+    assert records[1].block_type == PCAPNG_BT_EPB
+    assert isinstance(records[1].block, EnhancedPacketBlockLE)
+    assert records[1].pkt_data == b'epb-pkt'
+
+
+def test_filereader_skips_non_packet_blocks():
+    """Simple Packet Blocks (and other non-packet blocks) are skipped"""
+    data = b''.join([
+        bytes(_shb()),
+        bytes(_idb(DLT_EN10MB)),
+        _spb(b'simple-pkt'),
+        bytes(_pkt_block(0, 1454725786 * 1000000, b'real-pkt')),
+    ])
+    reader = FileReader(BytesIO(data))
+    records = reader.readpkts()
+
+    assert len(records) == 1
+    assert records[0].pkt_data == b'real-pkt'
+
+
+def test_filereader_tsoffset():
+    """Per-interface timestamp offset and resolution are applied per packet"""
+    data = b''.join([
+        bytes(_shb()),
+        bytes(_idb(DLT_EN10MB, tsresol=9, tsoffset=100)),
+        bytes(_pkt_block(0, 5 * 1000000000, b'pkt')),
+    ])
+    reader = FileReader(BytesIO(data))
+    record = next(reader)
+
+    assert record.interface.divisor == 1000000000
+    assert record.interface.tsoffset == 100
+    assert record.timestamp == 105.0
+
+
+def test_filereader_errors():
+    """Invalid headers and truncated blocks raise, instead of silently failing"""
+    import pytest
+
+    # not an SHB at all
+    with pytest.raises(ValueError, match='invalid pcapng header: not a SHB'):
+        FileReader(BytesIO(b'\x00' * 28))
+
+    # empty / too short
+    with pytest.raises(ValueError, match='invalid pcapng header'):
+        FileReader(BytesIO(b'\x00' * 4))
+
+    # bad BOM
+    bad_shb = bytearray(bytes(_shb()))
+    bad_shb[8:12] = b'\x00\x00\x00\x00'
+    with pytest.raises(ValueError, match='unknown endianness'):
+        FileReader(BytesIO(bytes(bad_shb)))
+
+    # valid section followed by a truncated block
+    truncated = bytes(_shb()) + bytes(_idb(DLT_EN10MB)) + b'\x06\x00\x00\x00\x80'
+    with pytest.raises(dpkt.NeedData):
+        FileReader(BytesIO(truncated)).readpkts()
+
+    # a new section with a bad BOM must fail while iterating
+    bad_mid_shb = bytearray(bytes(_shb()))
+    bad_mid_shb[8:12] = b'\x00\x00\x00\x00'
+    mixed = bytes(_shb()) + bytes(_idb(DLT_EN10MB)) + bytes(bad_mid_shb)
+    with pytest.raises(ValueError, match='unknown endianness'):
+        FileReader(BytesIO(mixed)).readpkts()
+
+
+def test_filereader_file_descriptor():
+    """FileReader exposes .fd and .fileno() like the legacy Reader"""
+    import tempfile
+    with tempfile.TemporaryFile() as fobj:
+        fobj.write(define_testdata().valid_pcapng)
+        fobj.seek(0)
+
+        reader = FileReader(fobj)
+        assert reader.fd == fobj.fileno()
+        assert reader.fileno() == fobj.fileno()
+        assert reader.name == fobj.name

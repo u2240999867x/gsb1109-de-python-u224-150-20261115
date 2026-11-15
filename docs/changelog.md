@@ -1,5 +1,8 @@
 # Changelog
 
+## Unreleased
+- Added `dpkt.pcapng.FileReader`, a section-aware offline reader for concatenated pcapng files: each packet is bound to its owning section's interface, linktype and timestamp scale, interface ids restart per section, unknown linktypes only zero the data-link offset, and every record retains its raw block and file offset for exact re-export
+
 ## 1.9.8
 **[2022-08-17]**
 - Fixed endianness issues in PCAPNG, Loopback
