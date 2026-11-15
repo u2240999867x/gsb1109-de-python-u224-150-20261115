@@ -118,6 +118,22 @@ environments (the "latex context") that are specified using
 :py:class:`pylatexenc.macrospec.LatexContextDb` object.  See the doc of the
 module :py:mod:`pylatexenc.macrospec` for more information.
 
+If the LaTeX code is still being written or uploaded and its end may cut a
+construct in half, use :py:meth:`LatexWalker.parse_partial_content()`.  It
+reports the complete nodes that precede the unfinished construct, together
+with the range of the input that is incomplete, and it reports the tolerant
+parse of the same input separately::
+
+    >>> from pylatexenc.latexwalker import LatexWalker
+    >>> w = LatexWalker(r'Hello \\textbf{wor')
+    >>> result = w.parse_partial_content()
+    >>> result.complete
+    False
+    >>> result.trusted_nodes[0].latex_verbatim()
+    'Hello '
+    >>> result.incomplete_range
+    (6, 17)
+
 .. versionchanged:: 3.0
 
    Parsing is now carried out by parser objects that are invoked via
@@ -179,6 +195,7 @@ from ._legacy_py1x import (
 
 
 ### BEGIN_LATEXWALKER_HELPERS
+from ._partial import LatexWalkerPartialParseResult
 from ._helpers import (
     nodelist_to_latex,
     put_in_braces,

@@ -583,6 +583,59 @@ class LatexWalker(latexnodes.LatexWalkerBase):
         return nodes, info
 
 
+    def parse_partial_content(self):
+        r"""
+        Parse the entire string, and report the part that can be trusted when
+        the input ends before all constructs are closed.
+
+        This is meant for LaTeX code that is still being uploaded or written,
+        where the end of the string may cut a macro, a group, a math block or
+        an environment in half.  The usual strict and tolerant parsing modes
+        are not well suited to that situation: strict parsing refuses the
+        whole input, whereas tolerant parsing recovers a tree in which the
+        truncated construct is presented as if it had parsed successfully.
+        This method keeps the two apart.
+
+        The string is first parsed in strict mode, regardless of this walker's
+        `tolerant_parsing` setting (which is restored afterwards, so the walker
+        can still be used as before).  Two outcomes are possible:
+
+        - The whole string parses.  The returned
+          :py:class:`~pylatexenc.latexwalker.LatexWalkerPartialParseResult`
+          has `complete=True`; its `trusted_nodes` are the complete node list
+          and `incomplete_range` is `None`.
+
+        - The strict parse stops because the input ended while a construct was
+          still open (an unfinished group or argument, math mode, environment,
+          verbatim content, or a lone trailing escape character).  The
+          returned result has `complete=False`; `trusted_nodes` are the
+          complete top-level constructs that precede the unfinished one, and
+          `incomplete_range` is the range of the remaining source text.
+
+        Any other parse error is a genuine syntax error, and it is raised as
+        usual; it is not reported as an incomplete input.
+
+        A tolerant parse of the same input is run as well, and its node list
+        is stored separately in `tolerant_nodes`.  In particular, the literal
+        contents of an unterminated verbatim environment appear there as
+        literal text, never as macro calls, and are never mixed into
+        `trusted_nodes`.
+
+        The trusted nodes are contiguous and start at position 0, so their
+        combined text is exactly `s[:trusted_range[1]]`.  Since they are
+        complete constructs that end before the unfinished one, parsing the
+        same text as part of a longer, completed string yields the same
+        nodes for that prefix.
+
+        Returns a :py:class:`~pylatexenc.latexwalker.LatexWalkerPartialParseResult`
+        instance.
+
+        .. versionadded:: 3.0
+        """
+        from . import _partial
+        return _partial.parse_partial_content(self)
+
+
     def make_nodes_collector(self,
                              token_reader,
                              parsing_state,

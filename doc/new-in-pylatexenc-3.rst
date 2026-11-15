@@ -68,9 +68,17 @@ architecture with extended and more flexible functionality:
   :py:class:`~pylatexenc.latexnodes.parsers.LatexStandardArgumentParser`.
 
 - Parsing state changes are described by explicit *parsing state delta* objects
-  (:py:class:`~pylatexenc.latexnodes.ParsingStateDelta`, so a construct can now
+  (:py:class:`~pylatexenc.latexnodes.ParsingStateDelta`), so a construct can now
   legitimately alter how the rest of the document is parsed — including
   extending the macro database mid-document.
+
+- A new :py:meth:`LatexWalker.parse_partial_content()
+  <pylatexenc.latexwalker.LatexWalker.parse_partial_content>` handles LaTeX
+  code whose end cuts a construct in half, as happens while a document is
+  still being uploaded.  It reports the complete nodes that precede the
+  unfinished construct and the range of the incomplete input, and it keeps the
+  tolerant parse of the same code in a separate attribute.  See
+  :py:class:`~pylatexenc.latexwalker.LatexWalkerPartialParseResult`.
 
 - Errors got their own little hierarchy.  `LatexWalkerParseError` now derives
   from a new
