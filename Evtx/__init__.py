@@ -17,6 +17,7 @@
 __all__ = [
     "Evtx",
     "BinaryParser",
+    "EventTable",
     "Nodes",
     "Views",
 ]
