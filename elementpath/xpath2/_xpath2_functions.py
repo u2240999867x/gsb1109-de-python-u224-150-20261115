@@ -36,6 +36,7 @@ from elementpath.sequences import xlist
 from elementpath.compare import deep_equal
 from elementpath.sequence_types import match_sequence_type
 from elementpath.xpath_context import XPathSchemaContext
+from elementpath.local_xml import LocalXMLResourceError
 from elementpath.xpath_nodes import XPathNode, DocumentNode, ElementNode, EtreeElementNode
 from elementpath.xpath_tokens import XPathFunction
 from elementpath.regex import RegexError, translate_pattern
@@ -344,6 +345,10 @@ def evaluate__document_uri(self: XPathFunction, context: ta.ContextType = None) 
             if context.documents:
                 for uri, doc in context.documents.items():
                     if doc and doc.document is context.root.document:
+                        return AnyURI(uri)
+            elif context.catalog is not None:
+                for uri, doc in context.catalog.iter_documents():
+                    if doc.document is context.root.document:
                         return AnyURI(uri)
 
     return []
@@ -1655,6 +1660,25 @@ def evaluate__doc_functions(self: XPathFunction, context: ta.ContextType = None)
             raise self.error('FODC0002', err.message) from None
         return False
 
+    if context.catalog is not None:
+        try:
+            doc = context.catalog.get_document(uri)
+        except LocalXMLResourceError as err:
+            if self.symbol == 'doc':
+                raise self.error(err.code or 'FODC0002', err.message) from None
+            return False
+        else:
+            try:
+                sequence_type = self.parser.document_types[uri]  # type: ignore[index]
+            except (KeyError, TypeError):
+                sequence_type = 'document-node()'
+
+            if not match_sequence_type(doc, sequence_type, self.parser):
+                msg = f"type does not match sequence type {sequence_type!r}"
+                raise self.error('XPDY0050', msg)
+
+            return doc if self.symbol == 'doc' else True
+
     try:
         doc = context.documents[uri]  # type: ignore[index]
     except (KeyError, TypeError):
@@ -1691,11 +1715,25 @@ def evaluate__collection(self: XPathFunction, context: ta.ContextType = None) \
     elif isinstance(context, XPathSchemaContext):
         return []
     elif not self or uri is None:
-        if context.default_collection is None:
+        if context.catalog is not None:
+            collection = context.catalog.get_default_collection()
+            sequence_type = self.parser.default_collection_type
+        elif context.default_collection is not None:
+            collection = context.default_collection
+            sequence_type = self.parser.default_collection_type
+        else:
             raise self.error('FODC0002', 'no default collection has been defined')
+    elif context.catalog is not None:
+        uri = self.get_absolute_uri(uri)
+        try:
+            collection = context.catalog.get_collection(uri)
+        except LocalXMLResourceError as err:
+            raise self.error(err.code or 'FODC0002', err.message) from None
 
-        collection = context.default_collection
-        sequence_type = self.parser.default_collection_type
+        try:
+            sequence_type = self.parser.collection_types[uri]  # type: ignore[index]
+        except (KeyError, TypeError):
+            return collection
     else:
         uri = self.get_absolute_uri(uri)
         try:

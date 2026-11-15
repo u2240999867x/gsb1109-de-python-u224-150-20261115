@@ -2,6 +2,12 @@
 CHANGELOG
 *********
 
+`Unreleased`_
+=============
+* Add `LocalXMLCatalog` for batch-scoped access to locked local XML documents
+* `fn:doc`, `fn:collection` and `fn:uri-collection` can resolve local document
+  catalogs with per-batch document caches and canonical document URIs
+
 `v5.1.4`_ (2026-08-08)
 ======================
 * Add *allow_environment* and *allow_external_resources* arguments to XPath30Parser

@@ -311,3 +311,59 @@ is set to `None`:
     True
     >>> context.document is None
     True
+
+
+Local document catalogs
+=======================
+
+When ``fn:doc()`` and ``fn:collection()`` have to be restricted to a locked
+set of local XML documents, provide a :class:`elementpath.LocalXMLCatalog` to
+the dynamic context or to the selector functions:
+
+.. code-block:: python
+
+    >>> from pathlib import Path
+    >>> from elementpath import LocalXMLCatalog, select, XPathContext
+    >>>
+    >>> catalog = LocalXMLCatalog(
+    ...     Path('documents'), ['main.xml', 'parts/a.xml'], batch='batch-01',
+    ...     collections={'parts': ['parts/a.xml']}
+    ... )
+    >>> context = XPathContext(root, catalog=catalog)
+    >>> select(root, "fn:doc('main.xml')/root/title", catalog=catalog)
+    ['Main']
+
+The *locked* argument can be a path, a URI, an iterable of paths/URIs or a
+mapping from public URI to local path.  A manifest can also be used:
+
+.. code-block:: python
+
+    >>> catalog = LocalXMLCatalog.from_manifest('documents/catalog.json')
+
+Every catalog resolves local URIs inside *base_dir* only.  Attempts to read
+a file outside the directory raise an out-of-scope error, while locked files
+that are not present on disk raise a missing-document error.  Both cases are
+kept in the catalog report:
+
+.. code-block:: python
+
+    >>> report = catalog.report()
+    >>> report.missing
+    (file:///.../documents/parts/a.xml,)
+    >>> report.out_of_bounds
+    (file:///.../outside.xml,)
+
+The catalog cache is keyed by batch identifier and canonical URI, so the same
+document is parsed only once for a batch, regardless of how many times it is
+referenced by different documents.  Different batches never share cached
+documents, even when their catalogs are built on the same directory:
+
+.. code-block:: python
+
+    >>> other = LocalXMLCatalog('documents', ['main.xml'], batch='batch-02')
+    >>> catalog.get_document('main.xml') is other.get_document('main.xml')
+    False
+
+Documents loaded through a catalog keep their canonical URI, so
+``fn:document-uri()`` returns the locked URI of the original file even when
+the node is reached through a collection or a shared reference.

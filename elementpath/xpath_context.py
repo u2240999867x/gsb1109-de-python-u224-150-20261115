@@ -23,6 +23,7 @@ from elementpath.tdop import Token
 from elementpath.sequences import XSequence
 from elementpath.datatypes import AnyAtomicType, Timezone, Language
 from elementpath.etree import is_etree_element, is_etree_element_instance, is_etree_document
+from elementpath.local_xml import LocalXMLCatalog
 from elementpath.xpath_nodes import XPathNode, AttributeNode, NamespaceNode, \
     CommentNode, ProcessingInstructionNode, ElementNode, DocumentNode
 from elementpath.tree_builders import get_node_tree
@@ -64,11 +65,16 @@ class XPathContext:
     :param timezone: Implicit timezone to be used when a date, time, or dateTime value does \
     not have a timezone.
     :param documents: Available documents. This is a mapping of absolute URI \
-    strings into document nodes. Used by the function fn:doc.
+    strings into document nodes. Used by the function fn:doc. A \
+    :class:`elementpath.local_xml.LocalXMLCatalog` instance can also be provided, \
+    in which case documents are resolved and parsed lazily from a local URI directory.
     :param collections: Available collections. This is a mapping of absolute URI \
     strings onto sequences of nodes. Used by the XPath 2.0+ function fn:collection.
     :param default_collection: This is the sequence of nodes used when fn:collection \
     is called with no arguments.
+    :param catalog: an optional batch-scoped local XML catalog. Used by fn:doc, \
+    fn:collection and fn:uri-collection to resolve only the XML documents locked \
+    for the batch. The catalog cache is also exposed through *documents*.
     :param text_resources: Available text resources. This is a mapping of absolute URI strings \
     onto text resources. Used by XPath 3.0+ function fn:unparsed-text/fn:unparsed-text-lines.
     :param resource_collections: Available URI collections. This is a mapping of absolute \
@@ -89,6 +95,7 @@ class XPathContext:
     documents: dict[str, DocumentNode] | None = None
     collections: dict[str, list[XPathNode]] | None = None
     default_collection: list[XPathNode] | None = None
+    catalog: LocalXMLCatalog | None = None
 
     __slots__ = ('document', 'root', 'item', 'namespaces', 'size',
                  'position', 'variables', 'axis', '__dict__')
@@ -115,7 +122,8 @@ class XPathContext:
                  allow_environment: bool = False,
                  default_language: str | None = None,
                  default_calendar: str | None = None,
-                 default_place: str | None = None) -> None:
+                 default_place: str | None = None,
+                 catalog: LocalXMLCatalog | None = None) -> None:
 
         if namespaces:
             self.namespaces = {k: v for k, v in namespaces.items()}
@@ -161,6 +169,12 @@ class XPathContext:
                 k: cast(DocumentNode, get_node_tree(v, self.namespaces, k))
                 if v is not None else v for k, v in documents.items()
             }
+
+        if catalog is not None:
+            if not isinstance(catalog, LocalXMLCatalog):
+                msg = f"{catalog!r} is not an instance of LocalXMLCatalog"
+                raise ElementPathTypeError(msg)
+            self.catalog = catalog
 
         if schema is not None:
             self.schema = schema
@@ -259,6 +273,11 @@ class XPathContext:
                 if doc is not None and any(node is x for x in doc.iter_lazy()):
                     return doc
 
+        if self.catalog is not None:
+            for _uri, doc in self.catalog.iter_documents():
+                if any(node is x for x in doc.iter_lazy()):
+                    return doc
+
         return None
 
     def is_document(self) -> bool:
@@ -299,6 +318,11 @@ class XPathContext:
                     if doc is not None and item is doc.value:
                         return doc
 
+            if self.catalog is not None:
+                for doc in self.catalog.documents.values():
+                    if item is doc.value:
+                        return doc
+
         elif is_etree_element(item):
             try:
                 return self.root.elements[item]  # type: ignore[index,union-attr]
@@ -308,6 +332,11 @@ class XPathContext:
             if self.documents:
                 for doc in self.documents.values():
                     if doc is not None and doc.elements is not None and item in doc.elements:
+                        return doc.elements[item]
+
+            if self.catalog is not None:
+                for doc in self.catalog.documents.values():
+                    if doc.elements is not None and item in doc.elements:
                         return doc.elements[item]
 
             if callable(item.tag):  # type: ignore[union-attr]

@@ -36,6 +36,7 @@ from elementpath.datatypes import NumericProxy, QName, Date, DateTime, Time, Any
 from elementpath.sequences import xlist
 from elementpath.sequence_types import is_sequence_type, match_sequence_type
 from elementpath.etree import defuse_xml
+from elementpath.local_xml import LocalXMLResourceError
 from elementpath.xpath_nodes import XPathNode, ElementNode, NamespaceNode, \
     DocumentNode, EtreeElementNode, SchemaElementNode
 from elementpath.tree_builders import get_node_tree
@@ -1190,6 +1191,21 @@ def evaluate__uri_collection(self: XPathFunction, context: ta.ContextType = None
         raise self.missing_context()
     elif isinstance(context, XPathSchemaContext):
         return []
+    elif context.catalog is not None:
+        if not self or uri is None:
+            resource_collection = [AnyURI(x) for x in context.catalog.uri_collection()]
+        else:
+            try:
+                AnyURI(uri)
+            except ValueError:
+                raise self.error('FODC0004', 'invalid argument to fn:uri-collection') from None
+
+            try:
+                resource_collection = [
+                    AnyURI(x) for x in context.catalog.uri_collection(self.get_absolute_uri(uri))
+                ]
+            except LocalXMLResourceError as err:
+                raise self.error(err.code or 'FODC0002', err.message) from None
     elif not self or uri is None:
         if context.default_resource_collection is None:
             raise self.error('FODC0002', 'no default resource collection has been defined')

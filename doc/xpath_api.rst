@@ -143,6 +143,35 @@ more times there is an helper API for creating document or element based node tr
 .. autofunction:: elementpath.build_schema_node_tree
 
 
+Local XML document catalogs
+===========================
+
+A :class:`elementpath.LocalXMLCatalog` provides batch-scoped, read-only access
+to a locked set of local XML documents for ``fn:doc()``, ``fn:collection()``
+and ``fn:uri-collection()``.
+
+.. autoclass:: elementpath.LocalXMLCatalog
+
+    .. automethod:: from_manifest
+    .. automethod:: from_directory
+    .. automethod:: resolve
+    .. automethod:: get_document
+    .. automethod:: get_collection
+    .. automethod:: uri_collection
+    .. automethod:: report
+    .. automethod:: new_batch
+
+.. autoclass:: elementpath.CatalogEntry
+.. autoclass:: elementpath.CatalogReport
+
+.. autoexception:: elementpath.LocalXMLResourceError
+.. autoexception:: elementpath.MissingDocumentError
+.. autoexception:: elementpath.MissingCollectionError
+.. autoexception:: elementpath.DocumentAccessError
+.. autoexception:: elementpath.InvalidDocumentURIError
+.. autoexception:: elementpath.DocumentParseError
+
+
 XPath regular expressions
 =========================
 

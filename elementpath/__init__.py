@@ -31,6 +31,12 @@ from .xpath_nodes import XPathNode, AttributeNode, NamespaceNode, CommentNode, \
     SchemaElementNode, DocumentNode
 from .tree_builders import get_node_tree, build_node_tree, build_lxml_node_tree, \
     build_schema_node_tree
+from .local_xml import LocalXMLCatalog, LocalDocumentCatalog, LocalXMLResolver, \
+    LocalDocumentResolver, LocalURICatalog, LocalUriCatalog, LocalDirectoryCatalog, \
+    BatchXMLCatalog, LockedDocumentCatalog, DocumentCatalog, DocumentResolver, \
+    CatalogEntry, CatalogReport, LocalXMLResourceError, MissingDocumentError, \
+    MissingCollectionError, DocumentAccessError, OutOfScopeError, \
+    InvalidDocumentURIError, DocumentParseError
 from .xpath_tokens import XPathToken, XPathFunction
 from .xpath1 import XPath1Parser
 from .xpath2 import XPath2Parser
@@ -47,6 +53,13 @@ __all__ = ['datatypes', 'protocols', 'etree', 'ElementPathError', 'MissingContex
            'ProcessingInstructionNode', 'TextNode', 'ElementNode',
            'LazyElementNode', 'SchemaElementNode', 'DocumentNode', 'get_node_tree',
            'build_node_tree', 'build_lxml_node_tree', 'build_schema_node_tree',
+           'LocalXMLCatalog', 'LocalDocumentCatalog', 'LocalXMLResolver',
+           'LocalDocumentResolver', 'LocalURICatalog', 'LocalUriCatalog',
+           'LocalDirectoryCatalog', 'BatchXMLCatalog', 'LockedDocumentCatalog',
+           'DocumentCatalog', 'DocumentResolver', 'CatalogEntry', 'CatalogReport',
+           'LocalXMLResourceError', 'MissingDocumentError', 'MissingCollectionError',
+           'DocumentAccessError', 'OutOfScopeError', 'InvalidDocumentURIError',
+           'DocumentParseError',
            'XPathContext', 'XPathSchemaContext', 'XPathToken',
            'XPathFunction', 'XPath1Parser', 'XPath2Parser', 'select', 'iter_select',
            'Selector', 'AbstractSchemaProxy', 'RegexError', 'translate_pattern',

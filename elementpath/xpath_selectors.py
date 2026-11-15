@@ -34,6 +34,7 @@ def select(root: Optional[RootArgType],
            variables: Optional[dict[str, InputType[ItemArgType]]] = None,
            current_dt: Optional[datetime.datetime] = None,
            timezone: Optional[Union[str, Timezone]] = None,
+           catalog: Optional[Any] = None,
            **kwargs: Any) -> Any:
     """
     XPath selector function that apply a *path* expression on *root* Element.
@@ -62,6 +63,9 @@ def select(root: Optional[RootArgType],
     :param current_dt: current dateTime of the implementation, including explicit timezone.
     :param timezone: implicit timezone to be used when a date, time, or dateTime value does \
     not have a timezone.
+    :param catalog: an optional :class:`elementpath.local_xml.LocalXMLCatalog` \
+    instance used by fn:doc/fn:collection to resolve the XML documents locked \
+    for a batch.
     :param kwargs: other optional parameters for the parser instance.
     :return: a list with XPath nodes or a basic type for expressions based \
     on a function or literal.
@@ -73,7 +77,7 @@ def select(root: Optional[RootArgType],
 
     root_token = parser(namespaces, **kwargs).parse(path)
     context = XPathContext(root, namespaces, uri, fragment, item, position, size,
-                           axis, schema, variables, current_dt, timezone)
+                           axis, schema, variables, current_dt, timezone, catalog=catalog)
     return root_token.get_results(context)
 
 
@@ -91,6 +95,7 @@ def iter_select(root: Optional[RootArgType],
                 variables: Optional[dict[str, InputType[ItemArgType]]] = None,
                 current_dt: Optional[datetime.datetime] = None,
                 timezone: Optional[Union[str, Timezone]] = None,
+                catalog: Optional[Any] = None,
                 **kwargs: Any) -> Iterator[Any]:
     """
     A function that creates an XPath selector generator for apply a *path* expression
@@ -120,6 +125,9 @@ def iter_select(root: Optional[RootArgType],
     :param current_dt: current dateTime of the implementation, including explicit timezone.
     :param timezone: implicit timezone to be used when a date, time, or dateTime value does \
     not have a timezone.
+    :param catalog: an optional :class:`elementpath.local_xml.LocalXMLCatalog` \
+    instance used by fn:doc/fn:collection to resolve the XML documents locked \
+    for a batch.
     :param kwargs: other optional parameters for the parser instance.
     :return: a generator of the XPath expression results.
     """
@@ -130,7 +138,7 @@ def iter_select(root: Optional[RootArgType],
 
     root_token = parser(namespaces, **kwargs).parse(path)
     context = XPathContext(root, namespaces, uri, fragment, item, position, size,
-                           axis, schema, variables, current_dt, timezone)
+                           axis, schema, variables, current_dt, timezone, catalog=catalog)
     return root_token.select_results(context)
 
 
