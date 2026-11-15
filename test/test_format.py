@@ -3,13 +3,20 @@
 
 # pylint: disable=use-implicit-booleaness-not-comparison
 
+import io
+import zlib
 from datetime import datetime
 
 import pytest
 
 import rarfile
-from rarfile.bits import RAR_M3, RAR_OS_UNIX
+from rarfile.bits import (
+    RAR_BLOCK_ENDARC, RAR_BLOCK_FILE, RAR_BLOCK_MAIN, RAR_BLOCK_OLD_COMMENT,
+    RAR_BLOCK_SUB, RAR_FILE_SOLID, RAR_ID, RAR_LONG_BLOCK, RAR_M0, RAR_M3,
+    RAR_MAIN_COMMENT, RAR_OS_UNIX,
+)
 from rarfile.crypto import AES_CBC_Decrypt
+from rarfile.format import S_BLK_HDR, S_COMMENT_HDR, S_FILE_HDR
 from rarfile.utils import DateTuple
 
 have_crypto = AES_CBC_Decrypt.have_crypto()
@@ -285,3 +292,65 @@ def test_newvols_err() -> None:
 def test_versions(fn: str) -> None:
     with rarfile.RarFile(fn) as rf:
         assert rf.namelist() == ["versioned.txt"]
+
+
+def _rar3_block(btype: int, flags: int, body: bytes) -> bytes:
+    size = S_BLK_HDR.size + len(body)
+    hdr = S_BLK_HDR.pack(0, btype, flags, size) + body
+    crc = zlib.crc32(hdr[2:]) & 0xFFFF
+    return S_BLK_HDR.pack(crc, btype, flags, size) + body
+
+
+def _rar3_old_comment(comment: bytes) -> bytes:
+    body = b"\0" * 6
+    sub = S_COMMENT_HDR.pack(len(comment), 20, RAR_M0, zlib.crc32(comment) & 0xFFFF) + comment
+    subhdr = S_BLK_HDR.pack(0, RAR_BLOCK_OLD_COMMENT, 0, S_BLK_HDR.size + len(sub)) + sub
+    size = S_BLK_HDR.size + len(body) + len(subhdr)
+    hdr = S_BLK_HDR.pack(0, RAR_BLOCK_MAIN, RAR_MAIN_COMMENT, size)
+    crc = zlib.crc32(hdr[2:] + body) & 0xFFFF
+    return S_BLK_HDR.pack(crc, RAR_BLOCK_MAIN, RAR_MAIN_COMMENT, size) + body + subhdr
+
+
+def _rar3_file(name: bytes, data: bytes) -> bytes:
+    flags = RAR_LONG_BLOCK
+    body = S_FILE_HDR.pack(len(data), len(data), RAR_OS_UNIX, zlib.crc32(data),
+                           0, 20, RAR_M0, len(name), 0o100644) + name
+    size = S_BLK_HDR.size + len(body)
+    hdr = S_BLK_HDR.pack(0, RAR_BLOCK_FILE, flags, size) + body
+    crc = zlib.crc32(hdr[2:]) & 0xFFFF
+    return S_BLK_HDR.pack(crc, RAR_BLOCK_FILE, flags, size) + body + data
+
+
+def _rar3_cmt_sub(comment: bytes) -> bytes:
+    body = S_FILE_HDR.pack(len(comment), len(comment), RAR_OS_UNIX, zlib.crc32(comment),
+                           0, 29, RAR_M0, 3, 0) + b"CMT"
+    flags = RAR_LONG_BLOCK | RAR_FILE_SOLID
+    size = S_BLK_HDR.size + len(body)
+    hdr = S_BLK_HDR.pack(0, RAR_BLOCK_SUB, flags, size) + body
+    crc = zlib.crc32(hdr[2:]) & 0xFFFF
+    return S_BLK_HDR.pack(crc, RAR_BLOCK_SUB, flags, size) + body + comment
+
+
+def test_rar3_comment_raw_and_invalid_bytes() -> None:
+    raw = b"ok\x81end"
+    buf = RAR_ID + _rar3_old_comment(raw) + _rar3_block(RAR_BLOCK_ENDARC, 0, b"")
+    with rarfile.RarFile(io.BytesIO(buf), charset="cp1252") as rf:
+        assert rf.orig_comment == raw
+        assert rf.comment_encoding == "cp1252"
+        assert rf.comment_errors == b"\x81"
+        assert rf.comment == "ok\\x81end"
+        assert "�" not in (rf.comment or "")
+
+
+def test_rar3_comment_duplicate_names_stay_separate() -> None:
+    buf = RAR_ID + _rar3_block(RAR_BLOCK_MAIN, 0, b"\0" * 6)
+    buf += _rar3_file(b"same.txt", b"A") + _rar3_cmt_sub(b"first")
+    buf += _rar3_file(b"same.txt", b"B") + _rar3_cmt_sub(b"second")
+    buf += _rar3_block(RAR_BLOCK_ENDARC, 0, b"")
+    with rarfile.RarFile(io.BytesIO(buf)) as rf:
+        first, second = rf.infolist()
+        assert first.filename == second.filename == "same.txt"
+        assert first.comment == "first"
+        assert second.comment == "second"
+        assert first.orig_comment == b"first"
+        assert second.orig_comment == b"second"

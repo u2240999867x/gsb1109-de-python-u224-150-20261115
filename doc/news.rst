@@ -38,6 +38,17 @@ Features:
 * Delay symlink creation in :meth:`RarFile.extractall`
   [`#148 <https://github.com/markokr/rarfile/pull/148>`_]
 
+* Preserve raw comment and filename bytes and expose the decoding basis.
+
+  New :attr:`RarInfo.filename_raw`, :attr:`RarInfo.filename_encoding`,
+  :attr:`RarInfo.filename_errors`, :attr:`RarInfo.orig_comment`,
+  :attr:`RarInfo.comment_encoding` and :attr:`RarInfo.comment_errors` fields.
+  Invalid comment bytes are shown as ``\\xNN`` escapes instead of replacement
+  characters.  :attr:`RarFile` exposes the same comment fields.
+
+* File comments are attached to the exact preceding entry, so entries with
+  identical names do not share comment data.
+
 Version 4.5 (2026-08-02)
 ------------------------
 

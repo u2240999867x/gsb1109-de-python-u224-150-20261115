@@ -124,7 +124,19 @@ class RarFile:
     filename: str | None = None
 
     #: Archive comment.  Unicode string or None.
+    #:
+    #: Invalid comment bytes are shown as ``\xNN`` escapes, never as
+    #: replacement characters.
     comment: str | None = None
+
+    #: Raw archive comment bytes, before decoding.  None if no comment.
+    orig_comment: bytes | None = None
+
+    #: Encoding used for :attr:`comment`.
+    comment_encoding: str | None = None
+
+    #: Raw comment bytes that could not be decoded.
+    comment_errors: bytes | None = None
 
     _file_parser: RAR3Parser | RAR5Parser | None = None
 
@@ -407,6 +419,9 @@ class RarFile:
 
         self._file_parser.parse()
         self.comment = self._file_parser.comment
+        self.orig_comment = self._file_parser.orig_comment
+        self.comment_encoding = self._file_parser.comment_encoding
+        self.comment_errors = self._file_parser.comment_errors
 
     def _extract_one(self, info: RarInfo, path: str | Path | None, pwd: str | None,
                      set_attrs: bool) -> str | None:

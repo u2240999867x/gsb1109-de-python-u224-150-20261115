@@ -97,6 +97,30 @@ class RarInfo(RarEntry):
         comment
             Optional file comment field.  Unicode string.  (RAR3-only)
 
+            Invalid input bytes are shown as ``\xNN`` escapes, never as
+            replacement characters.  Use :attr:`orig_comment` for the exact
+            decompressed bytes and :attr:`comment_encoding` for the encoding
+            used to produce this string.
+
+        orig_comment
+            Exact decompressed comment bytes, before decoding.  (RAR3-only)
+
+        comment_encoding
+            Encoding used for :attr:`comment`.  (RAR3-only)
+
+        comment_errors
+            Bytes from :attr:`orig_comment` that could not be decoded.
+            They are also shown as ``\xNN`` escapes in :attr:`comment`.
+
+        filename_raw
+            Raw filename field as stored in the archive header.
+
+        filename_encoding
+            Encoding or filename encoding scheme used for :attr:`filename`.
+
+        filename_errors
+            Bytes from :attr:`filename_raw` that could not be decoded.
+
         file_size
             Uncompressed size.
 
@@ -197,6 +221,14 @@ class RarInfo(RarEntry):
 
     # rar3-only field
     comment: str | None = None
+    orig_comment: bytes | None = None
+    comment_encoding: str | None = None
+    comment_errors: bytes | None = None
+
+    # raw filename representation
+    filename_raw: bytes | None = None
+    filename_encoding: str | None = None
+    filename_errors: bytes | None = None
 
     # rar5-only fields
     blake2sp_hash: bytes | None = None
@@ -292,7 +324,10 @@ class Rar3MainInfo(RarEntry):
     """RAR3 archive main record."""
 
     type: int = RAR_BLOCK_MAIN
-    comment: str | None
+    comment: str | None = None
+    orig_comment: bytes | None = None
+    comment_encoding: str | None = None
+    comment_errors: bytes | None = None
 
     def _must_disable_hack(self) -> bool:
         if self.flags & (RAR_MAIN_SOLID | RAR_MAIN_PASSWORD):
