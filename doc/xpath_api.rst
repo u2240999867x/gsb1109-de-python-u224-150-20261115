@@ -272,3 +272,34 @@ Duration types
 .. autoclass:: elementpath.datatypes.YearMonthDuration
 .. autoclass:: elementpath.datatypes.DayTimeDuration
 
+
+
+XPath compatibility audit
+=========================
+
+The :mod:`elementpath.xpath_compat` module evaluates the same XPath rule on a
+local XML sample with the legacy XPath 1.0 parser and with
+:class:`elementpath.XPath2Parser` in compatibility mode, and compares the
+outcomes without serializing items to strings.
+
+.. autofunction:: elementpath.evaluate_rule
+
+.. autofunction:: elementpath.compare_rule
+
+.. autofunction:: elementpath.audit_rules
+
+.. autofunction:: elementpath.format_report
+
+.. autoclass:: elementpath.BatchReport
+.. autoclass:: elementpath.RuleComparison
+.. autoclass:: elementpath.EvaluationOutcome
+
+The batch CLI reads a text file with one rule per line (blank lines and lines
+starting with ``#`` are ignored) or a JSON file with a ``rules`` list::
+
+    xpath-compat-audit rules.txt sample.xml -o report.json
+
+The JSON report separates ``compile-error``/``type-error``/``runtime-error``
+outcomes, item ``type``/``count``/``order`` differences, node identity and node
+value changes, and the two dedicated buckets ``empty-vs-false`` and
+``numeric-vs-string``.

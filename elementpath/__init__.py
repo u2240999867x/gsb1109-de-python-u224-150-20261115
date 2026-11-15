@@ -36,6 +36,10 @@ from .xpath1 import XPath1Parser
 from .xpath2 import XPath2Parser
 from .xpath_selectors import select, iter_select, Selector
 from .schema_proxy import AbstractSchemaProxy
+from .xpath_compat import EvaluationProfile, EvaluationOutcome, ResultItem, \
+    ItemDifference, SpecialDifference, RuleDifference, RuleComparison, BatchReport, \
+    compatibility_profiles, evaluate_rule, compare_evaluation, compare_rule, \
+    compare_rules, audit_rules, format_report
 from .regex import RegexError, translate_pattern, install_unicode_data, unicode_version
 
 __all__ = ['datatypes', 'protocols', 'etree', 'ElementPathError', 'MissingContextError',
@@ -50,4 +54,8 @@ __all__ = ['datatypes', 'protocols', 'etree', 'ElementPathError', 'MissingContex
            'XPathContext', 'XPathSchemaContext', 'XPathToken',
            'XPathFunction', 'XPath1Parser', 'XPath2Parser', 'select', 'iter_select',
            'Selector', 'AbstractSchemaProxy', 'RegexError', 'translate_pattern',
-           'install_unicode_data', 'unicode_version']
+           'install_unicode_data', 'unicode_version', 'EvaluationProfile',
+           'EvaluationOutcome', 'ResultItem', 'ItemDifference', 'SpecialDifference',
+           'RuleDifference', 'RuleComparison', 'BatchReport', 'compatibility_profiles',
+           'evaluate_rule', 'compare_evaluation', 'compare_rule', 'compare_rules',
+           'audit_rules', 'format_report']

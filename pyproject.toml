@@ -55,6 +55,9 @@ docs = [
 [project.urls]
 Homepage = "https://github.com/sissaschool/elementpath"
 
+[project.scripts]
+xpath-compat-audit = "elementpath.xpath_compat:main"
+
 [tool.setuptools]
 include-package-data = false
 
