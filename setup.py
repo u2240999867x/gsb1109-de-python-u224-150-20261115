@@ -61,6 +61,6 @@ setuptools.setup(name='pycdlib',
                  python_requires='>=3.10',
                  package_data={'': ['examples/*.py'], 'pycdlib': ['py.typed']},
                  cmdclass={'sdist': sdist},
-                 data_files=[('share/man/man1', ['man/pycdlib-explorer.1', 'man/pycdlib-extract-files.1', 'man/pycdlib-genisoimage.1'])],
-                 scripts=['tools/pycdlib-explorer', 'tools/pycdlib-extract-files', 'tools/pycdlib-genisoimage'],
+                 data_files=[('share/man/man1', ['man/pycdlib-explorer.1', 'man/pycdlib-extract-files.1', 'man/pycdlib-genisoimage.1', 'man/pycdlib-salvage.1'])],
+                 scripts=['tools/pycdlib-explorer', 'tools/pycdlib-extract-files', 'tools/pycdlib-genisoimage', 'tools/pycdlib-salvage'],
 )

@@ -1,0 +1,59 @@
+.TH PYCDLIB-SALVAGE 1 "Nov 2026" "pycdlib-salvage"
+
+.SH NAME
+pycdlib-salvage - assess a damaged ISO against its bad-block table and ingest recoverable entries
+
+.SH SYNOPSIS
+.B pycdlib-salvage [OPTIONS] <iso-file>
+
+.SH DESCRIPTION
+This is a tool for triaging an ISO whose medium has reported missing (bad)
+logical blocks.  Given the ISO and a bad-block table, it walks the parsed
+directory entries, maps each entry's extents to logical blocks, and classifies
+every entry as one of:
+
+.TP
+.B complete
+Every logical block the entry occupies is readable.  A zero-length file has no
+data blocks, so it is always complete and is never reported as missing.
+.TP
+.B partial
+A file or symlink payload whose extents include one or more bad blocks.  Only
+the blocks on readable media can be recovered.
+.TP
+.B untrusted
+A directory whose own extent includes a bad block.  Entries stored in the bad
+block are absent from the parsed listing, so the directory and everything below
+it cannot be trusted.
+
+Entries that share an extent (hard links, or the same data exposed through the
+ISO9660, Joliet, Rock Ridge, and UDF namespaces) are all affected when a shared
+block is bad.  Without \-extract\-to the tool only prints the assessment; with
+it, complete entries are ingested to disk while partial files and untrusted
+subtrees are skipped unless explicitly requested.
+
+.SH OPTIONS
+.TP
+.BI \-path\-type " [auto,iso,joliet,rockridge,udf]"
+Specifies the path name convention to walk.  Defaults to auto, which prefers
+UDF, then Rock Ridge, then Joliet, and finally plain ISO9660.
+.TP
+.BI \-bad\-blocks " <file>"
+Required.  A file listing the unreadable logical blocks as one block number or
+inclusive START-END range per line; blank lines and # comments are ignored, and
+commas are treated as separators.  Use - to read the table from standard input.
+.TP
+.BI \-extract\-to " <destpath>"
+The local directory to ingest recoverable entries into.  When omitted, only the
+assessment report is printed.  Complete files and directories are written using
+their ISO paths; entries below an untrusted directory are not written.
+.TP
+.B \-include\-partial
+Also write partial files, zero-filling the bad blocks so surviving blocks keep
+their original file offsets.  Partial files are written with a .partial suffix.
+
+.SH SEE ALSO
+pycdlib-extract-files(1), pycdlib-explorer(1), pycdlib-genisoimage(1)
+
+.SH AUTHOR
+Chris Lalancette <clalancette@gmail.com>

@@ -1,0 +1,156 @@
+#!/usr/bin/env python3
+
+# Copyright (C) 2026  Chris Lalancette <clalancette@gmail.com>
+
+# This library is free software; you can redistribute it and/or
+# modify it under the terms of the GNU Lesser General Public
+# License as published by the Free Software Foundation;
+# version 2.1 of the License.
+
+# This library is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
+# Lesser General Public License for more details.
+
+# You should have received a copy of the GNU Lesser General Public
+# License along with this library; if not, write to the Free Software
+# Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301  USA
+
+"""
+The main code for the pycdlib-salvage tool, which assesses a damaged ISO
+against its bad-block (missing-sector) table and can ingest the entries that
+are still safe to use.
+"""
+
+import argparse
+import sys
+
+import pycdlib
+from pycdlib import pycdlibexception
+from pycdlib import salvage
+
+
+def parse_arguments():
+    """
+    A function to parse all of the arguments passed to the executable.
+
+    Parameters:
+     None.
+    Returns:
+     An ArgumentParser object with the parsed command-line arguments.
+    """
+    parser = argparse.ArgumentParser(
+        description='Assess a damaged ISO against a bad-block table and '
+                    'optionally extract the recoverable entries.')
+    parser.add_argument('-path-type', help='Which path type to walk',
+                        action='store',
+                        choices=['auto', 'iso', 'joliet', 'rockridge', 'udf'],
+                        default='auto')
+    parser.add_argument('-bad-blocks', help='File listing the unreadable '
+                        'logical blocks; one block number or inclusive '
+                        'START-END range per line.  Use - for stdin.',
+                        action='store', required=True)
+    parser.add_argument('-extract-to', help='Directory to extract '
+                        'recoverable entries to.  Without it, only the '
+                        'assessment report is printed.', action='store',
+                        default=None)
+    parser.add_argument('-include-partial', help='Also write partial files '
+                        'with bad blocks zero-filled and a .partial suffix',
+                        action='store_true', default=False)
+    parser.add_argument('iso', help='Damaged ISO to open', action='store')
+    return parser.parse_args()
+
+
+def read_bad_block_specs(source):
+    """Read bad-block tokens from a filename or '-' for stdin."""
+    if source == '-':
+        text = sys.stdin.read()
+    else:
+        with open(source, 'r') as badfp:
+            text = badfp.read()
+    specs = []
+    for line in text.splitlines():
+        line = line.split('#', 1)[0]
+        specs.extend(line.replace(',', ' ').split())
+    return specs
+
+
+def print_report(plan):
+    """Print a human-readable assessment report to stdout."""
+    print("Path type: %s" % plan.path_type)
+    print("Logical block size: %d bytes" % plan.block_size)
+    summary = plan.summary()
+    print("Summary: %d complete, %d partial, %d untrusted" %
+          (summary[salvage.FILE_COMPLETE],
+           summary[salvage.FILE_PARTIAL],
+           summary[salvage.DIR_UNTRUSTED]))
+    for assessment in plan.assessments:
+        line = '%-9s %s' % (assessment.status, assessment.path)
+        if assessment.bad_blocks:
+            line += ' (bad blocks: %s)' % ','.join(str(block) for block in assessment.bad_blocks)
+            line += ('; %d of %d bytes unreadable' %
+                     (assessment.missing_bytes, assessment.total_bytes))
+        if assessment.under_untrusted_dir and assessment.status != salvage.DIR_UNTRUSTED:
+            line += ' [under untrusted directory]'
+        print(line)
+
+
+def run(args):
+    """
+    Assess (and optionally extract) the ISO described by the arguments.
+
+    Parameters:
+     args - The parsed command-line arguments.
+    Returns:
+     The exit code for the process.
+    """
+    path_type = {'iso': 'iso_path', 'joliet': 'joliet_path',
+                 'rockridge': 'rr_path', 'udf': 'udf_path',
+                 'auto': 'auto'}[args.path_type]
+
+    try:
+        specs = read_bad_block_specs(args.bad_blocks)
+        bad_blocks = salvage.parse_bad_blocks(specs)
+    except (OSError, pycdlibexception.PyCdlibException) as exc:
+        print('Error: %s' % exc, file=sys.stderr)
+        return 2
+
+    iso = pycdlib.PyCdlib()
+    try:
+        iso.open(args.iso)
+    except (OSError, pycdlibexception.PyCdlibException) as exc:
+        print('Error: could not open ISO: %s' % exc, file=sys.stderr)
+        return 3
+
+    try:
+        if args.extract_to is None:
+            plan = salvage.assess_iso(iso, bad_blocks, path_type=path_type)
+            print_report(plan)
+            return 0
+
+        plan, written = salvage.extract_recoverable(
+            iso, bad_blocks, args.extract_to, path_type=path_type,
+            include_partial=args.include_partial)
+        print_report(plan)
+        print('Extracted %d entr%s to %s' %
+              (len(written), 'y' if len(written) == 1 else 'ies',
+               args.extract_to))
+        return 0
+    except (OSError, pycdlibexception.PyCdlibException) as exc:
+        print('Error: %s' % exc, file=sys.stderr)
+        return 4
+    finally:
+        iso.close()
+
+
+def main():
+    """
+    The main function for this executable that does the work of assessing
+    and extracting a damaged ISO.
+    """
+    args = parse_arguments()
+    return run(args)
+
+
+if __name__ == '__main__':
+    sys.exit(main())

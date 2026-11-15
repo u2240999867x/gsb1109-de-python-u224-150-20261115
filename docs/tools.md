@@ -10,6 +10,9 @@ The `pycdlib-explorer` tool gives the user a convenient, shell-like interface fo
 ## pycdlib-extract-files
 The `pycdlib-extract-files` tool is a convenient way to extract particular files or directories from an ISO (including the entire ISO).  Please see the man page [pycdlib-extract-files](pycdlib-extract-files.html) for more information.
 
+## pycdlib-salvage
+The `pycdlib-salvage` tool triages an ISO that arrived with a bad-block (missing-sector) table.  It cross-references each entry's extents against the table and classifies every file as complete or partially readable, and every directory whose own blocks are damaged as untrusted.  Files that share a bad block (hard links, ISO9660/UDF bridges) are all affected, while zero-length files are never treated as missing.  The tool can print the assessment or ingest the still-safe entries to disk.  Please see the man page [pycdlib-salvage](pycdlib-salvage.html) for more information.
+
 ---
 
 <div style="width: 100%; display: table;">
