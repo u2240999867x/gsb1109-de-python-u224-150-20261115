@@ -20,6 +20,7 @@ NumPy-based PLY format input and output for Python.
 """
 
 import io as _io
+import os as _os
 from itertools import islice as _islice
 
 import numpy as _np
@@ -46,7 +47,8 @@ class PlyData(object):
     """
 
     def __init__(self, elements=[], text=False, byte_order='=',
-                 comments=[], obj_info=[]):
+                 comments=[], obj_info=[], reference_rules=None,
+                 references=None):
         """
         Parameters
         ----------
@@ -66,9 +68,84 @@ class PlyData(object):
         self.byte_order = byte_order
         self.text = text
 
+        if references is not None:
+            if reference_rules is None:
+                reference_rules = references
+            else:
+                reference_rules = _merge_reference_maps(reference_rules,
+                                                        references)
+
+        (comments, declared) = _split_references(comments)
+        if reference_rules is not None:
+            declared = _merge_reference_maps(declared, reference_rules)
+
         self.comments = comments
         self.obj_info = obj_info
         self.elements = elements
+        self.reference_rules = declared
+
+    @property
+    def references(self):
+        """
+        Mapping from element names to their reference rules.
+
+        Each value is a mapping from a property name to the name of the
+        element whose indices the property contains.  These rules are
+        used by `merge_ply` to shift indices when sources are
+        concatenated.
+        """
+        rules = dict((name, elt.references) for name, elt in
+                     ((e.name, e) for e in self.elements))
+        for (name, element_rules) in self._reference_rules.items():
+            if name in rules:
+                rules[name] = _merge_element_references(
+                    rules[name], element_rules)
+            else:
+                rules[name] = dict(element_rules)
+        return rules
+
+    @references.setter
+    def references(self, rules):
+        self.reference_rules = rules
+
+    def _get_reference_rules(self):
+        return dict((name, dict(rules)) for name, rules in
+                    self._reference_rules.items())
+
+    def _set_reference_rules(self, rules):
+        self._reference_rules = _normalize_reference_map(rules)
+
+    reference_rules = property(_get_reference_rules, _set_reference_rules)
+
+    @property
+    def missing(self):
+        """
+        Mapping from element names to their `PlyElement.missing`
+        mappings.
+        """
+        return dict((elt.name, elt.missing) for elt in self.elements
+                    if elt.missing)
+
+    @property
+    def missing_mask(self):
+        """
+        Alias for `missing`.
+        """
+        return self.missing
+
+    @property
+    def masks(self):
+        """
+        Alias for `missing`.
+        """
+        return self.missing
+
+    @property
+    def mask(self):
+        """
+        Alias for `missing`.
+        """
+        return self.missing
 
     def _get_elements(self):
         return self._elements
@@ -213,6 +290,35 @@ class PlyData(object):
             if must_close:
                 stream.close()
 
+    def merge(self, *others, **kwargs):
+        """
+        Merge this instance with one or more other PLY sources.
+
+        This is a convenience wrapper around `merge_ply`.  The
+        receiver is the first source, so both of the following are
+        equivalent::
+
+            a.merge(b, mode='union')
+            merge_ply(a, b, mode='union')
+
+        Parameters
+        ----------
+        *others : PLY sources
+            Additional `PlyData` instances, filenames, path-like
+            objects, or readable streams.
+        **kwargs
+            See `merge_ply` for the supported keyword arguments.
+
+        Returns
+        -------
+        PlyData
+        """
+        return merge_ply(self, *others, **kwargs)
+
+    concat = merge
+    concatenate = merge
+    merge_batches = merge
+
     @property
     def header(self):
         """
@@ -234,6 +340,11 @@ class PlyData(object):
 
         for c in self.obj_info:
             lines.append('obj_info ' + c)
+
+        for (element, prop, target) in _reference_header_lines(
+                self._reference_rules):
+            lines.append('comment plyfile.reference %s %s %s' %
+                         (element, prop, target))
 
         lines.extend(elt.header for elt in self.elements)
         lines.append('end_header')
@@ -305,7 +416,8 @@ class PlyElement(object):
         PLY header block for this element.
     """
 
-    def __init__(self, name, properties, count, comments=[]):
+    def __init__(self, name, properties, count, comments=[],
+                 references=None):
         """
         This is not part of the public interface.  The preferred methods
         of obtaining `PlyElement` instances are `PlyData.read` (to read
@@ -326,7 +438,20 @@ class PlyElement(object):
         self._properties = tuple(properties)
         self._index()
 
+        (comments, declared) = _split_references(comments, self.name)
+        (comments, declared_missing) = _split_missing(comments,
+                                                       self.name)
+        if references is None:
+            references = declared
+        elif declared:
+            references = _merge_element_references(
+                declared,
+                _normalize_element_references(references, self.name))
+
         self.comments = comments
+        self.references = references
+        self._declared_missing = declared_missing
+        self._missing = {}
 
         self._have_list = any(isinstance(p, PlyListProperty)
                               for p in self.properties)
@@ -342,6 +467,11 @@ class PlyElement(object):
         self._data = data
         self._count = len(data)
         self._check_sanity()
+        if self._declared_missing:
+            self._missing = _decode_missing(self._declared_missing, data)
+            self._declared_missing = {}
+        else:
+            self._missing = {}
 
     data = property(_get_data, _set_data)
 
@@ -357,6 +487,9 @@ class PlyElement(object):
         self._properties = tuple(properties)
         self._check_sanity()
         self._index()
+        names = set(prop.name for prop in self._properties)
+        self._missing = dict((name, mask) for (name, mask)
+                             in self._missing.items() if name in names)
 
     properties = property(_get_properties, _set_properties)
 
@@ -368,6 +501,55 @@ class PlyElement(object):
         self._comments = list(comments)
 
     comments = property(_get_comments, _set_comments)
+
+    def _get_references(self):
+        return dict(self._references)
+
+    def _set_references(self, references):
+        self._references = _normalize_element_references(
+            references, self.name)
+
+    references = property(_get_references, _set_references)
+
+    @property
+    def missing(self):
+        """
+        Mapping from property names to boolean arrays marking values
+        that were absent from a merge.
+        """
+        return _MaskDict(self, self._missing)
+
+    @property
+    def masks(self):
+        """
+        Alias for `missing`.
+        """
+        return self.missing
+
+    @property
+    def missing_mask(self):
+        """
+        Mapping from property names to boolean missing-value masks.
+
+        Fully present properties yield all-False masks.  The mapping is
+        callable as a shorthand: ``element.missing_mask('red')``.
+        """
+        return self.missing
+
+    @property
+    def mask(self):
+        """
+        The `missing` mapping.  It can be indexed or called with a
+        property name.
+        """
+        return self.missing
+
+    @property
+    def missing_masks(self):
+        """
+        Alias for `missing`.
+        """
+        return self.missing
 
     def _index(self):
         self._property_lookup = dict((prop.name, prop)
@@ -418,7 +600,8 @@ class PlyElement(object):
 
     @staticmethod
     def describe(data, name, len_types={}, val_types={},
-                 comments=[]):
+                 comments=[], references=None, reference_rules=None,
+                 reference=None):
         """
         Construct a `PlyElement` instance from an array's metadata.
 
@@ -491,7 +674,22 @@ class PlyElement(object):
 
             properties.append(prop)
 
-        elt = PlyElement(name, properties, count, comments)
+        if reference is not None:
+            if references is None:
+                references = reference
+            elif references != reference:
+                raise PlyMergeConflict(
+                    "conflicting reference declarations",
+                    element=name)
+        if references is None:
+            references = reference_rules
+        elif reference_rules is not None:
+            references = _merge_element_references(
+                _normalize_element_references(references, name),
+                _normalize_element_references(reference_rules, name))
+
+        elt = PlyElement(name, properties, count, comments,
+                         references=references)
         elt.data = data
 
         return elt
@@ -526,6 +724,7 @@ class PlyElement(object):
                 self._read_bin(stream, byte_order)
 
         self._check_sanity()
+        self._restore_missing()
 
     def _write(self, stream, text, byte_order):
         """
@@ -685,6 +884,12 @@ class PlyElement(object):
             for prop in self.properties:
                 prop._write_bin(rec[prop.name], stream, byte_order)
 
+    def _restore_missing(self):
+        if self._declared_missing:
+            self._missing = _decode_missing(
+                self._declared_missing, self.data)
+            self._declared_missing = {}
+
     @property
     def header(self):
         lines = ['element %s %d' % (self.name, self.count)]
@@ -694,9 +899,25 @@ class PlyElement(object):
         for c in self.comments:
             lines.append('comment ' + c)
 
+        for (prop, target) in self._references.items():
+            lines.append('comment plyfile.reference %s %s %s' %
+                         (self.name, prop, target))
+
+        for (prop, mask) in self._encoded_missing().items():
+            lines.append('comment plyfile.missing %s.%s:%s' %
+                         (self.name, prop, mask))
+
         lines.extend(list(map(str, self.properties)))
 
         return '\n'.join(lines)
+
+    def _encoded_missing(self):
+        result = {}
+        for (prop_name, mask) in self._missing.items():
+            encoded = _encode_mask(mask)
+            if encoded != 'none':
+                result[prop_name] = encoded
+        return result
 
     def __len__(self):
         """
@@ -1034,12 +1255,1169 @@ class PlyListProperty(PlyProperty):
                  _lookup_type(self.val_dtype)))
 
 
+_REFERENCE_COMMENT = 'plyfile.reference'
+_MISSING_COMMENT = 'plyfile.missing'
+
+_MERGE_MODES = {
+    'union': 'union',
+    'outer': 'union',
+    'append': 'union',
+    'concat': 'union',
+    'concatenate': 'union',
+    'merge': 'union',
+    'intersection': 'intersection',
+    'inner': 'intersection',
+    'common': 'intersection',
+    'strict': 'strict',
+    'exact': 'strict',
+    'same': 'strict',
+    'require_same': 'strict',
+    'complete': 'complete',
+    'complete_cases': 'complete',
+    'drop_missing': 'complete',
+    'drop': 'complete',
+}
+
+_FACE_ELEMENT_NAMES = {
+    'face', 'faces', 'polygon', 'polygons', 'triangle', 'triangles',
+}
+
+_VERTEX_REFERENCE_NAMES = {
+    'vertex_indices', 'vertex_index', 'vertex_ids', 'vertex_id',
+    'vertices',
+}
+
+
+class _MaskDict(dict):
+    """
+    Mapping of property names to missing-value masks.
+
+    Looking up a property that is fully present returns an all-False
+    mask, so callers do not need to distinguish "no missing values"
+    from "property not tracked".
+    """
+
+    def __init__(self, element, masks):
+        dict.__init__(self, masks)
+        self._element = element
+
+    def __missing__(self, name):
+        if name in self._element:
+            return _np.zeros(self._element.count, dtype=bool)
+        raise KeyError(name)
+
+    def __call__(self, name):
+        return self[name]
+
+
+def _normalize_target(value):
+    if isinstance(value, str):
+        return value
+    if isinstance(value, (tuple, list)) and value:
+        return _normalize_target(value[0])
+    if isinstance(value, dict):
+        for key in ('target', 'element', 'to', 'ref', 'reference'):
+            if key in value:
+                return _normalize_target(value[key])
+    raise ValueError("invalid reference target %r" % (value,))
+
+
+def _split_rule_string(text):
+    for separator in ('->', '=>', '=', ':'):
+        if separator in text:
+            (left, right) = text.split(separator, 1)
+            break
+    else:
+        fields = text.split()
+        if len(fields) == 3 and '.' not in fields[0]:
+            return (fields[0], fields[1], _normalize_target(fields[2]))
+        if len(fields) == 2:
+            (left, right) = fields
+        else:
+            raise ValueError("invalid reference rule %r" % text)
+
+    left = left.strip()
+    left = left.strip('()[]')
+    if not left:
+        raise ValueError("invalid reference rule %r" % text)
+
+    if '.' in left:
+        (element, prop) = left.split('.', 1)
+    elif len(left.split()) == 2:
+        (element, prop) = left.split()
+    else:
+        raise ValueError("invalid reference rule %r" % text)
+
+    return (element.strip(), prop.strip(), _normalize_target(right.strip()))
+
+
+def _normalize_element_references(rules, element_name):
+    """
+    Normalize a single element's reference rules to a mapping from
+    property name (or ``'*'``) to target element name.
+    """
+    if rules is None:
+        return {}
+
+    normalized = {}
+
+    def add(prop, target):
+        for name in ([prop] if isinstance(prop, str) else prop):
+            target_name = _normalize_target(target)
+            _check_name(name)
+            _check_name(target_name)
+            if name in normalized and normalized[name] != target_name:
+                raise PlyMergeConflict(
+                    "conflicting reference target for property %r" % name,
+                    element=element_name, property=name)
+            normalized[name] = target_name
+
+    if isinstance(rules, str):
+        add('*', rules)
+        return normalized
+
+    if isinstance(rules, dict):
+        if any(key in rules for key in
+               ('target', 'element', 'to', 'ref', 'reference')):
+            prop = rules.get('property', rules.get('prop', '*'))
+            add(prop, rules)
+            return normalized
+
+        for (prop, target) in rules.items():
+            add(prop, target)
+        return normalized
+
+    if isinstance(rules, (list, tuple)):
+        for rule in rules:
+            if isinstance(rule, str):
+                add(rule, 'vertex')
+            elif isinstance(rule, dict):
+                prop = rule.get('property', rule.get('prop'))
+                if prop is None:
+                    raise ValueError("reference rule missing property")
+                add(prop, rule)
+            elif isinstance(rule, (list, tuple)):
+                if len(rule) == 1:
+                    add(rule[0], 'vertex')
+                elif len(rule) == 2:
+                    add(rule[0], rule[1])
+                else:
+                    raise ValueError("invalid reference rule %r" % (rule,))
+            else:
+                raise ValueError("invalid reference rule %r" % (rule,))
+        return normalized
+
+    raise TypeError("reference rules must be a mapping or sequence")
+
+
+def _merge_element_references(first, second):
+    result = dict(first)
+    for (prop, target) in second.items():
+        if prop in result and result[prop] != target:
+            raise PlyMergeConflict(
+                "conflicting reference target %r != %r" %
+                (result[prop], target), property=prop)
+        result[prop] = target
+    return result
+
+
+def _normalize_reference_map(rules):
+    """
+    Normalize data-level reference declarations.
+
+    Accepted forms include a mapping from element names to element
+    rule mappings, a sequence of ``(element, property, target)``
+    triples, and strings like ``'face.vertex_indices->vertex'``.
+    """
+    if rules is None:
+        return {}
+
+    result = {}
+
+    def add(element, prop, target):
+        _check_name(element)
+        element_rules = result.setdefault(element, {})
+        normalized = _normalize_element_references(
+            {prop: target}, element)
+        result[element] = _merge_element_references(
+            element_rules, normalized)
+
+    if isinstance(rules, str):
+        add(*_split_rule_string(rules))
+        return result
+
+    if isinstance(rules, dict):
+        if all(key in rules for key in ('element', 'property')):
+            element = rules['element']
+            prop = rules.get('property', rules.get('prop'))
+            add(element, prop, rules)
+            return result
+
+        for (key, value) in rules.items():
+            if isinstance(key, (tuple, list)):
+                if len(key) != 2:
+                    raise ValueError("invalid reference key %r" % (key,))
+                add(key[0], key[1], value)
+            elif isinstance(key, str) and (
+                    '->' in key or ',' in key or ':' in key or
+                    '=' in key):
+                (element, prop, target) = _split_rule_string(key)
+                if value not in (True, None):
+                    target = value
+                add(element, prop, target)
+            elif isinstance(key, str) and '.' in key:
+                (element, prop) = key.split('.', 1)
+                add(element, prop, value)
+            else:
+                element = key
+                if isinstance(value, str):
+                    add(element, '*', value)
+                elif isinstance(value, dict):
+                    if any(k in value for k in
+                           ('target', 'element', 'to', 'ref',
+                            'reference')):
+                        prop = value.get('property', value.get('prop'))
+                        if prop is None:
+                            raise ValueError(
+                                "reference rule missing property")
+                        add(element, prop, value)
+                    else:
+                        result[element] = _merge_element_references(
+                            result.get(element, {}),
+                            _normalize_element_references(
+                                value, element))
+                elif isinstance(value, (list, tuple)):
+                    if (len(value) == 2 and
+                            all(isinstance(x, str) for x in value) and
+                            not isinstance(value[0], (list, tuple,
+                                                      dict))):
+                        add(element, value[0], value[1])
+                    else:
+                        result[element] = _merge_element_references(
+                            result.get(element, {}),
+                            _normalize_element_references(
+                                value, element))
+                else:
+                    raise ValueError(
+                        "invalid reference rules for %r" % element)
+        return result
+
+    if isinstance(rules, (list, tuple)):
+        if (len(rules) == 3 and
+                all(isinstance(item, str) for item in rules)):
+            rules = (rules,)
+        for rule in rules:
+            if isinstance(rule, str):
+                add(*_split_rule_string(rule))
+            elif isinstance(rule, dict):
+                element = rule.get('element')
+                prop = rule.get('property', rule.get('prop'))
+                if element is None or prop is None:
+                    raise ValueError("invalid reference rule %r" % (rule,))
+                add(element, prop, rule)
+            elif isinstance(rule, (list, tuple)):
+                if len(rule) != 3:
+                    raise ValueError("invalid reference rule %r" % (rule,))
+                add(rule[0], rule[1], rule[2])
+            else:
+                raise ValueError("invalid reference rule %r" % (rule,))
+        return result
+
+    raise TypeError("reference rules must be a mapping or sequence")
+
+
+def _parse_reference_comment(comment):
+    if not comment.startswith(_REFERENCE_COMMENT + ' '):
+        return None
+    fields = comment.split()
+    if len(fields) != 4:
+        return None
+    return (fields[1], fields[2], fields[3])
+
+
+def _split_references(comments, element_name=None):
+    if isinstance(comments, str):
+        comments = [comments]
+
+    result = []
+    rules = {}
+
+    for comment in comments:
+        parsed = _parse_reference_comment(comment)
+        if parsed is None:
+            result.append(comment)
+            continue
+
+        (element, prop, target) = parsed
+        if element_name is None:
+            rules.setdefault(element, {})[prop] = target
+        elif element == element_name:
+            if prop in rules and rules[prop] != target:
+                raise PlyMergeConflict(
+                    "conflicting reference target for property %r" % prop,
+                    element=element_name, property=prop)
+            rules[prop] = target
+        else:
+            result.append(comment)
+
+    return (result, rules)
+
+
+def _split_missing(comments, element_name=None):
+    result = []
+    masks = {}
+
+    for comment in comments:
+        if not comment.startswith(_MISSING_COMMENT + ' '):
+            result.append(comment)
+            continue
+
+        raw_fields = comment[len(_MISSING_COMMENT) + 1:].split()
+        fields = []
+        for field in raw_fields:
+            if element_name is not None and '.' in field:
+                (owner, prop) = field.split('.', 1)
+                if owner != element_name:
+                    continue
+                field = prop
+            fields.append(field)
+        if not fields:
+            result.append(comment)
+            continue
+
+        for spec in fields:
+            if ':' not in spec:
+                raise PlyParseError(
+                    "malformed missing-value declaration %r" % spec)
+            (prop, encoded) = spec.split(':', 1)
+            masks[prop] = encoded
+
+    return (result, masks)
+
+
+def _decode_missing(declarations, data):
+    masks = {}
+    for (prop, encoded) in declarations.items():
+        if prop not in data.dtype.fields:
+            raise PlyParseError(
+                "missing-value mask for unknown property %r" % prop)
+        try:
+            masks[prop] = _decode_mask(encoded, len(data))
+        except (ValueError, TypeError):
+            raise PlyParseError(
+                "malformed missing-value mask for property %r" % prop)
+    return masks
+
+
+def _encode_mask(mask):
+    mask = _np.asarray(mask, dtype=bool)
+    indices = _np.flatnonzero(mask)
+    if indices.size == 0:
+        return 'none'
+    if indices.size == mask.size:
+        return 'all'
+    if len(indices) > 4:
+        consecutive = _np.flatnonzero(_np.diff(indices) != 1)
+        if consecutive.size == 0:
+            return 'range:%d-%d' % (int(indices[0]), int(indices[-1]) + 1)
+    return 'index:' + ','.join(str(int(k)) for k in indices)
+
+
+def _decode_mask(encoded, count):
+    if encoded == 'none':
+        return _np.zeros(count, dtype=bool)
+    mask = _np.zeros(count, dtype=bool)
+    if encoded == 'all':
+        mask[:] = True
+        return mask
+    if encoded.startswith('range:'):
+        (start, stop) = encoded[len('range:'):].split('-', 1)
+        mask[int(start):int(stop)] = True
+        return mask
+    if encoded.startswith('index:'):
+        for item in encoded[len('index:'):].split(','):
+            if item:
+                mask[int(item)] = True
+        return mask
+    raise ValueError("unknown mask encoding %r" % encoded)
+
+
+def _reference_header_lines(rules):
+    lines = []
+    for element in sorted(rules):
+        for prop in sorted(rules[element]):
+            lines.append((element, prop, rules[element][prop]))
+    return lines
+
+
+def _property_signature(prop):
+    if isinstance(prop, PlyListProperty):
+        return ('list', prop.len_dtype, prop.val_dtype)
+    return ('scalar', None, prop.val_dtype)
+
+
+def _property_type_name(prop):
+    if isinstance(prop, PlyListProperty):
+        return 'list %s %s' % (_data_type_reverse[prop.len_dtype],
+                               _data_type_reverse[prop.val_dtype])
+    return _data_type_reverse[prop.val_dtype]
+
+
+def _copy_property(prop):
+    if isinstance(prop, PlyListProperty):
+        return PlyListProperty(prop.name, prop.len_dtype, prop.val_dtype)
+    return PlyProperty(prop.name, prop.val_dtype)
+
+
+def _is_face_element(name):
+    return name.lower() in _FACE_ELEMENT_NAMES
+
+
+def _auto_reference_rules(data):
+    rules = {}
+    element_names = set(elt.name for elt in data.elements)
+    if 'vertex' not in element_names:
+        return rules
+
+    for elt in data.elements:
+        face = _is_face_element(elt.name)
+        for prop in elt.properties:
+            name = prop.name.lower()
+            matches = name in _VERTEX_REFERENCE_NAMES
+            if face and 'vertex' in name:
+                matches = True
+            if matches:
+                rules.setdefault(elt.name, {})[prop.name] = 'vertex'
+
+    return rules
+
+
+def _explicit_reference_rules(data):
+    rules = _normalize_reference_map(data.reference_rules)
+    for elt in data.elements:
+        element_rules = _normalize_element_references(
+            elt.references, elt.name)
+        if elt.name in rules:
+            rules[elt.name] = _merge_element_references(
+                rules[elt.name], element_rules)
+        elif element_rules:
+            rules[elt.name] = element_rules
+    return rules
+
+
+def _collect_reference_rules(data, extra=None, base=None):
+    rules = _explicit_reference_rules(data)
+    if extra:
+        for element in extra:
+            if element in rules:
+                rules[element] = _merge_element_references(
+                    rules[element], extra[element])
+            else:
+                rules[element] = dict(extra[element])
+
+    if base:
+        for (element, element_rules) in base.items():
+            if element in rules:
+                rules[element] = _merge_element_references(
+                    rules[element], element_rules)
+            else:
+                rules[element] = dict(element_rules)
+
+    for (element, element_rules) in _auto_reference_rules(data).items():
+        current = rules.setdefault(element, {})
+        for (prop, target) in element_rules.items():
+            current.setdefault(prop, target)
+
+    return rules
+
+
+def _expand_element_references(properties, rules):
+    expanded = {}
+    for (prop, target) in rules.items():
+        if prop == '*':
+            for p in properties:
+                if isinstance(p, PlyListProperty):
+                    expanded.setdefault(p.name, target)
+        else:
+            expanded[prop] = target
+    return expanded
+
+
+def _shift_reference_values(values, prop, offset):
+    if offset == 0:
+        return values
+
+    if isinstance(prop, PlyListProperty):
+        result = _np.empty(len(values), dtype=object)
+        for (k, value) in enumerate(values):
+            array = _np.asarray(value)
+            if array.size == 0:
+                result[k] = _np.array([], dtype=prop.val_dtype)
+            else:
+                result[k] = (array.astype(_np.int64) + offset).astype(
+                    prop.val_dtype, copy=False)
+        return result
+
+    array = _np.asarray(values)
+    return (array.astype(_np.int64) + offset).astype(
+        prop.val_dtype, copy=False)
+
+
+def _empty_list_values(count, dtype):
+    result = _np.empty(count, dtype=object)
+    for k in range(count):
+        result[k] = _np.array([], dtype=dtype)
+    return result
+
+
+def _as_ply_data(source):
+    if isinstance(source, PlyData):
+        return source
+    if isinstance(source, (str, bytes, _os.PathLike)):
+        return PlyData.read(source)
+    if hasattr(source, 'read'):
+        return PlyData.read(source)
+    raise TypeError("expected PlyData, filename, or readable stream")
+
+
+def _flatten_sources(sources):
+    flattened = []
+    for source in sources:
+        if (isinstance(source, (list, tuple)) and
+                not isinstance(source, PlyData)):
+            flattened.extend(_flatten_sources(source))
+        else:
+            flattened.append(source)
+    return tuple(_as_ply_data(source) for source in flattened)
+
+
+def _normalize_merge_mode(mode):
+    if mode is None:
+        return 'union'
+    if not isinstance(mode, str):
+        raise ValueError("merge mode must be a string")
+    key = mode.strip().lower()
+    if key not in _MERGE_MODES:
+        raise ValueError("unknown merge mode %r; expected one of %s" %
+                         (mode, ', '.join(sorted(set(_MERGE_MODES.values())))))
+    return _MERGE_MODES[key]
+
+
+def merge_ply(*sources, **kwargs):
+    """
+    Merge multiple PLY sources into a new `PlyData` instance.
+
+    All sources must be concatenated along their elements; rows are
+    never aligned by index.  The merge mode decides how schemas that
+    differ between sources are handled:
+
+    ``'union'`` (also ``'outer'``, ``'append'``)
+        Keep every element and every property.  A property missing
+        from a source is synthesized in the output and the affected
+        rows are flagged in the element's `missing` masks.  Missing
+        scalar values are zero; missing list values are empty arrays.
+    ``'intersection'`` (also ``'inner'``, ``'common'``)
+        Keep only elements and properties present in every source.
+    ``'strict'`` (also ``'exact'``)
+        Require every source to have exactly the same elements and
+        properties, with compatible types.
+    ``'complete'`` (also ``'drop_missing'``)
+        Merge like ``'union'`` but drop rows for which any property is
+        missing.  References are remapped after rows are dropped.
+
+    Types are never widened.  If the same element and property name
+    occur with different types, `PlyMergeConflict` is raised.
+
+    Parameters
+    ----------
+    *sources : PlyData, str, path-like, or readable stream
+        Two or more PLY sources.  A single list or tuple of sources is
+        also accepted.
+    mode : str, optional (default='union')
+        Merge mode as described above.
+    reference_rules : mapping or sequence, optional
+        Declarations that the given properties contain indices into
+        another element.  Accepted forms include
+        ``{'face': {'vertex_indices': 'vertex'}}`` and
+        ``[('face', 'vertex_indices', 'vertex')]``.  Element-level
+        declarations via `PlyElement.references` are also honored.
+        The standard ``face.vertex_indices`` reference to ``vertex``
+        is recognized automatically.
+    mask : bool, optional (default=True)
+        Whether to record missing-value masks on the result.
+    mask_suffix : str, optional
+        If given, add a ``uint8`` property named ``property + suffix``
+        for every property with missing values (1 means missing).
+    preserve_types : bool, optional (default=True)
+        Preserve each property's original PLY type.  This argument is
+        accepted for clarity; types are always preserved.
+    text, byte_order, comments, obj_info : optional
+        Override the corresponding output metadata.  By default they
+        are taken from the first source.
+
+    Returns
+    -------
+    PlyData
+
+    Raises
+    ------
+    PlyMergeConflict
+        If property types or reference declarations conflict.
+    PlyMergeError
+        For other merge errors.
+    """
+    merge_mode = kwargs.pop('merge_mode', None)
+    for alias in ('how', 'join', 'strategy'):
+        value = kwargs.pop(alias, None)
+        if value is None:
+            continue
+        if merge_mode is not None and value != merge_mode:
+            raise ValueError("conflicting merge mode arguments")
+        merge_mode = value
+    mode = kwargs.pop('mode', None)
+    if (mode is None and sources and
+            isinstance(sources[-1], str) and
+            sources[-1].strip().lower() in _MERGE_MODES and
+            len(sources) > 2):
+        mode = sources[-1]
+        sources = sources[:-1]
+    if mode is None:
+        mode = merge_mode
+    elif merge_mode is not None and \
+            _normalize_merge_mode(merge_mode) != _normalize_merge_mode(mode):
+        raise ValueError("conflicting values for 'mode' and 'merge_mode'")
+    mode = _normalize_merge_mode(mode)
+    reference_rules = kwargs.pop('reference_rules', None)
+    for alias in ('reference', 'refs', 'ref_rules', 'reference_declarations',
+                  'references'):
+        value = kwargs.pop(alias, None)
+        if value is None:
+            continue
+        if reference_rules is None:
+            reference_rules = value
+        else:
+            reference_rules = _merge_reference_maps(reference_rules, value)
+    declared_references = kwargs.pop('declared_references', None)
+    mask = kwargs.pop('mask', kwargs.pop('masks', True))
+    mask_suffix = kwargs.pop('mask_suffix',
+                             kwargs.pop('missing_suffix', None))
+    preserve_types = kwargs.pop('preserve_types', True)
+    for alias in ('preserve_type', 'preserve_dtype', 'preserve_dtypes',
+                  'keep_types', 'keep_dtype'):
+        preserve_types = kwargs.pop(alias, preserve_types)
+    text = kwargs.pop('text', None)
+    byte_order = kwargs.pop('byte_order', None)
+    comments = kwargs.pop('comments', None)
+    obj_info = kwargs.pop('obj_info', None)
+    extra_sources = kwargs.pop('sources', None)
+
+    if not preserve_types:
+        raise ValueError("merge_ply always preserves property types")
+
+    if kwargs:
+        raise TypeError("unexpected keyword argument(s): %s" %
+                        ', '.join(sorted(kwargs)))
+
+    if extra_sources is not None:
+        if sources:
+            raise TypeError("pass sources either positionally or via "
+                            "'sources', not both")
+        sources = tuple(extra_sources)
+
+    sources = _flatten_sources(sources)
+    if not sources:
+        raise PlyMergeError("at least one source is required")
+
+    if declared_references is None:
+        extra_rules = reference_rules
+    elif reference_rules is None:
+        extra_rules = declared_references
+    else:
+        extra_rules = _merge_reference_maps(reference_rules,
+                                            declared_references)
+    extra_rules = _normalize_reference_map(extra_rules)
+
+    first = sources[0]
+
+    if text is None:
+        text = first.text
+    if byte_order is None:
+        byte_order = first.byte_order
+    if comments is None:
+        comments = first.comments
+    if obj_info is None:
+        obj_info = first.obj_info
+
+    element_order = []
+    element_sources = {}
+    for (source_index, source) in enumerate(sources):
+        for elt in source.elements:
+            if elt.name not in element_sources:
+                element_order.append(elt.name)
+                element_sources[elt.name] = []
+            element_sources[elt.name].append((source_index, elt))
+
+    source_names = [set(elt.name for elt in source.elements)
+                    for source in sources]
+
+    if mode in ('intersection', 'strict'):
+        required = set.intersection(*source_names) if source_names else set()
+        if mode == 'strict' and any(names != required
+                                    for names in source_names):
+            raise PlyMergeConflict(
+                "strict merge requires identical element sets")
+        element_order = [name for name in element_order
+                         if name in required]
+
+    if not element_order:
+        return PlyData([], text=text, byte_order=byte_order,
+                       comments=comments, obj_info=obj_info)
+
+    explicit_rules = []
+    for source in sources:
+        explicit_rules.append(_merge_reference_maps(
+            _explicit_reference_rules(source), extra_rules))
+
+    merged_rules = {}
+    for rules in explicit_rules:
+        merged_rules = _merge_reference_maps(merged_rules, rules)
+    merged_rules = _normalize_reference_map(merged_rules)
+
+    source_rules = []
+    all_rules = merged_rules
+    for source in sources:
+        rules = _collect_reference_rules(source, extra_rules,
+                                         base=merged_rules)
+        source_rules.append(rules)
+        all_rules = _merge_reference_maps(all_rules, rules)
+
+    merged_rules = all_rules
+
+    known_elements = set(element_order)
+    all_elements = set()
+    for names in source_names:
+        all_elements.update(names)
+
+    effective_rules = {}
+    for (element, rules) in merged_rules.items():
+        if element not in all_elements:
+            raise PlyMergeConflict(
+                "reference rule for unknown element %r" % element,
+                element=element)
+        if element in known_elements:
+            effective_rules[element] = dict(rules)
+
+    for (element, rules) in effective_rules.items():
+        for (prop, target) in rules.items():
+            if prop != '*' and prop not in _element_property_names(
+                    element_sources.get(element, [])):
+                raise PlyMergeConflict(
+                    "reference rule for unknown property %r" % prop,
+                    element=element, property=prop)
+            if target not in element_sources:
+                raise PlyMergeConflict(
+                    "reference target element %r is missing" % target,
+                    element=element, property=prop)
+    merged_rules = effective_rules
+
+    offsets = _reference_offsets(element_order, element_sources)
+
+    output_elements = []
+    references_by_name = {}
+    for name in element_order:
+        entries = element_sources[name]
+        output = _merge_element(
+            name, entries, source_rules, merged_rules, mode, mask,
+            mask_suffix, len(sources), offsets)
+        if output is not None:
+            output_elements.append(output)
+            references_by_name[name] = dict(output.references)
+
+    if mode == 'complete':
+        _complete_elements(output_elements, references_by_name)
+
+    return PlyData(output_elements, text=text, byte_order=byte_order,
+                   comments=comments, obj_info=obj_info)
+
+
+
+
+def _merge_reference_maps(first, second):
+    result = _normalize_reference_map(first)
+    other = _normalize_reference_map(second)
+    for element in other:
+        if element in result:
+            result[element] = _merge_element_references(
+                result[element], other[element])
+        else:
+            result[element] = dict(other[element])
+    return result
+
+
+def _element_property_names(entries):
+    names = set()
+    for (source_index, elt) in entries:
+        names.update(prop.name for prop in elt.properties)
+    return names
+
+
+def _reference_offsets(element_order, element_sources):
+    """
+    For each referenced element, compute the per-source row offset in
+    the merged output.  A source that lacks the target element gets no
+    offset entry, which makes references from that source an error.
+    """
+    offsets = {}
+    position = 0
+    for name in element_order:
+        entries = element_sources[name]
+        source_offsets = {}
+        for (source_index, elt) in entries:
+            source_offsets[source_index] = position
+            position += elt.count
+        offsets[name] = source_offsets
+    return offsets
+
+
+def _element_property_order(entries, mode):
+    order = []
+    seen = set()
+    for (source_index, elt) in entries:
+        for prop in elt.properties:
+            if prop.name not in seen:
+                seen.add(prop.name)
+                order.append(prop.name)
+
+    if mode in ('intersection', 'strict'):
+        if mode == 'intersection':
+            common = None
+            for (source_index, elt) in entries:
+                names = set(prop.name for prop in elt.properties)
+                common = names if common is None else common & names
+        else:
+            reference = set(prop.name for prop in entries[0][1].properties)
+            common = reference
+            for (source_index, elt) in entries[1:]:
+                if set(prop.name for prop in elt.properties) != reference:
+                    raise PlyMergeConflict(
+                        "strict merge requires identical property sets",
+                        element=entries[0][1].name)
+        if common is not None:
+            order = [name for name in order if name in common]
+
+    return order
+
+
+def _element_property_lookup(entries, order, element_name):
+    lookup = {}
+    for name in order:
+        found = None
+        for (source_index, elt) in entries:
+            if name not in elt:
+                continue
+            prop = elt.ply_property(name)
+            if found is None:
+                found = prop
+            elif _property_signature(prop) != _property_signature(found):
+                raise PlyMergeConflict(
+                    "incompatible types for property %r: %s vs %s" %
+                    (name, _property_type_name(found),
+                     _property_type_name(prop)),
+                    element=element_name, property=name)
+        if found is None:
+            raise PlyMergeError("property %r not found" % name,
+                                element=element_name, property=name)
+        lookup[name] = found
+    return lookup
+
+
+def _merge_element(name, entries, source_rules, merged_rules, mode, mask,
+                   mask_suffix, source_count, offsets):
+    if mode == 'intersection':
+        present_sources = set(index for (index, elt) in entries)
+        if len(present_sources) != source_count:
+            return None
+
+    order = _element_property_order(entries, mode)
+    if not order:
+        had_properties = any(elt.properties for (index, elt) in entries)
+        if had_properties and mode in ('intersection', 'strict'):
+            return None
+        first_elt = entries[0][1]
+        properties = []
+    else:
+        first_elt = entries[0][1]
+        lookup = _element_property_lookup(entries, order, name)
+        properties = [_copy_property(lookup[prop_name])
+                      for prop_name in order]
+
+    fields = []
+    for prop in properties:
+        if isinstance(prop, PlyListProperty):
+            fields.append((prop.name, object))
+        else:
+            fields.append((prop.name, prop.dtype()))
+
+    present_sources = set(index for (index, elt) in entries)
+    if mode == 'strict' and len(present_sources) != source_count:
+        raise PlyMergeConflict(
+            "strict merge requires every source to contain element %r" %
+            name, element=name)
+
+    count = sum(elt.count for (index, elt) in entries)
+    data = _np.zeros(count, dtype=_np.dtype(fields))
+
+    masks = dict((prop.name, _np.zeros(count, dtype=bool))
+                 for prop in properties)
+
+    element_rules = merged_rules.get(name, {})
+    references = _expand_element_references(properties, element_rules)
+    references = dict((prop, target) for (prop, target) in
+                      references.items() if prop in set(order))
+
+    position = 0
+    for (source_index, elt) in entries:
+        rows = elt.count
+        (start, stop) = (position, position + rows)
+        position = stop
+
+        source_refs = source_rules[source_index].get(name, {})
+        source_refs = _expand_element_references(elt.properties,
+                                                 source_refs)
+
+        for prop in properties:
+            out_field = data[prop.name]
+            if prop.name not in elt:
+                masks[prop.name][start:stop] = True
+                if isinstance(prop, PlyListProperty):
+                    out_field[start:stop] = _empty_list_values(
+                        rows, prop.val_dtype)
+                else:
+                    out_field[start:stop] = _np.zeros(
+                        rows, dtype=prop.dtype())
+                continue
+
+            source_data = elt.data[prop.name]
+            if prop.name in source_refs:
+                target = source_refs[prop.name]
+                if target not in offsets:
+                    raise PlyMergeConflict(
+                        "reference target element %r is missing" % target,
+                        element=name, property=prop.name)
+                if source_index not in offsets[target]:
+                    raise PlyMergeConflict(
+                        "source has no element %r to reference" % target,
+                        element=name, property=prop.name)
+                offset = offsets[target][source_index]
+                source_data = _shift_reference_values(
+                    source_data, elt.ply_property(prop.name), offset)
+
+            if isinstance(prop, PlyListProperty):
+                values = _np.empty(rows, dtype=object)
+                for (k, value) in enumerate(source_data):
+                    values[k] = _np.asarray(value, dtype=prop.val_dtype)
+                out_field[start:stop] = values
+            else:
+                out_field[start:stop] = _np.asarray(
+                    source_data, dtype=prop.dtype())
+
+    missing = dict((prop_name, masks[prop_name])
+                   for prop_name in masks if masks[prop_name].any())
+
+    comments = first_elt.comments
+    result = PlyElement(name, properties, count, comments,
+                        references=references)
+    result.data = data
+    keep_masks = mask or mode == 'complete'
+    result._missing = _MaskDict(result, missing) if keep_masks else \
+        _MaskDict(result, {})
+
+    if mask_suffix:
+        _add_mask_properties(result, mask_suffix, missing)
+
+    return result
+
+
+def _complete_elements(elements, references_by_name):
+    """
+    Drop rows with missing values and cascade to rows that reference
+    dropped rows, then remap references accordingly.
+    """
+    keeps = dict((elt.name, _np.ones(elt.count, dtype=bool))
+                 for elt in elements)
+    for elt in elements:
+        for values in elt._missing.values():
+            keeps[elt.name] &= ~values
+
+    changed = True
+    while changed:
+        changed = False
+        for elt in elements:
+            for (prop_name, target) in references_by_name[elt.name].items():
+                if prop_name not in elt:
+                    continue
+                row_keep = keeps[elt.name]
+                if target not in keeps:
+                    raise PlyMergeConflict(
+                        "reference target element %r is missing" % target,
+                        element=elt.name, property=prop_name)
+                prop = elt.ply_property(prop_name)
+                for (row, value) in enumerate(elt.data[prop_name]):
+                    if not row_keep[row]:
+                        continue
+                    indices = _reference_indices(value, prop)
+                    for index in indices:
+                        if index < 0 or index >= len(keeps[target]):
+                            raise PlyMergeConflict(
+                                "reference index %d is out of range"
+                                % index, element=elt.name,
+                                property=prop_name)
+                        if not keeps[target][index]:
+                            row_keep[row] = False
+                            changed = True
+                            break
+
+    remaps = {}
+    for elt in elements:
+        keep = keeps[elt.name]
+        remap = _np.full(elt.count, -1, dtype=_np.int64)
+        remap[keep] = _np.arange(int(keep.sum()), dtype=_np.int64)
+        remaps[elt.name] = remap
+
+    for elt in elements:
+        keep = keeps[elt.name]
+        masks = dict((prop_name, values[keep]) for (prop_name, values)
+                     in elt._missing.items())
+        data = elt.data[keep]
+
+        for (prop_name, target) in references_by_name[elt.name].items():
+            if prop_name not in elt:
+                continue
+            if target not in remaps:
+                raise PlyMergeConflict(
+                    "reference target element %r is missing" % target,
+                    element=elt.name, property=prop_name)
+            prop = elt.ply_property(prop_name)
+            data[prop_name] = _remap_reference_values(
+                data[prop_name], prop, remaps[target])
+
+        elt._data = data
+        elt._count = len(data)
+        elt._missing = _MaskDict(
+            elt, dict((prop_name, values) for (prop_name, values)
+                      in masks.items() if values.any()))
+
+
+def _remap_reference_values(values, prop, remap):
+    if isinstance(prop, PlyListProperty):
+        result = _np.empty(len(values), dtype=object)
+        for (k, value) in enumerate(values):
+            array = _np.asarray(value, dtype=_np.int64)
+            if array.size == 0:
+                result[k] = _np.array([], dtype=prop.val_dtype)
+                continue
+            mapped = remap[array]
+            if (mapped < 0).any():
+                raise PlyMergeConflict(
+                    "reference to a dropped row", property=prop.name)
+            result[k] = mapped.astype(prop.val_dtype)
+        return result
+
+    array = _np.asarray(values, dtype=_np.int64)
+    mapped = remap[array]
+    if (mapped < 0).any():
+        raise PlyMergeConflict(
+            "reference to a dropped row", property=prop.name)
+    return mapped.astype(prop.val_dtype)
+
+
+def _reference_indices(value, prop):
+    array = _np.asarray(value)
+    if isinstance(prop, PlyListProperty):
+        return array.astype(_np.int64).ravel()
+    return array.astype(_np.int64).reshape(-1)
+
+
+
+
+def _add_mask_properties(element, suffix, missing):
+    if not missing:
+        return
+
+    fields = list(element.data.dtype.descr)
+    for prop_name in missing:
+        mask_name = prop_name + suffix
+        if mask_name in element:
+            raise PlyMergeConflict(
+                "mask property %r already exists" % mask_name,
+                element=element.name, property=mask_name)
+        fields.append((mask_name, 'u1'))
+
+    data = _np.zeros(element.count, dtype=_np.dtype(fields))
+    for prop in element.properties:
+        data[prop.name] = element.data[prop.name]
+    for (prop_name, values) in missing.items():
+        data[prop_name + suffix] = values.astype('u1')
+
+    properties = list(element.properties)
+    for prop_name in missing:
+        properties.append(PlyProperty(prop_name + suffix, 'u1'))
+
+    element._properties = tuple(properties)
+    element._index()
+    element._data = data
+    element._count = len(data)
+    element._missing = _MaskDict(
+        element, dict((prop_name, values) for (prop_name, values)
+                      in element._missing.items()))
+
+
 class PlyParseError(Exception):
     """
     Base class for PLY parsing errors.
     """
 
     pass
+
+
+class PlyMergeError(ValueError):
+    """
+    Base class for PLY merge errors.
+    """
+
+    pass
+
+
+class PlyMergeConflict(PlyMergeError):
+    """
+    Raised when two sources cannot be merged because their metadata is
+    incompatible.
+
+    Attributes
+    ----------
+    element : str or None
+    property : str or None
+    message : str
+    """
+
+    def __init__(self, message, element=None, property=None):
+        self.message = message
+        self.element = element
+        self.property = property
+
+        s = ''
+        if self.element is not None:
+            s += 'element %r: ' % self.element
+        if self.property is not None:
+            s += 'property %r: ' % self.property
+        s += message
+
+        PlyMergeError.__init__(self, s)
+
+    def __repr__(self):
+        return ('%s(%r, element=%r, property=%r)' %
+                (self.__class__.__name__, self.message,
+                 self.element, self.property))
 
 
 class PlyElementParseError(PlyParseError):
@@ -1523,3 +2901,13 @@ _byte_order_reverse = {
 }
 
 _native_byte_order = {'little': '<', 'big': '>'}[_byteorder]
+
+
+merge = merge_ply
+concatenate = merge_ply
+merge_batches = merge_ply
+combine_ply = merge_ply
+merge_ply_files = merge_ply
+
+MergeError = PlyMergeError
+MergeConflictError = PlyMergeConflict

@@ -4,6 +4,19 @@ All notable changes to this project will be documented here.
 
 ## [Unreleased]
 
+### Added
+- `merge_ply` and `PlyData.merge` for concatenating PLY batches with an
+  explicit merge mode (`union`, `intersection`, `strict`, or
+  `complete`).
+- Per-element missing-value masks (`PlyElement.missing` / `masks`),
+  including optional explicit mask properties via `mask_suffix`, all
+  preserved across a PLY write/read roundtrip.
+- Declarative index-reference rules (`PlyData.references`,
+  `PlyElement.references`, and the `reference_rules` argument), which
+  shift face and custom-element references when batches are merged.
+- `PlyMergeError` and `PlyMergeConflict` for incompatible merge inputs;
+  property types are preserved and never silently widened.
+
 ## [1.1.5] - 2026-07-25
 ### Fixed
 - Fix by @nh2: when determining whether a PLY element can be

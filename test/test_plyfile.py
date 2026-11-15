@@ -10,8 +10,9 @@ import numpy
 
 import plyfile
 from plyfile import (
-    PlyData, PlyElement, PlyProperty,
+    PlyData, PlyElement, PlyProperty, PlyListProperty,
     PlyHeaderParseError, PlyElementParseError,
+    PlyMergeError, PlyMergeConflict, merge_ply,
 )
 
 
@@ -1016,3 +1017,274 @@ def test_text_io_bad_read(tet_ply_txt):
     with Raises(ValueError) as e:
         PlyData.read(stream1)
     assert str(e) == "can't read binary-format PLY from text stream"
+
+
+def _vertex(cx, extra=None):
+    fields = [('x', 'f4'), ('y', 'f4'), ('z', 'f4')]
+    if extra is not None:
+        fields = fields + extra
+    data = numpy.zeros(cx, dtype=fields)
+    data['x'] = numpy.arange(cx)
+    return data
+
+
+def _faces(n, size=3):
+    rows = [([0, 1] if size == 2 else [0, 1, 2],)]
+    return numpy.array(rows, dtype=[('vertex_indices', 'i4', (size,))])
+
+
+def _merge_pair(extra=False, faces=1):
+    a = PlyData([
+        PlyElement.describe(_vertex(2), 'vertex'),
+        PlyElement.describe(_faces(2), 'face'),
+    ], text=True)
+    b = PlyData([
+        PlyElement.describe(_vertex(3, [('intensity', 'f4')] if extra
+                             else None), 'vertex'),
+        PlyElement.describe(_faces(3), 'face'),
+    ], text=True)
+    return (a, b)
+
+
+def test_merge_union_masks_vertex_property():
+    (a, b) = _merge_pair(extra=True)
+    merged = merge_ply(a, b, mode='union')
+
+    assert merged['vertex'].count == 5
+    assert 'intensity' in merged['vertex']
+    assert merged['vertex'].properties[-1].val_dtype == 'f4'
+    assert merged['vertex'].missing['intensity'].tolist() == \
+        [True, True, False, False, False]
+    # Present values are copied, absent values are zero.
+    assert merged['vertex']['intensity'].tolist() == [0., 0., 0., 0., 0.]
+
+
+def test_merge_union_shifts_face_references():
+    (a, b) = _merge_pair(faces=1)
+    merged = merge_ply(a, b, mode='union')
+
+    assert merged['face'].count == 2
+    assert merged['face']['vertex_indices'][0].tolist() == [0, 1, 2]
+    assert merged['face']['vertex_indices'][1].tolist() == [2, 3, 4]
+
+
+def test_merge_reference_rules_survive_roundtrip(tmpdir):
+    (a, b) = _merge_pair()
+    merged = merge_ply(a, b, mode='union')
+    assert merged.references['face'] == {'vertex_indices': 'vertex'}
+
+    ply1 = write_read(merged, tmpdir)
+    assert ply1.references['face'] == {'vertex_indices': 'vertex'}
+    assert ply1['face']['vertex_indices'][1].tolist() == [2, 3, 4]
+
+
+def test_merge_masks_survive_roundtrip(tmpdir):
+    (a, b) = _merge_pair(extra=True)
+    merged = merge_ply(a, b, mode='union')
+    ply1 = write_read(merged, tmpdir)
+
+    assert ply1['vertex'].missing['intensity'].tolist() == \
+        [True, True, False, False, False]
+    assert 'intensity' in ply1['vertex']
+
+
+def test_merge_same_name_incompatible_type_is_conflict():
+    a = PlyData([PlyElement.describe(_vertex(1), 'vertex')], text=True)
+    b = PlyData([
+        PlyElement.describe(
+            numpy.zeros(1, dtype=[('x', 'f8'), ('y', 'f4'), ('z', 'f4')]),
+            'vertex')
+    ], text=True)
+
+    with Raises(PlyMergeConflict) as e:
+        merge_ply(a, b, mode='union')
+
+    assert e.exc_val.element == 'vertex'
+    assert e.exc_val.property == 'x'
+    assert isinstance(e.exc_val, PlyMergeError)
+
+
+def test_merge_list_length_type_conflict():
+    a = PlyData([
+        PlyElement.describe(_vertex(1), 'vertex'),
+        PlyElement.describe(_faces(1, 3), 'face',
+                            len_types={'vertex_indices': 'u2'}),
+    ], text=True)
+    b = PlyData([
+        PlyElement.describe(_vertex(1), 'vertex'),
+        PlyElement.describe(_faces(1, 3), 'face'),
+    ], text=True)
+
+    with Raises(PlyMergeConflict) as e:
+        merge_ply(a, b)
+    assert e.exc_val.property == 'vertex_indices'
+
+
+def test_merge_intersection_drops_uncommon(tmpdir):
+    a = PlyData([PlyElement.describe(_vertex(1), 'vertex')], text=True)
+    b = PlyData([
+        PlyElement.describe(_vertex(2, [('intensity', 'f4')]), 'vertex'),
+        PlyElement.describe(_faces(2), 'face'),
+    ], text=True)
+
+    merged = merge_ply(a, b, mode='intersection')
+    assert [elt.name for elt in merged.elements] == ['vertex']
+    assert [prop.name for prop in merged['vertex'].properties] == \
+        ['x', 'y', 'z']
+    assert merged['vertex'].count == 3
+    assert merged['vertex'].missing == {}
+
+
+def test_merge_strict_rejects_different_properties():
+    a = PlyData([PlyElement.describe(_vertex(1), 'vertex')], text=True)
+    b = PlyData([
+        PlyElement.describe(_vertex(1, [('intensity', 'f4')]), 'vertex')
+    ], text=True)
+
+    with Raises(PlyMergeConflict) as e:
+        merge_ply(a, b, mode='strict')
+    assert e.exc_val.element == 'vertex'
+
+
+def test_merge_complete_drops_and_remaps_references():
+    a = PlyData([
+        PlyElement.describe(_vertex(2), 'vertex'),
+        PlyElement.describe(_faces(2, 2), 'face'),
+    ], text=True)
+    b = PlyData([
+        PlyElement.describe(_vertex(3, [('intensity', 'f4')]), 'vertex'),
+        PlyElement.describe(_faces(3, 2), 'face'),
+    ], text=True)
+
+    merged = merge_ply(a, b, mode='complete')
+
+    # The first two vertices lack intensity, so they are dropped; their
+    # face is dropped too, and the remaining face is remapped to [0, 1].
+    assert merged['vertex'].count == 3
+    assert merged['vertex']['x'].tolist() == [0., 1., 2.]
+    assert merged['face'].count == 1
+    assert merged['face']['vertex_indices'][0].tolist() == [0, 1]
+    assert merged['vertex'].missing == {}
+
+
+def test_merge_custom_element_reference_rules():
+    a = PlyData([
+        PlyElement.describe(_vertex(2), 'vertex'),
+        PlyElement.describe(
+            numpy.array([([0, 1],)], dtype=[('v', 'i4', (2,))]), 'edge'),
+    ], text=True, reference_rules={'edge': {'v': 'vertex'}})
+    b = PlyData([
+        PlyElement.describe(_vertex(3), 'vertex'),
+        PlyElement.describe(
+            numpy.array([([0, 1],)], dtype=[('v', 'i4', (2,))]), 'edge'),
+    ], text=True, reference_rules={'edge': {'v': 'vertex'}})
+
+    merged = merge_ply(a, b)
+    assert merged['edge']['v'][1].tolist() == [2, 3]
+    assert merged.references['edge'] == {'v': 'vertex'}
+
+
+def test_merge_unregistered_reference_is_not_shifted():
+    a = PlyData([
+        PlyElement.describe(_vertex(2), 'vertex'),
+        PlyElement.describe(
+            numpy.array([([0, 1],)], dtype=[('v', 'i4', (2,))]), 'edge'),
+    ], text=True)
+    b = PlyData([
+        PlyElement.describe(_vertex(3), 'vertex'),
+        PlyElement.describe(
+            numpy.array([([0, 1],)], dtype=[('v', 'i4', (2,))]), 'edge'),
+    ], text=True)
+
+    merged = merge_ply(a, b)
+    assert merged['edge']['v'][1].tolist() == [0, 1]
+
+
+def test_merge_conflicting_reference_rules():
+    a = PlyData([
+        PlyElement.describe(_vertex(1), 'vertex'),
+        PlyElement.describe(
+            numpy.array([([0],)], dtype=[('v', 'i4', (1,))]), 'edge'),
+    ], text=True, reference_rules={'edge': {'v': 'vertex'}})
+    b = PlyData([
+        PlyElement.describe(_vertex(1), 'vertex'),
+        PlyElement.describe(
+            numpy.array([([0],)], dtype=[('v', 'i4', (1,))]), 'edge'),
+    ], text=True, reference_rules={'edge': {'v': 'other'}})
+
+    with Raises(PlyMergeConflict) as e:
+        merge_ply(a, b)
+    assert e.exc_val.property == 'v'
+
+
+def test_merge_reference_to_absent_source_element():
+    a = PlyData([
+        PlyElement.describe(_vertex(1), 'vertex'),
+        PlyElement.describe(
+            numpy.array([([0],)], dtype=[('v', 'i4', (1,))]), 'edge'),
+    ], text=True, reference_rules={'edge': {'v': 'vertex'}})
+    b = PlyData([
+        PlyElement.describe(
+            numpy.array([([0],)], dtype=[('v', 'i4', (1,))]), 'edge'),
+    ], text=True, reference_rules={'edge': {'v': 'vertex'}})
+
+    with Raises(PlyMergeConflict) as e:
+        merge_ply(a, b)
+    assert e.exc_val.property == 'v'
+
+
+def test_merge_unknown_mode():
+    (a, b) = _merge_pair()
+    with Raises(ValueError) as e:
+        merge_ply(a, b, mode='sideways')
+    assert 'unknown merge mode' in str(e)
+
+
+def test_merge_mask_suffix():
+    a = PlyData([PlyElement.describe(_vertex(2), 'vertex')], text=True)
+    b = PlyData([
+        PlyElement.describe(_vertex(1, [('intensity', 'f4')]), 'vertex')
+    ], text=True)
+
+    merged = merge_ply(a, b, mode='union', mask_suffix='_missing')
+    assert 'intensity_missing' in merged['vertex']
+    assert merged['vertex']['intensity_missing'].tolist() == [1, 1, 0]
+    assert merged['vertex'].properties[-1].val_dtype == 'u1'
+
+
+def test_merge_accepts_filenames_and_streams(tmpdir):
+    (a, b) = _merge_pair()
+    path_a = str(tmpdir.join('a.ply'))
+    path_b = str(tmpdir.join('b.ply'))
+    a.write(path_a)
+    b.write(path_b)
+
+    assert merge_ply(path_a, path_b)['vertex'].count == 5
+    with open(path_b, 'rb') as stream:
+        merged = a.merge(stream)
+    assert merged['vertex'].count == 5
+
+
+def test_merge_preserves_output_metadata():
+    (a, b) = _merge_pair()
+    a.text = False
+    a.byte_order = '<'
+    merged = merge_ply(a, b)
+    assert merged.text is False
+    assert merged.byte_order == '<'
+
+
+def test_merge_element_metadata_and_property_types():
+    (a, b) = _merge_pair(extra=True)
+    merged = merge_ply(a, b)
+    assert merged['vertex'].properties[0].val_dtype == 'f4'
+    assert isinstance(merged['vertex'].properties[0], PlyProperty)
+    assert not isinstance(merged['vertex'].properties[0],
+                          PlyListProperty)
+
+
+def test_merge_explicit_mask_false_drops_masks():
+    (a, b) = _merge_pair(extra=True)
+    merged = merge_ply(a, b, mask=False)
+    assert merged['vertex'].missing == {}
+    assert 'intensity' in merged['vertex']

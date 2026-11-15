@@ -334,6 +334,56 @@ Now you can instantiate `PlyData` and serialize:
 
 ## Miscellaneous
 
+## Merging batches
+
+`merge_ply` concatenates the elements of several PLY sources into one
+`PlyData` instance.  Sources can be `PlyData` instances, filenames, or
+readable streams.  `PlyData.merge` is a convenience form where the
+receiver is the first source.
+
+The merge mode must be explicit:
+
+- `'union'` keeps every element and property.  Properties absent from
+  a source are synthesized, and their rows are recorded in the
+  element's missing-value masks.
+- `'intersection'` keeps only elements and properties present in every
+  source.
+- `'strict'` requires identical element and property sets.
+- `'complete'` merges like `'union'`, then drops rows with missing
+  values and remaps references.
+
+Property types are preserved exactly.  If two sources use the same
+element and property name with incompatible types (including list
+length and value types), `PlyMergeConflict` is raised.
+
+```Python
+merged = merge_ply('light.ply', 'color.ply', mode='union')
+merged['vertex'].missing['red'].tolist()
+# [True, True, False, False]
+```
+
+Masks are available through `element.missing` (also `element.masks`),
+and are written to the header so that reading the file back restores
+them.  Pass `mask_suffix='_missing'` to additionally emit explicit
+`uchar` properties (1 means missing) that other tools can consume.
+
+Index properties such as a face's `vertex_indices` are shifted by the
+number of preceding rows in the merged element.  The standard
+face-to-vertex reference is recognized automatically; other references
+must be declared with `reference_rules`, either on the data or on the
+element:
+
+```Python
+merged = merge_ply(a, b, mode='union',
+                   reference_rules={'edge': {'v': 'vertex'}})
+edge = PlyElement.describe(edge_data, 'edge',
+                           references={'v': 'vertex'})
+```
+
+Declared rules are stored in the header as comments and survive a
+write/read roundtrip.  Contradictory declarations raise
+`PlyMergeConflict`.
+
 ### Comments
 
 Header comments are supported:
