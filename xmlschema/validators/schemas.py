@@ -1459,6 +1459,7 @@ class XMLSchemaBase(XsdValidator, ElementPathMixin[Union[SchemaType, XsdElement]
                     validation_hook: Optional[ValidationHookType] = None,
                     value_hook: Optional[ValueHookType] = None,
                     element_hook: Optional[ElementHookType] = None,
+                    preserve_lexical: bool = False,
                     errors: Optional[list[XMLSchemaValidationError]] = None,
                     **kwargs: Any) -> Iterator[Union[Any, XMLSchemaValidationError]]:
         """
@@ -1531,6 +1532,12 @@ class XMLSchemaBase(XsdValidator, ElementPathMixin[Union[SchemaType, XsdElement]
         data before calling the converter decode method. Takes an `ElementData` \
         instance plus optionally the XSD element and the XSD type, and returns a \
         new `ElementData` instance.
+        :param preserve_lexical: if set to `True` decoded atomic values keep the \
+        original XSD lexical value. Decimal values are decoded to \
+        :class:`xmlschema.JsonDecimal` and integer values to \
+        :class:`xmlschema.JsonInteger`; date/time values are annotated with a \
+        ``lexical`` attribute. The lexical value is used for re-encoding to XML \
+        and is exposed by the JSON values API.
         :param errors: optional internal collector for validation errors.
         :param kwargs: keyword arguments with other options for building converter instances.
         :return: yields a decoded data object, eventually preceded by a sequence of \
@@ -1559,6 +1566,7 @@ class XMLSchemaBase(XsdValidator, ElementPathMixin[Union[SchemaType, XsdElement]
             validation_hook=validation_hook,
             value_hook=value_hook,
             element_hook=element_hook,
+            preserve_lexical=preserve_lexical,
             errors=errors
         )
         kwargs['converter'] = self.maps.settings.get_converter(source=resource, **kwargs)

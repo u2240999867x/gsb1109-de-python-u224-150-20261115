@@ -806,7 +806,7 @@ class XsdElement(XsdComponent, ParticleMixin,
                     if value[:1] == '{' and xsd_type.is_qname():
                         value = text
                 elif isinstance(value, Decimal):
-                    if context.decimal_type is not None:
+                    if context.decimal_type is not None and not context.preserve_lexical:
                         value = context.decimal_type(value)
                 elif isinstance(value, (AbstractDateTime, Duration)):
                     value = str(value) if text is None else text.strip()

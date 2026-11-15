@@ -734,6 +734,59 @@ See the :meth:`xmlschema.to_json` and :meth:`xmlschema.from_json` in the
 :ref:`document-level-api` section.
 
 
+Round-trip JSON values
+======================
+
+For data interchange with a JSON repository the default conversion is often not
+enough, because some XSD values can't be represented by a JSON number or string
+without losing information:
+
+* a ``xs:decimal`` value can have a significant trailing zero (``100.50``) that
+  is lost if the value is serialized as a JSON number;
+* a ``xs:integer`` value can exceed the integer range that JSON consumers can
+  represent exactly;
+* a date/time value can have no timezone, and the timezone must not be filled
+  with the timezone of the machine that performs the conversion.
+
+Provide the *json_types* option to get a self-describing representation::
+
+    >>> json_data = xmlschema.to_json(
+    ...     xml_document, schema=schema, json_types=True
+    ... )
+
+Decimal, big integer and date/time values are encoded with typed JSON objects::
+
+    {"$type": "decimal", "value": "100.5", "lexical": "+00100.5000"}
+    {"$type": "integer", "value": "123456789012345678901234567890",
+     "lexical": "+00123456789012345678901234567890"}
+    {"$type": "dateTime", "value": "2019-01-01T13:40:00",
+     "lexical": "2019-01-01T13:40:00", "timezone": null}
+
+The *value* field is the canonical value, the *lexical* field is the original
+XSD lexical value, kept for auditing and for a lossless encoding back to XML.
+Two decimals that represent the same value can be associated with each other
+using :func:`xmlschema.json_value_key`, without altering their *lexical* fields::
+
+    >>> xmlschema.json_value_key({'$type': 'decimal', 'value': '1', 'lexical': '1.0'})
+    'decimal:1'
+    >>> xmlschema.json_value_key({'$type': 'decimal', 'value': '1', 'lexical': '1.00'})
+    'decimal:1'
+
+The *timezone* field is ``null`` for a date/time without timezone. The value is
+then a floating date/time and a consumer must not apply the timezone of the
+running machine. Use :func:`xmlschema.get_timezone_info` for handling this rule
+explicitly.
+
+To encode the JSON data back to XML, provide the same option::
+
+    >>> root = xmlschema.from_json(json_data, schema=schema, json_types=True)
+
+The typed values are converted back to their original lexical values, so the
+re-encoded XML keeps the original decimal precision and the original timezone
+notation. Without *json_types* the default output of :func:`xmlschema.to_json`
+and :func:`xmlschema.from_json` is unchanged.
+
+
 XML resources and documents
 ===========================
 

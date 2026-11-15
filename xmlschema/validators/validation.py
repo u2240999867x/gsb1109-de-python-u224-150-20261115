@@ -103,6 +103,8 @@ class DecodeArguments(ValidationArguments):
     datetime_types = binary_types = fill_missing = \
         keep_empty = keep_unknown = BooleanOption(default=False)
 
+    preserve_lexical = BooleanOption(default=False)
+
 
 class EncodeArguments(ValidationArguments):
     source = EncodeSourceArgument()
@@ -327,7 +329,7 @@ class DecodeContext(ValidationContext):
 
     __slots__ = ('decimal_type', 'datetime_types', 'binary_types', 'filler',
                  'fill_missing', 'keep_empty', 'keep_unknown', 'depth_filler',
-                 'value_hook', 'element_hook', 'keep_datatypes')
+                 'value_hook', 'element_hook', 'keep_datatypes', 'preserve_lexical')
 
     def __init__(self,
                  source: XMLResource,
@@ -342,6 +344,7 @@ class DecodeContext(ValidationContext):
                  depth_filler: Optional[DepthFillerType] = None,
                  value_hook: Optional[ValueHookType] = None,
                  element_hook: Optional[ElementHookType] = None,
+                 preserve_lexical: bool = False,
                  **kwargs: Any) -> None:
 
         if not isinstance(converter, XMLSchemaConverter):
@@ -357,6 +360,7 @@ class DecodeContext(ValidationContext):
         self.depth_filler = depth_filler
         self.value_hook = value_hook
         self.element_hook = element_hook
+        self.preserve_lexical = preserve_lexical
 
         keep_datatypes: list[type[DecodedValueType]] = [int, float, list]
         if decimal_type is None:

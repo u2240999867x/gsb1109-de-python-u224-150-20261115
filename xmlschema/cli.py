@@ -88,6 +88,10 @@ def xml2json():
     parser.add_argument('--indent', type=int, default=None,
                         help="indentation for a pretty-printed JSON output "
                              "(default is the most compact representation)")
+    parser.add_argument('--json-types', choices=('auto', 'all'), default=None,
+                        help="encode decimal, integer and date/time values with "
+                             "typed JSON objects that keep the original lexical value "
+                             "(default is to use plain JSON numbers and strings).")
     parser.add_argument('--lazy', action='store_true', default=False,
                         help="use lazy decoding mode (slower but use less memory).")
     parser.add_argument('--defuse', metavar='(always, remote, never)',
@@ -139,6 +143,7 @@ def xml2json():
                     defuse=args.defuse,
                     validation='lax',
                     json_options=json_options,
+                    json_types=False if args.json_types is None else args.json_types,
                 )
             except (xmlschema.XMLSchemaException, URLError) as err:
                 tot_errors += 1
@@ -176,6 +181,9 @@ def json2xml():
                              "{!r}.".format(tuple(CONVERTERS_MAP)))
     parser.add_argument('--indent', type=int, default=4,
                         help="indentation for XML output (default is 4 spaces)")
+    parser.add_argument('--json-types', action='store_true', default=False,
+                        help="decode typed JSON objects to their original XSD lexical "
+                             "values before encoding to XML.")
     parser.add_argument('-o', '--output', type=str, default='.',
                         help="where to write the encoded XML files, current dir by default.")
     parser.add_argument('-f', '--force', action="store_true", default=False,
@@ -211,6 +219,7 @@ def json2xml():
                     converter=converter,
                     validation='lax',
                     indent=args.indent,
+                    json_types=args.json_types,
                 )
             except (xmlschema.XMLSchemaException, URLError) as err:
                 tot_errors += 1

@@ -51,6 +51,30 @@ Document level API
 .. autofunction:: xmlschema.from_json
 
 
+.. _json-values-api:
+
+JSON values API
+===============
+
+These helpers implement the JSON-safe representations used by the *json_types*
+option of :func:`xmlschema.to_json` and :func:`xmlschema.from_json`.
+
+.. autofunction:: xmlschema.to_json_value
+.. autofunction:: xmlschema.from_json_value
+.. autofunction:: xmlschema.json_value_key
+.. autofunction:: xmlschema.json_values_match
+.. autofunction:: xmlschema.group_json_values
+.. autofunction:: xmlschema.get_timezone_info
+.. autofunction:: xmlschema.encode_json_values
+.. autofunction:: xmlschema.decode_json_values
+.. autofunction:: xmlschema.json_dumps
+.. autofunction:: xmlschema.json_loads
+
+.. autoclass:: xmlschema.JsonDecimal
+.. autoclass:: xmlschema.JsonInteger
+.. autoexception:: xmlschema.JsonValueError
+
+
 .. _schema-level-api:
 
 Schema level API

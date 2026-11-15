@@ -17,6 +17,10 @@ from .converters import ElementData, XMLSchemaConverter, \
     UnorderedConverter, ParkerConverter, BadgerFishConverter, \
     AbderaConverter, JsonMLConverter, ColumnarConverter, GDataConverter
 from .dataobjects import DataElement, DataElementConverter, DataBindingConverter
+from .json_types import JsonDecimal, JsonInteger, JsonValueError, \
+    to_json_value, from_json_value, json_value_key, json_values_match, \
+    group_json_values, get_timezone_info, encode_json_values, decode_json_values, \
+    dumps as json_dumps, loads as json_loads
 from .documents import validate, is_valid, iter_errors, iter_decode, \
     to_dict, to_json, to_etree, from_json, XmlDocument
 from .exports import download_schemas
@@ -48,7 +52,12 @@ __all__ = [
     'XMLResource', 'ElementPathMixin', 'ElementData', 'XMLSchemaConverter',
     'UnorderedConverter', 'ParkerConverter', 'BadgerFishConverter', 'GDataConverter',
     'AbderaConverter', 'JsonMLConverter', 'ColumnarConverter', 'DataElement',
-    'DataElementConverter', 'DataBindingConverter', 'validate', 'is_valid',
+    'DataElementConverter', 'DataBindingConverter',
+    'JsonDecimal', 'JsonInteger', 'JsonValueError', 'to_json_value',
+    'from_json_value', 'json_value_key', 'json_values_match', 'group_json_values',
+    'get_timezone_info', 'encode_json_values', 'decode_json_values',
+    'json_dumps', 'json_loads',
+    'validate', 'is_valid',
     'iter_errors', 'iter_decode', 'to_dict', 'to_json', 'to_etree', 'from_json',
     'XmlDocument', 'download_schemas', 'ElementSelector', 'ElementPathSelector',
     'SchemaLoader', 'LocationSchemaLoader', 'SafeSchemaLoader',

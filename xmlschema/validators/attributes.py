@@ -284,7 +284,7 @@ class XsdAttribute(XsdComponent, ValidationMixin[Optional[str], DecodedValueType
             else:
                 return value
         elif isinstance(value, Decimal):
-            if context.decimal_type is None:
+            if context.decimal_type is None or context.preserve_lexical:
                 return value
             else:
                 return context.decimal_type(value)

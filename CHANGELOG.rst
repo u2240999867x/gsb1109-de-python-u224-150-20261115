@@ -2,6 +2,13 @@
 CHANGELOG
 *********
 
+`v4.4.0`_ (unreleased)
+======================
+* Add JSON-safe representations for xs:decimal, xs:integer and date/time values,
+  keeping the original lexical value for auditing and for a lossless re-encoding
+* Add *json_types* option to to_json()/from_json() and related command line options
+* Add *preserve_lexical* option for decoding atomic values with their lexical form
+
 `v4.3.2`_ (2026-06-30)
 ======================
 * Fix for issues #473, #474 and #475
@@ -809,3 +816,4 @@ v0.9.6 (2017-05-05)
 .. _v4.3.0: https://github.com/brunato/xmlschema/compare/v4.2.0...v4.3.0
 .. _v4.3.1: https://github.com/brunato/xmlschema/compare/v4.3.0...v4.3.1
 .. _v4.3.2: https://github.com/brunato/xmlschema/compare/v4.3.1...v4.3.2
+.. _v4.4.0: https://github.com/brunato/xmlschema/compare/v4.3.2...v4.4.0

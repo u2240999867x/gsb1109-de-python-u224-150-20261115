@@ -10,7 +10,7 @@
 import json
 import dataclasses as dc
 from io import IOBase, TextIOBase
-from collections.abc import Iterator
+from collections.abc import Callable, Iterator
 from functools import partial
 from typing import Any, BinaryIO, IO, Optional, TextIO, Union
 from xml.etree import ElementTree
@@ -19,6 +19,7 @@ from xmlschema.exceptions import XMLSchemaTypeError, XMLSchemaValueError, XMLRes
 from xmlschema.names import XSD_NAMESPACE, XSI_TYPE, XSD_SCHEMA
 from xmlschema.aliases import ElementType, NsmapType, LocationsType, SourceArgType, \
     DecodeType, EncodeType, JsonDecodeType, XMLSourceType, SchemaType
+from xmlschema.json_types import encode_json_values, decode_json_values
 from xmlschema.translation import gettext as _
 from xmlschema.arguments import Argument, validate_type, BooleanOption, ValidationOption
 from xmlschema.utils.etree import is_etree_document, etree_tostring
@@ -307,6 +308,7 @@ def to_json(xml_document: Union[XMLSourceType, XMLResource],
             locations: Optional[LocationsType] = None,
             use_location_hints: bool = True,
             json_options: Optional[dict[str, Any]] = None,
+            json_types: Union[bool, str] = False,
             **kwargs: Any) -> JsonDecodeType:
     """
     Serialize an XML document to JSON. For default the XML data is validated during
@@ -332,6 +334,10 @@ def to_json(xml_document: Union[XMLSourceType, XMLResource],
     to be built, uses also schema locations hints provided within XML data. \
     set this option to `False` to ignore these schema location hints.
     :param json_options: a dictionary with options for the JSON serializer.
+    :param json_types: if set to `True` (or to ``'auto'``) decimal, integer and \
+    date/time values are serialized with typed JSON objects that keep the original \
+    XSD lexical value and the timezone information. Provide ``'all'`` to encode all \
+    integers as typed values. For default JSON numbers and strings are used.
     :param kwargs: optional arguments of :meth:`XMLSchemaBase.iter_decode` as keyword arguments \
     to variate the decoding process.
     :return: a string containing the JSON data if *fp* is `None`, otherwise doesn't \
@@ -348,8 +354,26 @@ def to_json(xml_document: Union[XMLSourceType, XMLResource],
     source, _schema = get_context(xml_document, schema, cls, **kwargs)
     if json_options is None:
         json_options = {}
-    if 'decimal_type' not in kwargs:
-        kwargs['decimal_type'] = float
+
+    if json_types:
+        kwargs['preserve_lexical'] = True
+        kwargs['datetime_types'] = True
+        kwargs.pop('decimal_type', None)
+        integers = 'auto' if json_types is True else json_types
+        if integers not in ('auto', 'all'):
+            msg = _("invalid value {!r} for 'json_types'")
+            raise XMLSchemaValueError(msg.format(json_types))
+        data_encoder = partial(encode_json_values, integers=integers)
+    elif kwargs.pop('preserve_lexical', False):
+        # Values that keep their lexical form can't be serialized as JSON
+        # numbers or strings without losing information.
+        kwargs['datetime_types'] = True
+        kwargs.pop('decimal_type', None)
+        data_encoder = partial(encode_json_values, integers='auto')
+    else:
+        if 'decimal_type' not in kwargs:
+            kwargs['decimal_type'] = float
+        data_encoder = None
 
     errors: list[XMLSchemaValidationError] = []
 
@@ -357,6 +381,11 @@ def to_json(xml_document: Union[XMLSourceType, XMLResource],
         json_options['cls'] = get_lazy_json_encoder(errors)
 
     obj = _schema.decode(source, path=path, **kwargs)
+    if data_encoder is not None:
+        if isinstance(obj, tuple):
+            obj = data_encoder(obj[0]), obj[1]
+        else:
+            obj = data_encoder(obj)
 
     if isinstance(obj, tuple):
         errors.extend(obj[1])
@@ -463,6 +492,7 @@ def from_json(source: Union[str, bytes, IO[str]],
               converter: Optional[ConverterType] = None,
               unordered: bool = False,
               json_options: Optional[dict[str, Any]] = None,
+              json_types: bool = False,
               **kwargs: Any) -> EncodeType[ElementType]:
     """
     Deserialize JSON data to an XML Element.
@@ -484,6 +514,10 @@ def from_json(source: Union[str, bytes, IO[str]],
     content model data. This mode uses content models for a reordered-by-model \
     iteration of the child elements.
     :param json_options: a dictionary with options for the JSON deserializer.
+    :param json_types: if set to `True` typed JSON objects (see \
+    :func:`xmlschema.to_json`) are converted back to their original XSD lexical \
+    values before encoding. Malformed typed values raise a \
+    :exc:`xmlschema.XMLSchemaValueError`.
     :param kwargs: other optional arguments of :meth:`XMLSchemaBase.iter_encode` and \
     options for converter.
     :return: An element tree's Element instance. If ``validation='lax'`` keyword argument is \
@@ -499,6 +533,9 @@ def from_json(source: Union[str, bytes, IO[str]],
         obj = json.loads(source, **json_options)
     else:
         obj = json.load(source, **json_options)
+
+    if json_types:
+        obj = decode_json_values(obj, strict=True)
 
     return to_etree(
         obj=obj,
@@ -630,12 +667,16 @@ class XmlDocument(XMLResource):
 
     def to_json(self, fp: Optional[IO[str]] = None,
                 json_options: Optional[dict[str, Any]] = None,
+                json_types: Union[bool, str] = False,
                 **kwargs: Any) -> JsonDecodeType:
         """
         Converts loaded XML data to a JSON string or file.
 
         :param fp: can be a :meth:`write()` supporting file-like object.
         :param json_options: a dictionary with options for the JSON deserializer.
+        :param json_types: if set to `True` decimal, integer and date/time values \
+        are serialized with typed JSON objects that keep the original lexical value \
+        and the timezone information.
         :param kwargs: options for the decode/to_dict method of the schema instance.
         """
         if json_options is None:
@@ -645,8 +686,25 @@ class XmlDocument(XMLResource):
             kwargs['validation'] = self.validation
         if 'namespaces' not in kwargs:
             kwargs['namespaces'] = self.namespaces
-        if 'decimal_type' not in kwargs:
-            kwargs['decimal_type'] = float
+
+        if json_types:
+            kwargs['preserve_lexical'] = True
+            kwargs['datetime_types'] = True
+            kwargs.pop('decimal_type', None)
+            integers = 'auto' if json_types is True else json_types
+            if integers not in ('auto', 'all'):
+                msg = _("invalid value {!r} for 'json_types'")
+                raise XMLSchemaValueError(msg.format(json_types))
+            data_encoder: Optional[Callable[[Any], Any]] = \
+                partial(encode_json_values, integers=integers)
+        elif kwargs.pop('preserve_lexical', False):
+            kwargs['datetime_types'] = True
+            kwargs.pop('decimal_type', None)
+            data_encoder = partial(encode_json_values, integers='auto')
+        else:
+            if 'decimal_type' not in kwargs:
+                kwargs['decimal_type'] = float
+            data_encoder = None
 
         errors: list[XMLSchemaValidationError] = []
 
@@ -655,6 +713,12 @@ class XmlDocument(XMLResource):
             kwargs['lazy_decode'] = True
 
         obj = self._schema.decode(self, path=path, **kwargs)
+        if data_encoder is not None:
+            if isinstance(obj, tuple):
+                obj = data_encoder(obj[0]), obj[1]
+            else:
+                obj = data_encoder(obj)
+
         if isinstance(obj, tuple):
             if fp is not None:
                 json.dump(obj[0], fp, **json_options)

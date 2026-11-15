@@ -24,6 +24,8 @@ import xmlschema.names as nm
 from xmlschema.aliases import ElementType, AtomicValueType, ComponentClassType, \
     BaseXsdType, SchemaType, DecodedValueType, NsmapType
 from xmlschema.exceptions import XMLSchemaTypeError, XMLSchemaValueError
+from xmlschema.json_types import attach_lexical, LEXICAL_ATTR, \
+    DECIMAL_PATTERN, INTEGER_PATTERN
 from xmlschema.translation import gettext as _
 from xmlschema.utils.qnames import local_name, get_extended_qname
 from xmlschema.utils.decoding import raw_encode_value
@@ -698,6 +700,32 @@ class XsdAtomicBuiltin(XsdAtomic):
     def __repr__(self) -> str:
         return '%s(name=%r)' % (self.__class__.__name__, self.prefixed_name)
 
+    def _lexical_matches(self, value: Any, lexical: str) -> bool:
+        """
+        Returns `True` if *lexical* is a valid lexical form for *value*.
+
+        The check avoids reusing a stale lexical form after the value of a
+        writable object (e.g. a Decimal) has been changed.
+        """
+        if isinstance(value, Decimal):
+            if DECIMAL_PATTERN.match(lexical) is None:
+                return False
+            try:
+                return Decimal(lexical) == value
+            except ArithmeticError:  # pragma: no cover
+                return False
+        elif isinstance(value, int) and not isinstance(value, bool):
+            if INTEGER_PATTERN.match(lexical) is None:
+                return False
+            return int(lexical) == value
+        elif isinstance(value, (AbstractDateTime, Duration)):
+            try:
+                return type(value).fromstring(lexical) == value
+            except (ValueError, TypeError):
+                return False
+        else:
+            return False
+
     @property
     def admitted_facets(self) -> frozenset[str]:
         return self._admitted_facets or self.primitive_type.admitted_facets
@@ -738,6 +766,9 @@ class XsdAtomicBuiltin(XsdAtomic):
                 validator(result)
             except XMLSchemaValidationError as err:
                 context.validation_error(validation, self, err)
+
+        if getattr(context, 'preserve_lexical', False) and isinstance(obj, str):
+            result = attach_lexical(result, obj, self)
 
         if self.post_decode:
             if self.name == nm.XSD_QNAME:
@@ -819,11 +850,15 @@ class XsdAtomicBuiltin(XsdAtomic):
                     context.encode_error(validation, self, obj, self.to_python, err)
                     return None
 
-            try:
-                text = self.from_python(obj)
-            except ValueError as err:
-                context.encode_error(validation, self, obj, self.from_python, err)
-                return None
+            if (lexical := getattr(obj, LEXICAL_ATTR, None)) is not None and \
+                    self._lexical_matches(obj, lexical):
+                text = lexical
+            else:
+                try:
+                    text = self.from_python(obj)
+                except ValueError as err:
+                    context.encode_error(validation, self, obj, self.from_python, err)
+                    return None
 
             value = obj
 
@@ -1007,10 +1042,15 @@ class XsdList(XsdSimpleType):
                 if result[:1] == '{' and self.is_qname():
                     result = chunk
             elif isinstance(result, Decimal):
-                if context.decimal_type is not None:
+                if context.preserve_lexical and context.decimal_type is None:
+                    result = attach_lexical(result, chunk.strip(), self.item_type)
+                elif context.decimal_type is not None:
                     result = context.decimal_type(result)
             elif isinstance(result, (AbstractDateTime, Duration)):
-                result = chunk.strip()
+                if context.preserve_lexical and context.datetime_types:
+                    result = attach_lexical(result, chunk.strip(), self.item_type)
+                else:
+                    result = chunk.strip()
             else:
                 result = str(result)
 
@@ -1193,6 +1233,10 @@ class XsdUnion(XsdSimpleType):
                         patterns(mt.normalize(obj))
                     except XMLSchemaValidationError as err:
                         context.validation_error(validation, self, err)
+
+                if getattr(context, 'preserve_lexical', False) and \
+                        isinstance(obj, (str, bytes)):
+                    return attach_lexical(result, self.normalize(obj), mt)
                 return result
 
         if validation == 'skip':
