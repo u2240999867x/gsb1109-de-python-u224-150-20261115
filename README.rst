@@ -79,6 +79,25 @@ For binary representation
     d = vdf.vbkv_loads(vbkv_bytes)
     b = vdf.vbkv_dumps(d)
 
+Locating entries back in the source text
+
+.. code:: python
+
+    # scan returns every key/value pair together with the byte range
+    # of its key and value in the original (UTF-8 encoded) source
+    for entry in vdf.scan(vdf_text):
+        print(entry.path, entry.key, entry.value, entry.key_span, entry.value_span)
+
+    # slicing the source bytes with a span yields the raw key/value text
+    raw_value = vdf_text.encode('utf-8')[slice(*entry.value_span)]
+
+``key_span``/``value_span`` are ``(start, end)`` byte offsets covering the raw
+content, excluding the surrounding quotes. Section keys (opening a ``{ }``
+block) have ``value`` and ``value_span`` set to ``None``. Comment markers
+inside quotes are treated as content and escaped quotes do not end a value.
+If the source ends with an unterminated quote, the incomplete trailing item
+is dropped while all preceding complete entries are still returned.
+
 Using an alternative mapper
 
 .. code:: python

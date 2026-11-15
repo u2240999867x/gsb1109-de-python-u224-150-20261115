@@ -15,6 +15,7 @@ try:
     from collections.abc import Mapping
 except:
     from collections import Mapping
+from collections import namedtuple
 
 from vdf.vdict import VDFDict
 
@@ -209,6 +210,194 @@ def load(fp, **kwargs):
     a JSON document) to a Python object.
     """
     return parse(fp, **kwargs)
+
+
+# scanning VDF source, locating keys and values by byte range
+class Entry(namedtuple('Entry', ['path', 'key', 'value', 'key_span', 'value_span'])):
+    """
+    A single key/value pair located in VDF source by :func:`scan`.
+
+    ``path`` is a tuple of the ancestor section keys (empty at the top level).
+    ``key`` and ``value`` are the cleaned (unescaped, unless ``escaped=False``)
+    strings; ``value`` is ``None`` for section keys that open a ``{ }`` block.
+    ``key_span`` and ``value_span`` are ``(start, end)`` byte offsets into the
+    UTF-8 encoded source, covering the raw (still escaped) content excluding
+    the surrounding quotes. ``value_span`` is ``None`` for section keys.
+    """
+    __slots__ = ()
+
+if sys.version_info[0] >= 3:
+    _decode_errors = 'surrogateescape'
+else:
+    _decode_errors = 'replace'
+
+def scan(source, escaped=True):
+    """
+    Scan VDF ``source`` and return a list of :class:`Entry` locating every
+    key/value pair back in the original text.
+
+    ``source`` may be a ``str``, ``bytes`` (decoded as UTF-8), or a file-like
+    object with a ``read()`` method. Byte spans always refer to the UTF-8
+    encoded form of the source, so for ``str`` input they index into
+    ``source.encode('utf-8')`` and for ``bytes`` input directly into ``source``.
+
+    Comment markers (``//``) inside quoted strings are treated as content, and
+    escaped quotes (``\\"``) do not terminate a value. If the source ends with
+    an unterminated quote, the incomplete trailing item is dropped and all
+    preceding complete entries are still returned.
+    """
+    if isinstance(source, bytes):
+        text = source.decode('utf-8', _decode_errors)
+    elif isinstance(source, string_type):
+        text = source
+    elif hasattr(source, 'read'):
+        return scan(source.read(), escaped=escaped)
+    else:
+        raise TypeError("Expected source to be str, bytes or a file-like object, got %s" % type(source))
+
+    n = len(text)
+
+    # map char index -> byte offset in the utf-8 encoding of the source,
+    # so spans stay correct across \\r\\n / \\n newlines and multi-byte chars
+    byte_offsets = [0]
+    for ch in text:
+        byte_offsets.append(byte_offsets[-1] + len(ch.encode('utf-8', _decode_errors)))
+
+    def skip_trivia(pos):
+        while pos < n:
+            ch = text[pos]
+            if ch in ' \t\r\n' or ch in BOMS:
+                pos += 1
+            elif ch == '/' and pos + 1 < n and text[pos + 1] == '/':
+                end = text.find('\n', pos + 2)
+                pos = n if end == -1 else end + 1
+            else:
+                break
+        return pos
+
+    def read_token(pos):
+        # returns (raw_content, start, end, next_pos, terminated)
+        if text[pos] == '"':
+            j = pos + 1
+            while j < n:
+                ch = text[j]
+                if ch == '\\':
+                    j += 2
+                    continue
+                if ch == '"':
+                    return text[pos + 1:j], pos + 1, j, j + 1, True
+                j += 1
+            return text[pos + 1:], pos + 1, n, n, False
+        j = pos
+        while j < n:
+            ch = text[j]
+            if ch in ' \t\r\n' or ch in '{}"':
+                break
+            if ch == '/' and j + 1 < n and text[j + 1] == '/':
+                break
+            j += 1
+        return text[pos:j], pos, j, j, True
+
+    def on_same_line(pos):
+        return (pos < n
+                and text[pos] not in '\r\n'
+                and not (text[pos] == '/' and pos + 1 < n and text[pos + 1] == '/'))
+
+    entries = []
+    path = []
+    expect_bracket = False
+    i = 0
+
+    while True:
+        i = skip_trivia(i)
+        if i >= n:
+            break
+
+        ch = text[i]
+
+        if ch == '{':
+            if not expect_bracket:
+                # anonymous block, keep the nesting level in sync
+                path.append(None)
+            expect_bracket = False
+            i += 1
+            continue
+
+        if expect_bracket:
+            raise SyntaxError("vdf.scan: expected openning bracket (offset %d)" % i)
+
+        if ch == '}':
+            if not path:
+                raise SyntaxError("vdf.scan: one too many closing parenthasis (offset %d)" % i)
+            path.pop()
+            i += 1
+            continue
+
+        if ch == '[':
+            # platform conditional, e.g. [$WIN32] - not an entry
+            end = text.find(']', i + 1)
+            i = n if end == -1 else end + 1
+            continue
+
+        # --- key ---
+        key_raw, kstart, kend, i, terminated = read_token(i)
+        if not terminated:
+            # unterminated key quote at EOF: keep everything collected so far
+            break
+        key = _unescape(key_raw) if escaped else key_raw
+        key_span = (byte_offsets[kstart], byte_offsets[kend])
+
+        # what follows the key on the same line?
+        j = i
+        while j < n and text[j] in ' \t':
+            j += 1
+
+        # skip platform conditionals between key and value/block
+        while on_same_line(j) and text[j] == '[':
+            end = text.find(']', j + 1)
+            if end == -1:
+                break
+            j = end + 1
+            while j < n and text[j] in ' \t':
+                j += 1
+
+        def section_entry():
+            return Entry(tuple(k for k in path if k is not None), key, None, key_span, None)
+
+        if not on_same_line(j):
+            # key alone on the line - section, bracket expected on a later line
+            entries.append(section_entry())
+            path.append(key)
+            expect_bracket = True
+            i = j
+            continue
+
+        if text[j] == '{':
+            # "key" { - section with the block opened inline
+            entries.append(section_entry())
+            path.append(key)
+            i = j + 1
+            continue
+
+        if text[j] == '}':
+            # degenerate "key" } - treat as an empty section
+            entries.append(section_entry())
+            path.append(key)
+            i = j
+            continue
+
+        # --- value ---
+        val_raw, vstart, vend, i, terminated = read_token(j)
+        if not terminated:
+            # unterminated value quote at EOF: drop this incomplete item,
+            # but keep all preceding complete entries
+            break
+        value = _unescape(val_raw) if escaped else val_raw
+        entries.append(Entry(tuple(k for k in path if k is not None),
+                             key, value, key_span,
+                             (byte_offsets[vstart], byte_offsets[vend])))
+
+    return entries
 
 
 def dumps(obj, pretty=False, escaped=True):
