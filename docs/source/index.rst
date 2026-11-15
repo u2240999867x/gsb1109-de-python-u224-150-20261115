@@ -83,6 +83,7 @@ Contents
    background/datatypes
    background/fields
    background/index-ordering
+   background/measurement
 
 .. toctree::
    :maxdepth: 1
@@ -96,6 +97,7 @@ Contents
 
    reference/reading
    reference/writing
+   reference/measurement
    reference/parsing
    reference/formatting
 

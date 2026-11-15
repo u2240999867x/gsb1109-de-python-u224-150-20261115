@@ -102,6 +102,40 @@ Example usage
     print(header)
 
 
+Measurement tables
+------------------
+Instrument NRRD files can use different missing-value codes, raw ranges and scaling.  ``nrrd`` can
+convert them to a unified physical measurement table while keeping the original integer codes and a
+separate validity record:
+
+.. code-block:: python
+
+    import numpy as np
+    import nrrd
+
+    raw = np.array([[0, 1, 65535], [10, 2, 3]], dtype=np.uint16)
+    declaration = nrrd.SourceDeclaration(
+        missing_codes=[65535],
+        reserved_codes=[10],
+        code_range=(0, 65534),
+        scale=0.01,
+        offset=-5.0,
+    )
+
+    table = nrrd.to_measurement_table(raw, declaration)
+    table.values      # physical values; invalid samples are NaN
+    table.raw_codes   # exact original integer codes
+    table.valid       # per-sample validity
+    table.status      # distinguishes 'nan', 'missing', 'reserved', 'out_of_range', ...
+
+A raw zero stays a real measurement unless it is explicitly declared as a missing or reserved code.
+Per-axis calibration is declared with ``axis_calibrations`` and is never broadcast to another axis.
+If the target dtype or target resolution cannot preserve the source values, ``nrrd.PrecisionError``
+is raised instead of silently rounding.
+
+See the "Measurement tables" documentation for header-declared files, per-axis calibration and
+multi-instrument harmonization.
+
 Next Steps
 ----------
 For more information, see the `documentation <http://pynrrd.readthedocs.io/>`_.
