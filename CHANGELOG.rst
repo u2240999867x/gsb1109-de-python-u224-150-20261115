@@ -1,6 +1,13 @@
 History
 #######
 
+Unreleased
+==========
+
+- Add packet observation correlation across captures with clock-skew anchors,
+  propagation windows, truncation-aware payload comparison, one-to-one
+  matching, and ambiguity-preserving candidate groups.
+
 2.1.1
 =====
 
