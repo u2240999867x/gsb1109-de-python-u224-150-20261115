@@ -135,6 +135,71 @@ of reassign the value to the existing key.
   False
 
 
+Channel configs with conditions
+-------------------------------
+
+Channel configuration files use platform conditions and duplicate install
+paths, e.g.::
+
+    "channel"
+    {
+        "installdir"  "common/path"
+        "installdir"  "win/path"   [$WINDOWS]
+        "installdir"  "lin/path"   [$LINUX]
+    }
+
+``vdf.parse`` silently drops the ``[...]`` conditions and, with the default
+``dict`` mapper, duplicate keys overwrite each other (last one wins). The
+``vdf.channel`` module parses such files faithfully and resolves them against
+a local condition environment, producing a usable JSON manifest in which
+every effective value is annotated with its source (line and condition).
+
+Condition syntax convention
+~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+- A condition is a boolean expression in square brackets, placed on the same
+  line after a key-value pair or a section key. Conditions on sections apply
+  to every entry inside the section.
+- Grammar: ``$NAME`` (the ``$`` is optional, names are case-insensitive),
+  ``!`` (not), ``&&`` (and), ``||`` (or) and parentheses.
+- Evaluation is three-valued: a symbol missing from the environment is
+  *unknown*, not false. Unknowns propagate through ``!``/``&&``/``||``
+  using Kleene logic.
+
+Resolution rules
+~~~~~~~~~~~~~~~~
+
+- Entries whose condition chain evaluates to false are excluded.
+- Entries with unknown conditions are kept as *candidates* in the manifest;
+  they are never treated as true.
+- Unconditional entries form the base tier; entries with a true condition
+  form the override tier, which takes precedence.
+- If several entries of the same tier are effective but have different
+  values, the key is reported as a *conflict* and left unresolved. The
+  resolver never silently picks the last value in file order.
+
+.. code:: python
+
+    from vdf import channel
+
+    manifest = channel.build_manifest(config_text, env={'WINDOWS': True})
+    manifest['resolved']    # {path: {"value": ..., "sources": [{"line", "condition"}]}}
+    manifest['conflicts']   # {path: {"choices": [...]}} - same-tier disagreements
+    manifest['candidates']  # entries with unknown conditions, kept for review
+    manifest['excluded']    # entries whose condition evaluated to false
+
+Or from the command line:
+
+.. code:: bash
+
+    python -m vdf.channel config.vdf --local-env --env STEAMDECK=0 -p
+
+``--local-env`` seeds the environment from the current machine
+(``WINDOWS``/``LINUX``/``OSX``/``POSIX``/``64BIT`` and friends);
+``--env NAME[=BOOL]`` sets or overrides individual symbols. The manifest is
+written as JSON. The exit code is 1 when conflicts are present, and 2 with
+``--strict`` (in which case no manifest is emitted).
+
 .. |pypi| image:: https://img.shields.io/pypi/v/vdf.svg?style=flat&label=latest%20version
     :target: https://pypi.org/project/vdf/
     :alt: Latest version released on PyPi
