@@ -20,10 +20,487 @@ NumPy-based PLY format input and output for Python.
 """
 
 import io as _io
+from collections.abc import Mapping as _Mapping
 from itertools import islice as _islice
 
 import numpy as _np
 from sys import byteorder as _byteorder
+
+
+class PlyTransformError(ValueError):
+    """
+    Base class for errors raised while transforming spatial data.
+    """
+
+    pass
+
+
+class DegenerateTransformError(PlyTransformError):
+    """
+    Raised when an affine transform is singular.
+
+    Degenerate transforms are reported separately from ordinary
+    validation errors because positions can still be mapped, while
+    normals, directions, and face orientation are no longer
+    well-defined.
+    """
+
+    pass
+
+
+class SpatialPropertyError(PlyTransformError):
+    """
+    Raised when a declared spatial property is invalid.
+    """
+
+    pass
+
+
+class AffineTransform(object):
+    """
+    Three-dimensional affine transform.
+
+    The transform consists of a linear map ``L`` and a translation
+    ``t``, and acts on column vectors as ``p -> L p + t``.  It supports
+    translation, non-uniform scaling, rotation, shear, and mirroring.
+
+    Parameters
+    ----------
+    matrix : array_like, optional
+        A 3x3 linear map, a 4x4 homogeneous matrix, or a 3x4 matrix
+        whose last column is the translation.  Defaults to the identity.
+    translation : array_like, optional
+        Translation vector.  If given, it replaces the translation
+        encoded in `matrix`.
+    linear : array_like, optional
+        Alternative spelling for a 3x3 `matrix`.  It is an error to
+        pass both `matrix` and `linear`.
+    """
+
+    def __init__(self, matrix=None, translation=None, linear=None):
+        if matrix is not None and linear is not None:
+            raise ValueError("pass either matrix or linear, not both")
+
+        if linear is not None:
+            matrix = linear
+
+        if matrix is None:
+            linear_part = _np.eye(3)
+        else:
+            array = _np.asarray(matrix, dtype=float)
+            if array.shape == (3, 3):
+                linear_part = array
+            elif array.shape == (4, 4):
+                if not _np.allclose(array[3], [0.0, 0.0, 0.0, 1.0]):
+                    raise ValueError("last row of a 4x4 transform must be "
+                                     "[0, 0, 0, 1]")
+                linear_part = array[:3, :3]
+                if translation is None:
+                    translation = array[:3, 3]
+            elif array.shape == (3, 4):
+                linear_part = array[:, :3]
+                if translation is None:
+                    translation = array[:, 3]
+            else:
+                raise ValueError("transform must have shape (3, 3), "
+                                 "(3, 4), or (4, 4)")
+
+        if translation is None:
+            translation_part = _np.zeros(3)
+        else:
+            translation_part = _np.asarray(translation, dtype=float)
+
+        if translation_part.shape != (3,):
+            raise ValueError("translation must be a three-element vector")
+
+        linear_part = _np.array(linear_part, dtype=float, copy=True)
+        translation_part = _np.array(translation_part, dtype=float,
+                                     copy=True)
+
+        if not (_np.isfinite(linear_part).all() and
+                _np.isfinite(translation_part).all()):
+            raise ValueError("transform components must be finite")
+
+        self._linear = linear_part
+        self._translation = translation_part
+
+    @property
+    def linear(self):
+        """
+        The 3x3 linear part of the transform.
+        """
+        return self._linear.copy()
+
+    @property
+    def translation(self):
+        """
+        The translation vector of the transform.
+        """
+        return self._translation.copy()
+
+    @property
+    def matrix(self):
+        """
+        The 4x4 homogeneous matrix representation of the transform.
+        """
+        matrix = _np.eye(4)
+        matrix[:3, :3] = self._linear
+        matrix[:3, 3] = self._translation
+        return matrix
+
+    @property
+    def determinant(self):
+        """
+        Determinant of the linear part.
+        """
+        return float(_np.linalg.det(self._linear))
+
+    @property
+    def is_mirror(self):
+        """
+        Whether the linear part reverses orientation.
+
+        This uses ``slogdet`` rather than a plain determinant so the
+        orientation remains detectable even when the determinant
+        underflows for a very small scale.
+        """
+        sign, _ = _np.linalg.slogdet(self._linear)
+        return bool(sign < 0)
+
+    @property
+    def is_degenerate(self):
+        """
+        Whether the linear part is singular.
+
+        This tests the smallest singular value relative to the largest,
+        so a small but well-conditioned uniform scale is not mistaken
+        for a degenerate transform.
+        """
+        singular_values = _np.linalg.svd(self._linear,
+                                         compute_uv=False)
+        largest = singular_values[0]
+        if largest == 0:
+            return True
+        return bool(singular_values[-1] <=
+                    _np.finfo(float).eps * 3 * largest)
+
+    @property
+    def normal_matrix(self):
+        """
+        Matrix that maps normals, namely ``inv(L).T``.
+        """
+        if self.is_degenerate:
+            raise DegenerateTransformError(
+                "a degenerate transform has no inverse normal matrix")
+        return _np.linalg.inv(self._linear).T
+
+    @classmethod
+    def from_translation(cls, translation):
+        """
+        Construct a pure translation.
+        """
+        return cls(translation=translation)
+
+    @classmethod
+    def from_scale(cls, scale):
+        """
+        Construct a non-uniform scale from a scalar or three values.
+        """
+        scale = _np.asarray(scale, dtype=float)
+        if scale.shape == ():
+            scale = _np.repeat(scale, 3)
+        if scale.shape != (3,):
+            raise ValueError("scale must be a scalar or three-element "
+                             "vector")
+        return cls(_np.diag(scale))
+
+    @classmethod
+    def from_mirror(cls, axis='x'):
+        """
+        Construct a mirror about the plane normal to `axis`.
+        """
+        if isinstance(axis, str):
+            try:
+                index = 'xyz'.index(axis.lower())
+            except ValueError:
+                raise ValueError("axis must be 'x', 'y', or 'z'")
+        else:
+            index = int(axis)
+            if index not in (0, 1, 2):
+                raise ValueError("axis must be 0, 1, 2, 'x', 'y', or 'z'")
+        scale = _np.ones(3)
+        scale[index] = -1
+        return cls(_np.diag(scale))
+
+    def compose(self, other):
+        """
+        Return the composition ``self @ other``.
+
+        `other` is applied first, then `self`.
+        """
+        if not isinstance(other, AffineTransform):
+            other = AffineTransform(other)
+        return AffineTransform(
+            _np.dot(self._linear, other._linear),
+            _np.dot(self._linear, other._translation) + self._translation)
+
+    def __matmul__(self, other):
+        return self.compose(other)
+
+    def transform_points(self, points):
+        """
+        Apply the full affine map to an array of points.
+        """
+        points = _np.asarray(points, dtype=float)
+        if points.shape[-1:] != (3,):
+            raise ValueError("points must have shape (..., 3)")
+        return _np.dot(points, self._linear.T) + self._translation
+
+    def transform_directions(self, directions):
+        """
+        Apply only the linear part to direction vectors.
+        """
+        directions = _np.asarray(directions, dtype=float)
+        if directions.shape[-1:] != (3,):
+            raise ValueError("directions must have shape (..., 3)")
+        return _np.dot(directions, self._linear.T)
+
+    def transform_normals(self, normals):
+        """
+        Apply the inverse-transpose map and renormalize normals.
+
+        A zero normal remains zero rather than producing NaN.
+        """
+        normals = _np.asarray(normals, dtype=float)
+        if normals.shape[-1:] != (3,):
+            raise ValueError("normals must have shape (..., 3)")
+        result = _np.dot(normals, self.normal_matrix.T)
+        lengths = _np.linalg.norm(result, axis=-1, keepdims=True)
+        return _np.divide(result, lengths, out=_np.zeros_like(result),
+                          where=lengths != 0)
+
+    def __repr__(self):
+        return ('AffineTransform(%r, translation=%r)' %
+                (self._linear, self._translation))
+
+
+def _spatial_vector_group(value, role):
+    """
+    Normalize one declared three-component property group.
+    """
+    if isinstance(value, str):
+        return (value,)
+    if isinstance(value, (list, tuple)):
+        if len(value) == 3 and all(isinstance(item, str) for item in value):
+            return tuple(value)
+        if len(value) == 1 and isinstance(value[0], str):
+            return (value[0],)
+    raise SpatialPropertyError(
+        "%s must name three properties or one vector property" % role)
+
+
+def _spatial_vector_groups(value, role):
+    """
+    Normalize a declaration that may contain several vector groups.
+    """
+    if isinstance(value, str):
+        return ((value,),)
+    if isinstance(value, (list, tuple)):
+        if all(isinstance(item, str) for item in value):
+            return (_spatial_vector_group(value, role),)
+        groups = []
+        for item in value:
+            groups.append(_spatial_vector_group(item, role))
+        return tuple(groups)
+    raise SpatialPropertyError(
+        "%s properties must be a property name, a group of three names, "
+        "or a sequence of groups" % role)
+
+
+def _spatial_is_role_mapping(spatial):
+    """
+    Whether a spatial mapping names roles rather than element names.
+    """
+    if not isinstance(spatial, _Mapping):
+        return False
+    aliases = {'position', 'positions', 'direction', 'directions',
+               'normal', 'normals', 'face', 'faces'}
+    return bool(spatial) and all(key in aliases for key in spatial)
+
+
+def _merge_spatial(spatial=None, position=None, directions=None,
+                   normals=None, faces=None):
+    """
+    Combine a spatial mapping with individual role arguments.
+
+    Returns None when nothing was declared.
+    """
+    declaration = {}
+    for key, value in (('position', position),
+                       ('directions', directions),
+                       ('normals', normals),
+                       ('faces', faces)):
+        if value is not None:
+            declaration[key] = value
+
+    if spatial is None:
+        return declaration or None
+    if declaration:
+        raise SpatialPropertyError(
+            "pass spatial or individual role arguments, not both")
+    return spatial
+
+
+def _resolve_transform(transform=None, matrix=None, translation=None,
+                       linear=None):
+    """
+    Normalize a transform argument plus keyword spellings.
+    """
+    if transform is None:
+        if matrix is None and linear is None and translation is None:
+            raise ValueError("a transform is required")
+        return AffineTransform(matrix=matrix, translation=translation,
+                               linear=linear)
+
+    if matrix is not None or translation is not None or linear is not None:
+        raise ValueError("pass either a transform or matrix/translation "
+                         "keywords, not both")
+
+    if isinstance(transform, AffineTransform):
+        return transform
+    if isinstance(transform, _Mapping):
+        unknown = set(transform) - {'matrix', 'linear', 'translation'}
+        if unknown:
+            raise ValueError("unknown transform keys: %s" %
+                             ', '.join(sorted(unknown)))
+        if 'matrix' in transform and 'linear' in transform:
+            raise ValueError("pass either matrix or linear, not both")
+        return AffineTransform(
+            matrix=transform.get('matrix', transform.get('linear')),
+            translation=transform.get('translation'))
+    return AffineTransform(transform)
+
+
+def _infer_spatial(data):
+    """
+    Infer only canonical, unambiguous structural roles from field names.
+
+    Conventional names count as an explicit annotation for vertices:
+    ``x/y/z`` or a ``position`` vector for positions, and
+    ``vertex_indices`` for face winding.
+
+    Direction and normal attributes are deliberately *not* inferred:
+    the requirement is that they be explicitly annotated.  Arbitrary
+    three-field groups such as ``red/green/blue`` are also never
+    inferred; those require an explicit `spatial` declaration.
+    """
+    fields = data.dtype.fields
+    if not fields:
+        return None
+
+    def has_scalar_triplet(names):
+        for name in names:
+            if name not in fields:
+                return False
+            if fields[name][0].kind not in 'iuf':
+                return False
+            if _np.asarray(data[name]).ndim != 1:
+                return False
+        return True
+
+    def has_vector(name):
+        if name not in fields:
+            return False
+        values = _np.asarray(data[name])
+        if values.dtype.kind == 'O':
+            for row in values:
+                row = _np.asarray(row)
+                if row.shape != (3,) or row.dtype.kind not in 'iuf':
+                    return False
+            return True
+        if values.dtype.kind not in 'iuf':
+            return False
+        return values.ndim >= 2 and values.shape[-1] == 3
+
+    result = {}
+
+    for names in (('x', 'y', 'z'), ('X', 'Y', 'Z')):
+        if has_scalar_triplet(names):
+            result['position'] = names
+            break
+    else:
+        for name in ('position', 'pos'):
+            if has_vector(name):
+                result['position'] = (name,)
+                break
+
+    faces = []
+    for name in ('vertex_indices', 'vertex_index', 'vertex_ids'):
+        if name not in fields:
+            continue
+        values = _np.asarray(data[name])
+        if values.dtype.kind == 'O':
+            for row in values:
+                row = _np.asarray(row)
+                if row.ndim != 1 or row.dtype.kind not in 'iu':
+                    break
+            else:
+                faces.append(name)
+        elif values.dtype.kind in 'iu' and values.ndim >= 2:
+            faces.append(name)
+    if faces:
+        result['faces'] = tuple(faces)
+
+    return result or None
+
+
+def _normalize_spatial(spatial):
+    """
+    Validate and normalize a spatial-role declaration.
+
+    The canonical result has the optional keys ``position``,
+    ``directions``, ``normals``, and ``faces``.
+    """
+    if spatial is None:
+        return None
+    if not isinstance(spatial, _Mapping):
+        raise SpatialPropertyError("spatial declaration must be a mapping")
+
+    aliases = {
+        'position': 'position', 'positions': 'position',
+        'direction': 'directions', 'directions': 'directions',
+        'normal': 'normals', 'normals': 'normals',
+        'face': 'faces', 'faces': 'faces'
+    }
+
+    result = {}
+    for key, value in spatial.items():
+        if key not in aliases:
+            raise SpatialPropertyError("unknown spatial role %r" % key)
+        canonical = aliases[key]
+        if canonical in result:
+            raise SpatialPropertyError("duplicate spatial role %r" %
+                                       canonical)
+        if canonical == 'position':
+            result[canonical] = (None if value is None else
+                                 _spatial_vector_group(value, 'position'))
+        elif canonical in ('directions', 'normals'):
+            result[canonical] = (() if value is None else
+                                 _spatial_vector_groups(value, canonical))
+        else:
+            if value is None:
+                result[canonical] = ()
+            elif isinstance(value, str):
+                result[canonical] = (value,)
+            elif isinstance(value, (list, tuple)):
+                if not all(isinstance(item, str) for item in value):
+                    raise SpatialPropertyError(
+                        "faces must be property names")
+                result[canonical] = tuple(value)
+            else:
+                raise SpatialPropertyError(
+                    "faces must be property names")
+    return result
 
 
 class PlyData(object):
@@ -285,6 +762,119 @@ class PlyData(object):
                 (self.elements, self.text, self.byte_order,
                  self.comments, self.obj_info))
 
+    def transform(self, transform=None, *, copy=True,
+                  allow_degenerate=False, spatial=None,
+                  matrix=None, translation=None, linear=None):
+        """
+        Apply an affine transform to every element with declared
+        spatial properties.
+
+        Elements without a `spatial` declaration are reused unchanged
+        (when `copy` is true) or left unchanged (in place), so that
+        transform logic never guesses at which three numeric fields
+        form a vector.
+
+        Parameters
+        ----------
+        transform : AffineTransform, array_like, or dict
+            The transform.  As a convenience, `matrix`, `translation`,
+            and `linear` may be passed as keyword arguments instead.
+        copy : bool, optional
+            If true (the default), return a new `PlyData` and leave this
+            instance unchanged.  If false, transform declared elements
+            in place and return this instance.
+        allow_degenerate : bool, optional
+            Whether to permit a singular transform on elements that
+            declare positions only.  See `PlyElement.transform`.
+        spatial : dict, optional
+            Mapping from element names to per-element spatial
+            declarations, for elements that were not declared at
+            construction time.  Elements already carrying a declaration
+            keep it unless overridden here.
+
+        Returns
+        -------
+        PlyData
+
+        Raises
+        ------
+        DegenerateTransformError
+            If the transform is singular and a declared element has
+            directions, normals, or faces, or if a positions-only
+            element is transformed without `allow_degenerate=True`.
+        """
+        transform = _resolve_transform(transform, matrix, translation,
+                                       linear)
+
+        overrides = {}
+        if spatial is not None:
+            if not isinstance(spatial, _Mapping):
+                raise SpatialPropertyError(
+                    "spatial mapping must map element names to declarations")
+            if _spatial_is_role_mapping(spatial):
+                raise SpatialPropertyError(
+                    "PlyData.transform needs element names in its spatial "
+                    "mapping")
+            overrides = spatial
+
+        known = set(element.name for element in self.elements)
+        unknown = set(overrides) - known
+        if unknown:
+            raise SpatialPropertyError(
+                "spatial mapping names unknown elements: %s" %
+                ', '.join(sorted(unknown)))
+
+        targets = []
+        for element in self.elements:
+            if element.name in overrides:
+                declaration = _normalize_spatial(overrides[element.name])
+                if declaration is None:
+                    continue
+                targets.append((element, declaration))
+            else:
+                declaration = element._declared_spatial()
+                if declaration is not None:
+                    targets.append((element, declaration))
+
+        if transform.is_degenerate:
+            for element, declaration in targets:
+                element._validate_spatial_data(declaration)
+                element._check_degenerate_declaration(declaration,
+                                                      allow_degenerate)
+
+        # Compute every element before committing anything, so that an
+        # in-place transform cannot leave a partially transformed file.
+        transformed = [
+            element.transform(transform, copy=True,
+                              spatial=declaration,
+                              allow_degenerate=allow_degenerate)
+            for element, declaration in targets]
+
+        if copy:
+            replacements = dict(
+                (id(element), new_element)
+                for (element, _), new_element in zip(targets, transformed))
+            return PlyData([replacements.get(id(element), element)
+                            for element in self.elements],
+                           self.text, self.byte_order,
+                           self.comments, self.obj_info)
+
+        for (element, _), new_element in zip(targets, transformed):
+            element.data = new_element.data
+        return self
+
+    def apply_transform(self, transform=None, *, copy=True,
+                        allow_degenerate=False, spatial=None, matrix=None,
+                        translation=None, linear=None):
+        """
+        Alias for `transform`.
+        """
+        return self.transform(transform, copy=copy,
+                              allow_degenerate=allow_degenerate,
+                              spatial=spatial,
+                              matrix=matrix, translation=translation,
+                              linear=linear)
+
 
 class PlyElement(object):
     """
@@ -305,7 +895,7 @@ class PlyElement(object):
         PLY header block for this element.
     """
 
-    def __init__(self, name, properties, count, comments=[]):
+    def __init__(self, name, properties, count, comments=[], spatial=None):
         """
         This is not part of the public interface.  The preferred methods
         of obtaining `PlyElement` instances are `PlyData.read` (to read
@@ -318,6 +908,8 @@ class PlyElement(object):
         properties : list of PlyProperty
         count : str
         comments : list of str
+        spatial : dict, optional
+            Spatial roles of properties.  See `PlyElement.describe`.
         """
         _check_name(name)
         self._name = str(name)
@@ -327,6 +919,7 @@ class PlyElement(object):
         self._index()
 
         self.comments = comments
+        self._set_spatial(spatial)
 
         self._have_list = any(isinstance(p, PlyListProperty)
                               for p in self.properties)
@@ -349,6 +942,8 @@ class PlyElement(object):
         for prop in self.properties:
             if prop.name not in self._data.dtype.fields:
                 raise ValueError("dangling property %r" % prop.name)
+        if self._spatial is not None:
+            self._validate_spatial_data(self._spatial)
 
     def _get_properties(self):
         return self._properties
@@ -359,6 +954,250 @@ class PlyElement(object):
         self._index()
 
     properties = property(_get_properties, _set_properties)
+
+    def _get_spatial(self):
+        if self._spatial is None:
+            return None
+        result = {}
+        for key, value in self._spatial.items():
+            if key == 'position':
+                result[key] = None if value is None else tuple(value)
+            elif key in ('directions', 'normals'):
+                result[key] = tuple(tuple(group) for group in value)
+            else:
+                result[key] = tuple(value)
+        return result
+
+    def _set_spatial(self, spatial):
+        normalized = _normalize_spatial(spatial)
+        if hasattr(self, '_data'):
+            self._validate_spatial_data(normalized)
+        self._spatial = normalized
+
+    def _declared_spatial(self):
+        """
+        Spatial roles for transforms: the explicit declaration if one
+        was made, otherwise the conservative canonical-name inference.
+        """
+        if self._spatial is not None:
+            return self._spatial
+        return _infer_spatial(self._data)
+
+    spatial = property(_get_spatial, _set_spatial,
+                       doc="Explicit spatial roles of this element's "
+                           "properties.")
+
+    def _validate_spatial_data(self, spatial):
+        if spatial is None or getattr(self, '_data', None) is None:
+            return
+        data = self._data
+        fields = data.dtype.fields
+        if fields is None:
+            raise SpatialPropertyError("spatial properties require a "
+                                       "structured data array")
+
+        def check_group(group, role):
+            for name in group:
+                if name not in fields:
+                    raise SpatialPropertyError(
+                        "%s property %r is not present in element %r" %
+                        (role, name, self.name))
+
+            if len(group) == 1:
+                values = _np.asarray(data[group[0]])
+                if values.dtype.kind == 'O':
+                    for row in values:
+                        row = _np.asarray(row)
+                        if row.shape != (3,) or row.dtype.kind not in 'iuf':
+                            raise SpatialPropertyError(
+                                "%s property %r must contain three-element "
+                                "numeric values" % (role, group[0]))
+                elif values.ndim < 2 or values.shape[-1] != 3:
+                    raise SpatialPropertyError(
+                        "%s property %r must contain three-element values" %
+                        (role, group[0]))
+                elif values.dtype.kind not in 'iuf':
+                    raise SpatialPropertyError(
+                        "%s property %r must be numeric" % (role, group[0]))
+            else:
+                for name in group:
+                    if fields[name][0].kind not in 'iuf':
+                        raise SpatialPropertyError(
+                            "%s property %r must be numeric" % (role, name))
+                    if _np.asarray(data[name]).ndim != 1:
+                        raise SpatialPropertyError(
+                            "%s property %r must be a scalar field when "
+                            "declared with three names" % (role, name))
+
+        if spatial.get('position') is not None:
+            check_group(spatial['position'], 'position')
+        for role in ('directions', 'normals'):
+            for group in spatial.get(role, ()):
+                check_group(group, role)
+
+        for name in spatial.get('faces', ()):
+            if name not in fields:
+                raise SpatialPropertyError(
+                    "face property %r is not present in element %r" %
+                    (name, self.name))
+            values = _np.asarray(data[name])
+            if values.dtype.kind == 'O':
+                for row in values:
+                    row = _np.asarray(row)
+                    if row.ndim != 1 or row.dtype.kind not in 'iu':
+                        raise SpatialPropertyError(
+                            "face property %r must contain integer indices" %
+                            name)
+            elif values.dtype.kind not in 'iu' or values.ndim < 2:
+                raise SpatialPropertyError(
+                    "face property %r must contain integer indices" % name)
+
+    def transform(self, transform=None, *, copy=True,
+                  allow_degenerate=False, spatial=None, position=None,
+                  directions=None, normals=None, faces=None,
+                  matrix=None, translation=None, linear=None):
+        """
+        Apply an affine transform to this element's declared spatial
+        properties.
+
+        Positions are transformed by the full affine map.  Direction
+        properties use the linear part.  Normal properties use the
+        inverse-transpose and are renormalized.  Face properties are
+        reordered to preserve their winding when the transform mirrors.
+
+        Properties not declared in `spatial` are left untouched.  In
+        particular, three numeric fields that merely look like a vector
+        are never transformed automatically.
+
+        Parameters
+        ----------
+        transform : AffineTransform, array_like, or dict
+            The transform.  As a convenience, `matrix`, `translation`,
+            and `linear` may be passed as keyword arguments instead.
+        copy : bool, optional
+            If true (the default), return a new element and leave this
+            one unchanged.  If false, modify this element in place.
+        allow_degenerate : bool, optional
+            Whether to permit a singular transform on an element that
+            declares positions only.  By default degenerate transforms
+            are rejected even when the result is technically
+            computable, so they cannot silently collapse geometry.
+        spatial : dict, optional
+            Spatial roles to use for this call instead of the element's
+            stored declaration.  The individual `position`,
+            `directions`, `normals`, and `faces` keywords may be used
+            instead of a single mapping.
+
+        Returns
+        -------
+        PlyElement
+
+        Raises
+        ------
+        DegenerateTransformError
+            If the transform is singular and `allow_degenerate` is
+            false, or if directions, normals, or faces are declared.
+        SpatialPropertyError
+            If this element has no spatial declaration.
+        """
+        transform = _resolve_transform(transform, matrix, translation,
+                                       linear)
+
+        override = _merge_spatial(spatial, position, directions, normals,
+                                  faces)
+        if override is None:
+            declaration = self._declared_spatial()
+        else:
+            declaration = _normalize_spatial(override)
+
+        if declaration is None:
+            raise SpatialPropertyError(
+                "element %r has no declared spatial properties" % self.name)
+        self._validate_spatial_data(declaration)
+
+        if transform.is_degenerate:
+            self._check_degenerate_declaration(declaration,
+                                               allow_degenerate)
+
+        source = self._data
+        data = _np.array(source, dtype=source.dtype, copy=True)
+        if source.dtype.names:
+            for name in source.dtype.names:
+                if source[name].dtype.kind != 'O':
+                    continue
+                copied = _np.empty(len(source), dtype=object)
+                for index, row in enumerate(source[name]):
+                    copied[index] = _np.array(row, copy=True)
+                data[name] = copied
+        changed = []
+
+        position_group = declaration.get('position')
+        if position_group is not None:
+            points = _vector_values(data, position_group)
+            points = transform.transform_points(points)
+            _set_vector_values(data, position_group, points)
+            changed.append(position_group)
+
+        for group in declaration.get('directions', ()):
+            values = _vector_values(data, group)
+            values = transform.transform_directions(values)
+            _set_vector_values(data, group, values)
+            changed.append(group)
+
+        for group in declaration.get('normals', ()):
+            values = _vector_values(data, group)
+            values = transform.transform_normals(values)
+            _set_vector_values(data, group, values)
+            changed.append(group)
+
+        reversed_face = transform.is_mirror
+        for name in declaration.get('faces', ()):
+            if reversed_face:
+                _reverse_face_winding(data[name])
+            changed.append((name,))
+
+        if not changed:
+            raise SpatialPropertyError(
+                "element %r declares no spatial properties to transform" %
+                self.name)
+
+        if copy:
+            element = PlyElement(self.name, self.properties, self.count,
+                                 self.comments, self.spatial)
+            element.data = data
+            return element
+
+        self.data = data
+        return self
+
+    def _check_degenerate_declaration(self, declaration, allow_degenerate):
+        """
+        Validate a degenerate transform against a declaration.
+        """
+        uses_vectors = bool(declaration.get('directions') or
+                            declaration.get('normals') or
+                            declaration.get('faces'))
+        if uses_vectors:
+            raise DegenerateTransformError(
+                "cannot transform directions, normals, or face orientation "
+                "of element %r with a degenerate transform" % self.name)
+        if not allow_degenerate:
+            raise DegenerateTransformError(
+                "degenerate transform would collapse element %r; pass "
+                "allow_degenerate=True to map positions only" % self.name)
+
+    def apply_transform(self, transform=None, *, copy=True,
+                        allow_degenerate=False, spatial=None, position=None,
+                        directions=None, normals=None, faces=None,
+                        matrix=None, translation=None, linear=None):
+        """
+        Alias for `transform`.
+        """
+        return self.transform(
+            transform, copy=copy, allow_degenerate=allow_degenerate,
+            spatial=spatial, position=position, directions=directions,
+            normals=normals, faces=faces, matrix=matrix,
+            translation=translation, linear=linear)
 
     def _get_comments(self):
         return list(self._comments)
@@ -418,7 +1257,7 @@ class PlyElement(object):
 
     @staticmethod
     def describe(data, name, len_types={}, val_types={},
-                 comments=[]):
+                 comments=[], spatial=None):
         """
         Construct a `PlyElement` instance from an array's metadata.
 
@@ -440,6 +1279,13 @@ class PlyElement(object):
         comments : list of str
             Comments between the "element" line and first property
             definition in the header.
+        spatial : dict, optional
+            Explicit declaration of spatial property roles, so that
+            `transform` can act on them.  Recognized keys are
+            ``'position'``, ``'directions'``, ``'normals'``, and
+            ``'faces'``.  A position is three property names (or one
+            vector property name); directions and normals may each hold
+            several such groups; faces lists face-index property names.
 
         Returns
         -------
@@ -491,7 +1337,7 @@ class PlyElement(object):
 
             properties.append(prop)
 
-        elt = PlyElement(name, properties, count, comments)
+        elt = PlyElement(name, properties, count, comments, spatial=spatial)
         elt.data = data
 
         return elt
@@ -729,6 +1575,62 @@ class PlyElement(object):
         return ('PlyElement(%r, %r, count=%d, comments=%r)' %
                 (self.name, self.properties, self.count,
                  self.comments))
+
+
+def _reverse_face_winding(faces):
+    """
+    Reverse the vertex order of each face in a face-index array.
+
+    Faces may be stored as either an object array of index arrays or a
+    fixed-width integer array.
+    """
+    if faces.dtype.kind == 'O':
+        for index in range(len(faces)):
+            faces[index] = faces[index][::-1]
+        return
+
+    if faces.dtype.kind not in 'iu':
+        raise SpatialPropertyError(
+            "face properties must contain integer indices")
+
+    if faces.ndim > 1:
+        faces[...] = faces[..., ::-1]
+
+
+def _vector_values(data, group):
+    """
+    Read a declared vector group as an ``(n, 3)`` array.
+    """
+    if len(group) == 3:
+        return _np.column_stack([data[name] for name in group])
+    values = data[group[0]]
+    if values.dtype.kind == 'O':
+        if len(values) == 0:
+            return _np.zeros((0, 3), dtype=float)
+        return _np.asarray([_np.asarray(row, dtype=float)
+                            for row in values], dtype=float)
+    return _np.asarray(values, dtype=float)
+
+
+def _set_vector_values(data, group, values):
+    """
+    Write a transformed ``(n, 3)`` array back to a vector group.
+    """
+    if len(group) == 3:
+        for index, name in enumerate(group):
+            data[name] = values[:, index]
+        return
+
+    name = group[0]
+    if data[name].dtype.kind == 'O':
+        for index, row in enumerate(values):
+            target_dtype = data[name][index].dtype
+            if target_dtype.kind in 'iu':
+                data[name][index] = _np.rint(row).astype(target_dtype)
+            else:
+                data[name][index] = row.astype(target_dtype)
+    else:
+        data[name] = values
 
 
 class PlyProperty(object):

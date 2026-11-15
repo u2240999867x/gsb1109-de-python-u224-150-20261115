@@ -459,6 +459,75 @@ new instances and modifying in place).  For example, a single
 but modifying that instance will then affect all of those containing
 `PlyData` instances.
 
+### Transforming spatial data
+
+`AffineTransform` describes a three-dimensional affine map (translation,
+non-uniform scale, rotation, shear, or mirror).  Spatial attributes are
+declared explicitly, so that ordinary numeric triplets such as colors are
+not transformed just because they contain three values:
+
+```Python Console
+>>> from plyfile import AffineTransform, PlyData, PlyElement
+>>> vertex = numpy.array(
+...     [(0, 0, 0, 0, 0, 1), (0, 1, 1, 0, 1, 0)],
+...     dtype=[('x', 'f4'), ('y', 'f4'), ('z', 'f4'),
+...            ('nx', 'f4'), ('ny', 'f4'), ('nz', 'f4')])
+>>> face = numpy.array([([0, 1], 255, 255, 255)],
+...                    dtype=[('vertex_indices', 'i4', (2,)),
+...                           ('red', 'u1'), ('green', 'u1'),
+...                           ('blue', 'u1')])
+>>> vertex_el = PlyElement.describe(
+...     vertex, 'vertex',
+...     spatial={'position': ('x', 'y', 'z'),
+...              'normals': ('nx', 'ny', 'nz')})
+>>> face_el = PlyElement.describe(
+...     face, 'face', spatial={'faces': 'vertex_indices'})
+>>> ply = PlyData([vertex_el, face_el])
+>>>
+```
+
+Then `PlyData.transform` and `PlyElement.transform` apply the map.  Both
+return a transformed copy by default; pass `copy=False` to modify in
+place.
+
+```Python Console
+>>> mirror = AffineTransform.from_mirror('x')
+>>> mirror.is_mirror
+True
+>>> transformed = ply.transform(mirror)
+>>> transformed['vertex']['x'].tolist()
+[0.0, 0.0]
+>>> transformed['face']['vertex_indices'][0].tolist()
+[1, 0]
+>>>
+```
+
+The transform acts differently according to each declared role:
+
+- Positions receive the full affine map (linear part plus translation).
+- Directions receive the linear part only.
+- Normals receive the inverse-transpose of the linear part and are
+  renormalized to unit length, which is necessary under non-uniform
+  scaling.
+- Face index lists are reversed when the transform has negative
+  determinant, preserving the original outward winding after a mirror.
+
+The `spatial` declaration accepts a property name for a single
+three-component vector field, or three property names for scalar fields.
+Only declared properties are touched.  Conventional vertex positions
+(`x`, `y`, `z`) and `vertex_indices` faces are recognized automatically;
+normals and directions must be declared, so a three-field color triplet
+is never treated as a vector.
+
+A degenerate (singular) transform is reported separately with
+`DegenerateTransformError`.  By default it is rejected even for
+positions; pass `allow_degenerate=True` to map positions only, since
+normals, directions, and face orientation have no meaningful image.
+
+Spatial declarations are in-memory metadata and are not stored in the PLY
+header, so re-declare them after reading a file if further transforms are
+needed.
+
 ### Text-mode streams
 
 Input and output on text-mode streams is supported for ASCII-format

@@ -10,8 +10,10 @@ import numpy
 
 import plyfile
 from plyfile import (
+    AffineTransform, DegenerateTransformError,
     PlyData, PlyElement, PlyProperty,
     PlyHeaderParseError, PlyElementParseError,
+    SpatialPropertyError,
 )
 
 
@@ -1016,3 +1018,371 @@ def test_text_io_bad_read(tet_ply_txt):
     with Raises(ValueError) as e:
         PlyData.read(stream1)
     assert str(e) == "can't read binary-format PLY from text stream"
+
+
+def _spatial_ply():
+    vertex = numpy.array(
+        [(0.0, 0.0, 0.0, 0.0, 0.0, 1.0, 1.0, 0.0, 0.0),
+         (1.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0, 0.0),
+         (0.0, 1.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0)],
+        dtype=[('x', 'f4'), ('y', 'f4'), ('z', 'f4'),
+               ('nx', 'f4'), ('ny', 'f4'), ('nz', 'f4'),
+               ('dx', 'f4'), ('dy', 'f4'), ('dz', 'f4')])
+    face = numpy.array(
+        [([0, 1, 2], 1, 2, 3)],
+        dtype=[('vertex_indices', 'i4', (3,)),
+               ('r', 'u1'), ('g', 'u1'), ('b', 'u1')])
+
+    return PlyData([
+        PlyElement.describe(
+            vertex, 'vertex',
+            spatial={'position': ('x', 'y', 'z'),
+                     'normals': ('nx', 'ny', 'nz'),
+                     'directions': ('dx', 'dy', 'dz')}),
+        PlyElement.describe(face, 'face',
+                            spatial={'faces': 'vertex_indices'}),
+    ], text=False)
+
+
+def test_affine_transform_properties():
+    transform = AffineTransform.from_translation([1, 2, 3])
+    assert (transform.translation == [1, 2, 3]).all()
+    assert transform.determinant == pytest.approx(1.0)
+    assert not transform.is_mirror
+    assert not transform.is_degenerate
+
+    scale = AffineTransform.from_scale([2.0, 3.0, 4.0])
+    assert scale.determinant == pytest.approx(24.0)
+    assert not scale.is_mirror
+
+    mirror = AffineTransform.from_mirror('z')
+    assert mirror.determinant == pytest.approx(-1.0)
+    assert mirror.is_mirror
+
+    singular = AffineTransform.from_scale([1.0, 0.0, 1.0])
+    assert singular.is_degenerate
+    with Raises(DegenerateTransformError):
+        singular.normal_matrix
+
+    with Raises(ValueError):
+        AffineTransform(numpy.eye(2))
+    with Raises(ValueError):
+        AffineTransform(numpy.eye(4) * [1, 1, 1, 2])
+    with Raises(ValueError):
+        AffineTransform(translation=[1, 2])
+
+
+def test_affine_transform_composition():
+    scale = AffineTransform.from_scale([2.0, 3.0, 4.0])
+    translation = AffineTransform.from_translation([1.0, 1.0, 1.0])
+    combined = translation @ scale
+    points = combined.transform_points([[1.0, 1.0, 1.0]])
+    assert (points == [[3.0, 4.0, 5.0]]).all()
+
+    matrix = numpy.eye(4)
+    matrix[:3, :3] = numpy.diag([2.0, 2.0, 2.0])
+    matrix[:3, 3] = [1.0, 2.0, 3.0]
+    from_matrix = AffineTransform(matrix)
+    assert (from_matrix.linear == numpy.diag([2.0, 2.0, 2.0])).all()
+    assert (from_matrix.translation == [1.0, 2.0, 3.0]).all()
+
+
+def test_transform_points_and_normals():
+    transform = AffineTransform.from_scale([2.0, 4.0, 1.0])
+    points = transform.transform_points([[1.0, 1.0, 1.0]])
+    assert (points == [[2.0, 4.0, 1.0]]).all()
+
+    normals = transform.transform_normals([[1.0, 1.0, 0.0]])
+    expected = numpy.array([1.0 / 2.0, 1.0 / 4.0, 0.0])
+    expected = expected / numpy.linalg.norm(expected)
+    assert numpy.allclose(normals[0], expected)
+
+    zero = transform.transform_normals([[0.0, 0.0, 0.0]])
+    assert (zero == 0).all()
+    assert numpy.isfinite(zero).all()
+
+
+def test_transform_translation_ignores_normals():
+    ply0 = _spatial_ply()
+    before = ply0['vertex'].data.copy()
+    ply1 = ply0.transform(AffineTransform.from_translation([10, 20, 30]))
+
+    vertex = ply1['vertex']
+    assert (vertex['x'] == before['x'] + 10).all()
+    assert (vertex['y'] == before['y'] + 20).all()
+    assert (vertex['z'] == before['z'] + 30).all()
+    assert (vertex['nx'] == before['nx']).all()
+    assert (vertex['ny'] == before['ny']).all()
+    assert (vertex['nz'] == before['nz']).all()
+
+    # The original instance is unchanged.
+    assert (ply0['vertex'].data == before).all()
+
+
+def test_transform_nonuniform_normals_renormalized():
+    ply0 = _spatial_ply()
+    before = ply0['vertex'].data.copy()
+    transform = AffineTransform.from_scale([2.0, 3.0, 4.0])
+    ply1 = ply0.transform(transform)
+    vertex = ply1['vertex']
+
+    normals = numpy.column_stack([vertex['nx'], vertex['ny'],
+                                  vertex['nz']])
+    lengths = numpy.linalg.norm(normals, axis=1)
+    assert numpy.allclose(lengths, 1.0)
+
+    raw = numpy.column_stack([before['nx'], before['ny'], before['nz']])
+    expected = raw / numpy.array([2.0, 3.0, 4.0])
+    expected = expected / numpy.linalg.norm(expected, axis=1,
+                                            keepdims=True)
+    assert numpy.allclose(normals, expected)
+
+    directions = numpy.column_stack([vertex['dx'], vertex['dy'],
+                                     vertex['dz']])
+    raw_directions = numpy.column_stack([before['dx'], before['dy'],
+                                         before['dz']])
+    assert numpy.allclose(directions, raw_directions * [2.0, 3.0, 4.0])
+
+
+def test_transform_mirror_reverses_faces():
+    ply0 = _spatial_ply()
+    before_indices = ply0['face']['vertex_indices'][0].copy()
+    colors = ply0['face'].data[['r', 'g', 'b']].copy()
+
+    ply1 = ply0.transform(AffineTransform.from_mirror('x'))
+
+    indices = ply1['face']['vertex_indices'][0]
+    assert list(indices) == list(before_indices[::-1])
+    assert (ply1['face'].data[['r', 'g', 'b']] == colors).all()
+    assert (ply0['face']['vertex_indices'][0] == before_indices).all()
+
+
+def test_transform_mirror_does_not_change_positive_orientation():
+    ply0 = _spatial_ply()
+    before_indices = ply0['face']['vertex_indices'][0].copy()
+    ply1 = ply0.transform(AffineTransform.from_scale([2.0, 3.0, 4.0]))
+    assert (ply1['face']['vertex_indices'][0] == before_indices).all()
+
+
+def test_transform_object_list_faces():
+    face = numpy.empty(2, dtype=[('vertex_indices', 'O'),
+                                 ('r', 'u1')])
+    face['vertex_indices'][0] = numpy.array([0, 1, 2, 3])
+    face['vertex_indices'][1] = numpy.array([4, 5, 6])
+    face['r'][:] = [10, 20]
+    element = PlyElement.describe(face, 'face',
+                                  spatial={'faces': 'vertex_indices'})
+    transformed = element.transform(AffineTransform.from_mirror('y'))
+    assert list(transformed['vertex_indices'][0]) == [3, 2, 1, 0]
+    assert list(transformed['vertex_indices'][1]) == [6, 5, 4]
+    assert list(element['vertex_indices'][0]) == [0, 1, 2, 3]
+
+
+def test_transform_undeclared_triplets_untouched():
+    data = numpy.array([(1.0, 2.0, 3.0, 10, 20, 30)], dtype=[
+        ('x', 'f4'), ('y', 'f4'), ('z', 'f4'),
+        ('red', 'u1'), ('green', 'u1'), ('blue', 'u1')])
+    element = PlyElement.describe(data, 'vertex',
+                                  spatial={'position': ('x', 'y', 'z')})
+    transformed = element.transform(
+        AffineTransform.from_translation([1.0, 1.0, 1.0]))
+
+    assert (transformed['x'] == [2.0]).all()
+    assert (transformed['y'] == [3.0]).all()
+    assert (transformed['z'] == [4.0]).all()
+    assert (transformed['red'] == [10]).all()
+    assert (transformed['green'] == [20]).all()
+    assert (transformed['blue'] == [30]).all()
+
+    colors_only = PlyElement.describe(
+        numpy.array([(10, 20, 30)],
+                    dtype=[('red', 'u1'), ('green', 'u1'),
+                           ('blue', 'u1')]), 'color')
+    with Raises(SpatialPropertyError):
+        colors_only.transform(AffineTransform.from_translation([1, 1, 1]))
+
+    ply = PlyData([colors_only])
+    transformed_ply = ply.transform(
+        AffineTransform.from_translation([1, 1, 1]))
+    assert (transformed_ply['color'].data ==
+            colors_only.data).all()
+
+
+def test_transform_degenerate_separate():
+    ply0 = _spatial_ply()
+    singular = AffineTransform.from_scale([1.0, 0.0, 1.0])
+
+    with Raises(DegenerateTransformError):
+        ply0['vertex'].transform(singular)
+    with Raises(DegenerateTransformError):
+        ply0.transform(singular)
+
+    position = numpy.array([(1.0, 2.0, 3.0)],
+                           dtype=[('x', 'f4'), ('y', 'f4'), ('z', 'f4')])
+    element = PlyElement.describe(position, 'vertex',
+                                  spatial={'position': ('x', 'y', 'z')})
+    with Raises(DegenerateTransformError):
+        element.transform(singular)
+    transformed = element.transform(singular, allow_degenerate=True)
+    assert (transformed['x'] == [1.0]).all()
+    assert (transformed['y'] == [0.0]).all()
+    assert (transformed['z'] == [3.0]).all()
+
+
+def test_transform_in_place_and_roundtrip(tmpdir):
+    ply0 = _spatial_ply()
+    transform = AffineTransform.from_translation([1.0, 0.0, 0.0])
+    ply1 = ply0.transform(transform, copy=False)
+    assert ply1 is ply0
+    assert (ply0['vertex']['x'] == [1.0, 2.0, 1.0]).all()
+
+    ply2 = write_read(_spatial_ply().transform(transform), tmpdir)
+    assert (ply2['vertex']['x'] == [1.0, 2.0, 1.0]).all()
+    assert ply2['face'].spatial is None
+    assert ply2['vertex'].spatial is None
+
+
+def test_transform_vector_field_declaration():
+    vertex = numpy.array([([1.0, 2.0, 3.0], [0.0, 0.0, 1.0])],
+                         dtype=[('position', 'f4', (3,)),
+                                ('normal', 'f4', (3,))])
+    element = PlyElement.describe(
+        vertex, 'vertex',
+        spatial={'position': 'position', 'normals': 'normal'})
+    transformed = element.transform(
+        AffineTransform.from_scale([1.0, 1.0, 2.0]))
+    assert numpy.allclose(transformed['position'][0], [1.0, 2.0, 6.0])
+    assert numpy.allclose(transformed['normal'][0], [0.0, 0.0, 1.0])
+
+
+def test_spatial_declaration_validation():
+    vertex = numpy.zeros(2, dtype=[('x', 'f4'), ('y', 'f4'),
+                                   ('z', 'f4'), ('label', 'i1')])
+    with Raises(SpatialPropertyError):
+        PlyElement.describe(vertex, 'vertex',
+                            spatial={'position': ('x', 'y')})
+    with Raises(SpatialPropertyError):
+        PlyElement.describe(vertex, 'vertex',
+                            spatial={'position': ('x', 'y', 'missing')})
+    with Raises(SpatialPropertyError):
+        PlyElement.describe(vertex, 'vertex',
+                            spatial={'faces': 'x'})
+    with Raises(SpatialPropertyError):
+        PlyElement.describe(vertex, 'vertex',
+                            spatial={'unknown': ('x', 'y', 'z')})
+
+    element = PlyElement.describe(vertex, 'vertex',
+                                  spatial={'position': ('x', 'y', 'z')})
+    with Raises(SpatialPropertyError):
+        element.spatial = {'position': ('x', 'y', 'missing')}
+    assert element.spatial == {'position': ('x', 'y', 'z')}
+
+
+def test_transform_keyword_and_mapping_forms():
+    ply0 = _spatial_ply()
+    keyword = ply0.transform(translation=[1.0, 2.0, 3.0])
+    mapping = ply0.transform({'translation': [1.0, 2.0, 3.0]})
+    explicit = ply0.transform(
+        AffineTransform.from_translation([1.0, 2.0, 3.0]))
+    assert (keyword['vertex'].data == explicit['vertex'].data).all()
+    assert (mapping['vertex'].data == explicit['vertex'].data).all()
+
+    with Raises(ValueError):
+        ply0.transform()
+    with Raises(ValueError):
+        ply0.transform(AffineTransform(), translation=[1.0, 1.0, 1.0])
+
+
+def test_transform_vector_normalized_with_directions_only():
+    vertex = numpy.array(
+        [(1.0, 0.0, 0.0, 2.0, 0.0, 0.0)],
+        dtype=[('x', 'f4'), ('y', 'f4'), ('z', 'f4'),
+               ('vx', 'f4'), ('vy', 'f4'), ('vz', 'f4')])
+    element = PlyElement.describe(
+        vertex, 'vertex',
+        spatial={'position': ('x', 'y', 'z'),
+                 'directions': ('vx', 'vy', 'vz')})
+    transformed = element.transform(
+        AffineTransform.from_scale([2.0, 3.0, 4.0]))
+    assert (transformed['vx'] == [4.0]).all()
+    assert (transformed['vy'] == [0.0]).all()
+    assert (transformed['vz'] == [0.0]).all()
+
+
+def test_transform_zero_length_normal_stays_finite():
+    vertex = numpy.array([(0.0, 0.0, 0.0, 0.0, 0.0, 0.0)],
+                         dtype=[('x', 'f4'), ('y', 'f4'), ('z', 'f4'),
+                                ('nx', 'f4'), ('ny', 'f4'),
+                                ('nz', 'f4')])
+    element = PlyElement.describe(
+        vertex, 'vertex',
+        spatial={'position': ('x', 'y', 'z'),
+                 'normals': ('nx', 'ny', 'nz')})
+    transformed = element.transform(
+        AffineTransform.from_scale([2.0, 3.0, 4.0]))
+    assert numpy.isfinite(transformed['nx']).all()
+    assert (transformed['nx'] == [0.0]).all()
+
+
+def test_transform_canonical_names_inferred():
+    plydata = PlyData.read('examples/tet.ply')
+    assert plydata['vertex']._declared_spatial() == {
+        'position': ('x', 'y', 'z')}
+    assert plydata['face']._declared_spatial() == {
+        'faces': ('vertex_indices',)}
+
+    transformed = plydata.transform(
+        AffineTransform.from_translation([0.0, 0.0, 1.0]))
+    assert (transformed['vertex']['z'] ==
+            plydata['vertex']['z'] + 1).all()
+    # Face colors are not spatial and must remain untouched.
+    assert (transformed['face']['red'] ==
+            plydata['face']['red']).all()
+
+    mirror = AffineTransform.from_mirror('x')
+    mirrored = plydata.transform(mirror)
+    assert mirrored['face']['vertex_indices'][0].tolist() == [2, 1, 0]
+
+
+def test_transform_normals_require_explicit_declaration():
+    vertex = numpy.array(
+        [(1.0, 0.0, 0.0, 1.0, 0.0, 0.0)],
+        dtype=[('x', 'f4'), ('y', 'f4'), ('z', 'f4'),
+               ('nx', 'f4'), ('ny', 'f4'), ('nz', 'f4')])
+    element = PlyElement.describe(vertex, 'vertex')
+    assert element._declared_spatial() == {'position': ('x', 'y', 'z')}
+
+    transformed = element.transform(
+        AffineTransform.from_scale([2.0, 3.0, 4.0]))
+    assert (transformed['nx'] == [1.0]).all()
+    assert (transformed['ny'] == [0.0]).all()
+
+    declared = element.transform(
+        AffineTransform.from_scale([2.0, 3.0, 4.0]),
+        normals=('nx', 'ny', 'nz'))
+    expected = numpy.array([1.0, 0.0, 0.0]) / 2.0
+    expected /= numpy.linalg.norm(expected)
+    assert numpy.allclose(
+        [declared['nx'][0], declared['ny'][0], declared['nz'][0]],
+        expected)
+
+
+def test_transform_data_level_spatial_override():
+    vertex = numpy.array([(1.0, 2.0, 3.0, 10, 20, 30)], dtype=[
+        ('x', 'f4'), ('y', 'f4'), ('z', 'f4'),
+        ('red', 'u1'), ('green', 'u1'), ('blue', 'u1')])
+    element = PlyElement.describe(vertex, 'vertex')
+    plydata = PlyData([element])
+
+    transformed = plydata.transform(
+        AffineTransform.from_translation([1.0, 1.0, 1.0]),
+        spatial={'vertex': {'position': ('x', 'y', 'z')}})
+    assert (transformed['vertex']['x'] == [2.0]).all()
+    assert (transformed['vertex']['red'] == [10]).all()
+
+    with Raises(SpatialPropertyError):
+        plydata.transform(AffineTransform(),
+                          spatial={'position': ('x', 'y', 'z')})
+    with Raises(SpatialPropertyError):
+        plydata.transform(AffineTransform(),
+                          spatial={'missing': {'position': ('x', 'y', 'z')}})
