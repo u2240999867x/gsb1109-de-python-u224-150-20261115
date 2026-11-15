@@ -98,7 +98,10 @@ def run_main():
             os.path.join(pylatexenc_src_dir, 'test'),
             test_file_patterns=[
                 # these are regexes that are matched as ^( <...> )[.]py$
-                'test_latexnodes_.*',
+                #
+                # the latextable extractor is a python-only module, it is not
+                # compiled into the javascript library, so skip its tests here
+                'test_latexnodes_(?!latextable).*',
                 'test_macrospec_.*',
                 'test_latexwalker_.*',
                 'test_latexencode',

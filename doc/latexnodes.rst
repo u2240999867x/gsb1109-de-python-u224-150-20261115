@@ -144,3 +144,35 @@ Parser Classes
    :maxdepth: 2
 
    latexnodes.parsers
+
+
+Tabular data extraction
+-----------------------
+
+The :py:mod:`pylatexenc.latexnodes.latextable` module turns table
+environments (``tabular``, ``array`` and friends) into structured rows and
+cells, with column spans and source positions, suitable for storing in a
+data warehouse.
+
+.. automodule:: pylatexenc.latexnodes.latextable
+   :no-undoc-members:
+   :show-inheritance:
+
+.. autofunction:: pylatexenc.latexnodes.latextable.extract_latex_tables
+
+.. autofunction:: pylatexenc.latexnodes.latextable.extract_table_from_environment_node
+
+.. autoclass:: pylatexenc.latexnodes.latextable.ExtractedTable
+   :members:
+
+.. autoclass:: pylatexenc.latexnodes.latextable.ExtractedTableRow
+   :members:
+
+.. autoclass:: pylatexenc.latexnodes.latextable.ExtractedTableCell
+   :members:
+
+.. autoclass:: pylatexenc.latexnodes.latextable.SourcePosition
+   :members:
+
+.. autoclass:: pylatexenc.latexnodes.latextable.LatexTableExtractionError
+   :members:
