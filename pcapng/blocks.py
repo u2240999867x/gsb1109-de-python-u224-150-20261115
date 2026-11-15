@@ -66,6 +66,10 @@ class Block(object):
                         self._decoded[key] = kwargs[key]
                     except KeyError:
                         self._decoded[key] = default
+        # Let the options know which block they belong to
+        options = self._decoded.get("options")
+        if options is not None:
+            options.block = self
 
     def __eq__(self, other):
         if self.__class__ != other.__class__:
