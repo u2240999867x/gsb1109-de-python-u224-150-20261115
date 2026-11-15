@@ -174,6 +174,76 @@ def _determine_datatype(header: NRRDHeader) -> np.dtype:
     return np.dtype(np_typestring)
 
 
+def _remove_ascii_comments(text: str) -> str:
+    """Strip text-encoding comments so a trailing '#' line is never tokenized as samples.
+
+    In ASCII/text encodings a ``#`` begins a comment that runs to the end of its line. Numeric tokens never contain
+    ``#``, so truncating each line at its first ``#`` removes comments without ever discarding a data value.
+    """
+    cleaned_lines = []
+    for line in text.splitlines():
+        hash_index = line.find('#')
+        if hash_index != -1:
+            line = line[:hash_index]
+        cleaned_lines.append(line)
+
+    # Re-joining with whitespace is sufficient because the parser below splits on whitespace
+    return '\n'.join(cleaned_lines)
+
+
+def _read_text_data(fh: IO, dtype: np.dtype) -> npt.NDArray:
+    """Read every numeric sample from an ASCII/text encoded stream, excluding comments."""
+    raw_text = fh.read()
+
+    if isinstance(raw_text, bytes):
+        raw_text = raw_text.decode('ascii', 'ignore')
+
+    # Parse without a fixed count: every remaining token is a real sample. The element count is validated separately
+    # against the header-declared size, which also avoids NumPy zero-padding short text streams when count is given.
+    return np.fromstring(_remove_ascii_comments(raw_text), dtype, sep=' ')
+
+
+def _read_binary_data(fh: IO, dtype: np.dtype, total_data_points: int) -> npt.NDArray:
+    """Read raw binary samples using the header-declared count as the authoritative boundary.
+
+    The header fixes the exact byte window (``total_data_points`` samples of ``dtype.itemsize`` bytes each). Bytes
+    inside that window are always treated as sample data, so a final data byte that happens to equal ``0x0A`` is
+    preserved. Only separator whitespace past the declared window (e.g. a terminating newline) is tolerated; any other
+    surplus bytes are kept as whole extra elements so the size check can reject them rather than parsing them as more
+    samples. A buffer shorter than the window is parsed element-by-element and likewise reported by the size check.
+    """
+    if not isinstance(fh, io.BytesIO):
+        # np.fromfile streams efficiently and drops an incomplete trailing element; short/excess whole-element cases
+        # are still caught by the header size check
+        return np.fromfile(fh, dtype)
+
+    raw_data = fh.read()
+    expected_byte_count = total_data_points * dtype.itemsize
+
+    # Copy into a bytearray so the returned array is writable; BytesIO.read() otherwise yields immutable bytes
+    if len(raw_data) >= expected_byte_count:
+        surplus = raw_data[expected_byte_count:]
+        # An exact window, or one followed only by separator whitespace, maps to precisely the declared samples
+        if not surplus or surplus.strip(b' \t\r\n') == b'':
+            return np.frombuffer(bytearray(raw_data[:expected_byte_count]), dtype)
+
+    # Otherwise parse every whole element (discarding only an incomplete trailing element) and let the size check
+    # report the insufficient or excess payload using the standard element-count message
+    usable_byte_count = len(raw_data) - (len(raw_data) % dtype.itemsize)
+    return np.frombuffer(bytearray(raw_data[:usable_byte_count]), dtype)
+
+
+def _validate_data_count(data: npt.NDArray, total_data_points: int) -> None:
+    """Assert the parsed sample count matches the product of the header ``sizes``.
+
+    The header declaration is the authoritative boundary: fewer available bytes/values means a truncated (insufficient)
+    payload, while more means trailing bytes or comments that must not be interpreted as an additional batch of samples.
+    """
+    if data.size != total_data_points:
+        raise NRRDError(f'Size of the data does not equal the product of all the dimensions: '
+                        f'{total_data_points}-{data.size}={total_data_points - data.size}')
+
+
 def _validate_magic_line(line: str) -> int:
     """For NRRD files, the first four characters are always "NRRD", and
     remaining characters give information about the file format version
@@ -413,16 +483,11 @@ def read_data(header: NRRDHeader, fh: Optional[IO] = None, filename: Optional[st
 
     # If a compression encoding is used, then byte skip AFTER decompressing
     if header['encoding'] == 'raw':
-        if isinstance(fh, io.BytesIO):
-            raw_data = bytearray(fh.read(total_data_points * dtype.itemsize))
-            data = np.frombuffer(raw_data, dtype)
-        else:
-            data = np.fromfile(fh, dtype)
+        # Read every whole sample so that an insufficient payload yields fewer elements and an excess yields more; both
+        # are surfaced by the single header-declared size check rather than silently truncating or guessing
+        data = _read_binary_data(fh, dtype, total_data_points)
     elif header['encoding'] in ['ASCII', 'ascii', 'text', 'txt']:
-        if isinstance(fh, io.BytesIO):
-            data = np.fromstring(fh.read(), dtype, sep=' ')
-        else:
-            data = np.fromfile(fh, dtype, sep=' ')
+        data = _read_text_data(fh, dtype)
     else:
         # Handle compressed data now
         # Construct the decompression object based on encoding
@@ -468,17 +533,17 @@ def read_data(header: NRRDHeader, fh: Optional[IO] = None, filename: Optional[st
                 fh.close()
             raise NRRDError('Data ended before reaching the end of the compressed stream')
 
-        # Byte skip is applied AFTER the decompression. Skip first x bytes of the decompressed data and parse it using
-        # NumPy
-        data = np.frombuffer(decompressed_data[byte_skip:], dtype)
+        # Byte skip is applied AFTER the decompression. Skip first x bytes of the decompressed data and parse every
+        # whole remaining sample with the same header-bounded binary rules as the raw path
+        data = _read_binary_data(io.BytesIO(decompressed_data[byte_skip:]), dtype, total_data_points)
 
     # Close the file if we opened it
     if data_filename is not None:
         fh.close()
 
-    if total_data_points != data.size:
-        raise NRRDError(f'Size of the data does not equal the product of all the dimensions: '
-                        f'{total_data_points}-{data.size}={total_data_points - data.size}')
+    # The header-declared size is the authoritative boundary for all encodings (raw, text and compressed). Reading the
+    # full payload above lets this single check report both insufficient (truncated) and excess (trailing) data.
+    _validate_data_count(data, total_data_points)
 
     # In the NRRD header, the fields are specified in Fortran order, i.e, the first index is the one that changes
     # fastest and last index changes slowest. This needs to be taken into consideration since numpy uses C-order

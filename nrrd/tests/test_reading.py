@@ -2,7 +2,7 @@ import bz2
 import gzip
 import io
 import unittest
-from tempfile import TemporaryDirectory
+from tempfile import NamedTemporaryFile, TemporaryDirectory
 from typing import ClassVar
 
 import numpy as np
@@ -590,6 +590,117 @@ class TestCompressedDataIntegrity(unittest.TestCase):
                           'encoding': encoding}
                 stream = io.BytesIO(compress(expected.tobytes()))
                 np.testing.assert_array_equal(nrrd.read_data(header, stream), expected)
+
+
+class TestDeclaredDataRange(unittest.TestCase):
+    """The header ``sizes`` product is the authoritative data boundary for text and binary encodings."""
+
+    def _header(self, encoding, dtype='uint8', count=6):
+        header = {'type': dtype, 'dimension': 1, 'sizes': np.array([count]), 'encoding': encoding}
+        if encoding == 'raw':
+            header['endian'] = 'little'
+        return header
+
+    def _read(self, header, payload, from_file=False):
+        if not from_file:
+            return nrrd.read_data(dict(header), io.BytesIO(payload))
+
+        with NamedTemporaryFile() as fh:
+            fh.write(payload)
+            fh.flush()
+            with open(fh.name, 'rb') as data_fh:
+                return nrrd.read_data(dict(header), data_fh)
+
+    # --- Text (ASCII) encoding -------------------------------------------------
+    def test_ascii_exact(self):
+        header = self._header('ASCII')
+        for from_file in (False, True):
+            with self.subTest(from_file=from_file):
+                np.testing.assert_array_equal(
+                    self._read(header, b'1 2 3 4 5 6\n', from_file), np.arange(1, 7))
+
+    def test_ascii_insufficient(self):
+        header = self._header('ASCII')
+        for from_file in (False, True):
+            with self.subTest(from_file=from_file):
+                with self.assertRaisesRegex(
+                        nrrd.NRRDError,
+                        r'Size of the data does not equal the product of all the dimensions: 6-3=3'):
+                    self._read(header, b'1 2 3\n', from_file)
+
+    def test_ascii_excess(self):
+        header = self._header('ASCII')
+        for from_file in (False, True):
+            with self.subTest(from_file=from_file):
+                with self.assertRaisesRegex(
+                        nrrd.NRRDError,
+                        r'Size of the data does not equal the product of all the dimensions: 6-9=-3'):
+                    self._read(header, b'1 2 3 4 5 6 7 8 9\n', from_file)
+
+    def test_ascii_trailing_comment_is_not_samples(self):
+        header = self._header('ASCII')
+        payload = b'1 2 3 4 5 6\n# 7 8 9 these numeric-looking tokens are a comment, not samples\n'
+        for from_file in (False, True):
+            with self.subTest(from_file=from_file):
+                data = self._read(header, payload, from_file)
+                np.testing.assert_array_equal(data, np.arange(1, 7))
+                self.assertEqual(data.size, 6)
+
+    def test_ascii_inline_comment_is_not_samples(self):
+        header = self._header('ASCII')
+        data = self._read(header, b'1 2 3 4 5 6 # end-of-line comment\n')
+        np.testing.assert_array_equal(data, np.arange(1, 7))
+
+    # --- Binary (raw) encoding -------------------------------------------------
+    def test_raw_exact(self):
+        header = self._header('raw')
+        for from_file in (False, True):
+            with self.subTest(from_file=from_file):
+                np.testing.assert_array_equal(
+                    self._read(header, bytes(range(1, 7)), from_file), np.arange(1, 7))
+
+    def test_raw_insufficient(self):
+        header = self._header('raw')
+        for from_file in (False, True):
+            with self.subTest(from_file=from_file):
+                with self.assertRaisesRegex(
+                        nrrd.NRRDError,
+                        r'Size of the data does not equal the product of all the dimensions: 6-3=3'):
+                    self._read(header, bytes(range(1, 4)), from_file)
+
+    def test_raw_excess(self):
+        header = self._header('raw')
+        for from_file in (False, True):
+            with self.subTest(from_file=from_file):
+                with self.assertRaisesRegex(
+                        nrrd.NRRDError,
+                        r'Size of the data does not equal the product of all the dimensions: 6-9=-3'):
+                    self._read(header, bytes(range(1, 10)), from_file)
+
+    def test_raw_tolerates_separator_past_window(self):
+        header = self._header('raw')
+        np.testing.assert_array_equal(
+            self._read(header, bytes(range(1, 7)) + b'\n'), np.arange(1, 7))
+
+    def test_raw_preserves_data_byte_equal_to_newline(self):
+        # A final voxel whose value is 0x0A must not be stripped as if it were separator whitespace
+        header = self._header('raw')
+        payload = np.array([1, 2, 3, 4, 5, 0x0A], dtype=np.uint8).tobytes()
+        np.testing.assert_array_equal(self._read(header, payload), np.array([1, 2, 3, 4, 5, 10]))
+
+    def test_raw_multibyte_partial_trailing_element(self):
+        header = self._header('raw', dtype='int16', count=4)
+        exact = np.arange(1, 5, dtype='<i2').tobytes()
+        # One extra byte cannot form an int16 element and must not inflate the count; an exact window still reads
+        np.testing.assert_array_equal(self._read(header, exact + b'Z'), np.arange(1, 5))
+        # A whole extra element is genuine excess and must be rejected
+        with self.assertRaisesRegex(nrrd.NRRDError, '4-6=-2'):
+            self._read(header, exact + np.arange(9, 11, dtype='<i2').tobytes())
+
+    def test_raw_result_is_writable(self):
+        header = self._header('raw')
+        data = self._read(header, bytes(range(1, 7)))
+        self.assertTrue(data.flags['WRITEABLE'])
 
 
 class TestReadingFunctionsFortran(Abstract.TestReadingFunctions):
