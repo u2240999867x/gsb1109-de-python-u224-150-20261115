@@ -136,6 +136,18 @@ The `latex2text` module was improved:
   gives ``√`` and ``∛``.
 
 
+A new `latexoutline` module collects the sectioning structure of a document:
+
+- :py:func:`pylatexenc.latexoutline.latex_outline()` returns a hierarchical
+  outline of a LaTeX document, with one entry per sectioning command.  Each
+  entry records the table-of-contents title (using a short title in square
+  brackets when there is one), a display number, the parent-child structure,
+  and the range of source positions covered by the section's body.  Duplicate
+  titles remain separate entries, entries are keyed by their structural
+  position rather than by their number, and headings whose expected parent
+  level is missing report it.
+
+
 The `latexencode` module has barely changed.
 
 

@@ -59,6 +59,10 @@ Which module do I want?
 - :py:mod:`pylatexenc.latexwalker` — parse LaTeX code into a tree of node
   objects, if you'd like to inspect or transform the LaTeX structure yourself.
 
+- :py:mod:`pylatexenc.latexoutline` — build a hierarchical table of contents
+  from the sectioning commands of a document, with the body range of every
+  section.
+
 - :py:mod:`pylatexenc.latexnodes` and :py:mod:`pylatexenc.macrospec` — the
   lower-level parsing layer that the modules above are built on: node classes,
   the token reader, the library of parser objects, and the specifications that
@@ -78,6 +82,7 @@ two modules directly from your shell.
    latex2text
    latexencode
    latexwalker
+   latexoutline
    latexnodes
    macrospec
    changes
