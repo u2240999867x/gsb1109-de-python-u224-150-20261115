@@ -3,6 +3,14 @@
 All notable changes to this project will be documented here.
 
 ## [Unreleased]
+### Added
+- Column-oriented conversion for elements and whole files via
+  `PlyData.to_columnar`, `PlyElement.to_columnar`, and their
+  `from_columnar` counterparts. List properties are exported as
+  `PlyListColumn` instances with per-property cumulative offsets and
+  flattened values, so empty lists, missing values, list lengths,
+  row order, and list types are all preserved. `PlyData.read_columnar`
+  and `PlyColumnarData.write` provide direct columnar PLY I/O.
 
 ## [1.1.5] - 2026-07-25
 ### Fixed

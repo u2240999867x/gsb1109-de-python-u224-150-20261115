@@ -332,6 +332,60 @@ Now you can instantiate `PlyData` and serialize:
 >>>
 ```
 
+## Column-oriented data
+
+For consumers that work with columnar arrays, `PlyData` and
+`PlyElement` can be converted to and from a column-oriented
+representation.  Scalar properties become one-dimensional arrays;
+list properties become `PlyListColumn` instances with cumulative
+offsets and a flat array of values.
+
+```Python Console
+>>> plydata = PlyData.read('tet.ply')
+>>> columns = plydata.to_columnar()
+>>> columns['face']['vertex_indices'].offsets.tolist()
+[0, 3, 6, 9, 12]
+>>> columns['face']['vertex_indices'].values.tolist()
+[0, 1, 2, 0, 2, 3, 0, 1, 3, 1, 2, 3]
+>>>
+```
+
+The offsets array always contains one more entry than the number of
+element rows.  Row `k` is `values[offsets[k]:offsets[k + 1]]`, which
+means an empty list is represented by two equal consecutive offsets
+and is preserved as its own row.  Offsets are maintained independently
+for each list property, so lists of differing lengths in different
+properties never affect each other.
+
+A `validity` mask marks rows whose list value is missing.  Unlike an
+empty list, a missing list has no values; since the PLY format cannot
+represent missing list values, converting such columnar data back to a
+`PlyData` keeps `None` in the object field by default, and writing it
+to a PLY file raises `PlyColumnarError`.  Pass `missing='empty'` to
+collapse missing lists to empty lists when reconstructing.
+
+Reconstruction preserves row order, list order within each row, list
+lengths, and the original list-length and value types:
+
+```Python Console
+>>> restored = columns.to_plydata()
+>>> len(restored['face'])
+4
+>>> restored['face']['vertex_indices'][0]
+array([0, 1, 2], dtype=int32)
+>>>
+```
+
+`PlyElement.from_columnar` accepts `PlyListColumn` instances as well as
+plain mappings such as
+`{'offsets': ..., 'values': ..., 'len_dtype': 'uchar',
+'val_dtype': 'int'}`.  `PlyData.read_columnar` and
+`PlyColumnarData.write` provide direct PLY I/O in columnar form.
+Column mappings may also use `value_offsets`/`flat_values` aliases and
+an Arrow-style `null_mask`.  A list of per-row sequences can be passed
+directly; a tuple is always interpreted as an explicit
+`(offsets, values)` pair.
+
 ## Miscellaneous
 
 ### Comments

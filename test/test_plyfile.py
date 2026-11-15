@@ -10,8 +10,9 @@ import numpy
 
 import plyfile
 from plyfile import (
-    PlyData, PlyElement, PlyProperty,
-    PlyHeaderParseError, PlyElementParseError,
+    PlyData, PlyElement, PlyProperty, PlyListProperty,
+    PlyColumnarData, PlyElementColumns, PlyListColumn,
+    PlyColumnarError, PlyHeaderParseError, PlyElementParseError,
 )
 
 
@@ -1016,3 +1017,225 @@ def test_text_io_bad_read(tet_ply_txt):
     with Raises(ValueError) as e:
         PlyData.read(stream1)
     assert str(e) == "can't read binary-format PLY from text stream"
+
+
+def make_list_ply(values, name='vertex_indices', len_type='u1',
+                  val_type='i4'):
+    """
+    Build an element whose single list property has the given values.
+    """
+    array = numpy.empty(len(values), dtype=[(name, object)])
+    array[name] = [None if v is None else numpy.asarray(v)
+                   for v in values]
+    elt = PlyElement.describe(
+        array, 'face', len_types={name: len_type},
+        val_types={name: val_type})
+    return PlyData([elt])
+
+
+def test_columnar_empty_list_is_not_missing():
+    ply = make_list_ply([[0, 1], [], [2]])
+    columns = ply['face'].to_columnar()
+    col = columns['vertex_indices']
+
+    assert isinstance(col, PlyListColumn)
+    assert len(columns) == 1
+    assert columns.count == 3
+    assert list(col.offsets) == [0, 2, 2, 3]
+    assert list(col.lengths) == [2, 0, 1]
+    assert col.validity.tolist() == [True, True, True]
+    assert col.values.tolist() == [0, 1, 2]
+
+    rebuilt = PlyElement.from_columnar(columns)
+    assert (rebuilt['vertex_indices'][1] == numpy.array([], 'i4')).all()
+
+
+def test_columnar_missing_list_is_distinct():
+    values = numpy.empty(3, dtype=[('v', object)])
+    values['v'] = [numpy.array([1]), numpy.array([], 'i4'),
+                   numpy.array([2])]
+    elt = PlyElement.describe(values, 'e', val_types={'v': 'i4'})
+    col = elt.to_columnar()['v']
+    col.validity[1] = False
+    col.offsets[2] = col.offsets[1]
+
+    rebuilt = PlyElement.from_columnar({'v': col}, name='e')
+    assert list(rebuilt['v'][0]) == [1]
+    assert rebuilt['v'][1] is None
+    assert list(rebuilt['v'][2]) == [2]
+
+    empty = PlyElement.from_columnar({'v': col}, name='e',
+                                     missing='empty')
+    assert empty['v'][1].size == 0
+    assert empty['v'][1] is not None
+
+    with Raises(PlyColumnarError):
+        PlyElement.from_columnar({'v': col}, name='e', missing='error')
+
+    ply = PlyData([rebuilt])
+    with Raises(PlyColumnarError):
+        ply.write(BytesIO())
+
+
+def test_columnar_multiple_list_offsets_independent():
+    array = numpy.empty(3, dtype=[('a', object), ('b', object),
+                                  ('c', 'i4')])
+    array['a'] = [numpy.array([], 'i2'), numpy.array([1, 2], 'i2'),
+                  numpy.array([3], 'i2')]
+    array['b'] = [numpy.array([7, 8, 9], 'f4'),
+                  numpy.array([], 'f4'), numpy.array([], 'f4')]
+    array['c'] = [10, 20, 30]
+    elt = PlyElement.describe(array, 'e', len_types={'a': 'u2'},
+                              val_types={'a': 'i2', 'b': 'f4'})
+
+    columns = elt.to_columnar()
+    assert list(columns['a'].offsets) == [0, 0, 2, 3]
+    assert list(columns['b'].offsets) == [0, 3, 3, 3]
+    assert list(columns['a'].values) == [1, 2, 3]
+    assert columns['b'].values.tolist() == [7.0, 8.0, 9.0]
+
+    rebuilt = PlyElement.from_columnar(columns)
+    for k in range(3):
+        assert (elt['a'][k] == rebuilt['a'][k]).all()
+        assert (elt['b'][k] == rebuilt['b'][k]).all()
+    assert (elt['c'] == rebuilt['c']).all()
+
+
+def test_columnar_preserves_types_and_order():
+    array = numpy.empty(2, dtype=[('first', 'u2'), ('list', object),
+                                  ('second', 'f8')])
+    array['first'] = [1, 2]
+    array['list'] = [numpy.array([4, 5], 'i4'),
+                     numpy.array([6], 'i4')]
+    array['second'] = [1.5, 2.5]
+    elt = PlyElement.describe(array, 'e', len_types={'list': 'u4'},
+                              val_types={'list': 'i4'})
+
+    columns = elt.to_columnar()
+    assert list(columns.keys()) == ['first', 'list', 'second']
+    assert columns['first'].dtype == numpy.dtype('u2')
+    assert columns['second'].dtype == numpy.dtype('f8')
+    assert columns['list'].len_dtype == 'u4'
+    assert columns['list'].val_dtype == 'i4'
+
+    rebuilt = PlyElement.from_columnar(columns)
+    assert [p.name for p in rebuilt.properties] == \
+        ['first', 'list', 'second']
+    assert rebuilt['first'].dtype == numpy.dtype('u2')
+    assert rebuilt['second'].dtype == numpy.dtype('f8')
+    assert rebuilt['list'][0].dtype == numpy.dtype('i4')
+    assert (rebuilt['first'] == elt['first']).all()
+    assert (rebuilt['second'] == elt['second']).all()
+
+
+def test_columnar_round_trip_through_ply(tmpdir):
+    values = [[0, 1, 2], [], [3], [], [4, 5, 6, 7]]
+    ply0 = make_list_ply(values)
+    columns = ply0.to_columnar()
+    ply1 = columns.to_plydata()
+    verify(ply0, ply1)
+
+    filename = str(tmpdir.join('col.ply'))
+    columns.write(filename)
+    ply2 = PlyData.read_columnar(filename)
+    ply3 = ply2.to_plydata()
+    verify(ply0, ply3)
+
+    for k in range(len(values)):
+        assert list(ply3['face']['vertex_indices'][k]) == values[k]
+
+
+@pytest.mark.parametrize('text,byte_order',
+                         [(True, '='), (False, '<'), (False, '>')])
+def test_columnar_write_read_formats(tmpdir, text, byte_order):
+    ply0 = make_list_ply([[0, 1], [], [2, 3, 4]])
+    ply0.text = text
+    ply0.byte_order = byte_order
+    columns = ply0.to_columnar()
+    filename = str(tmpdir.join('col.ply'))
+    columns.write(filename)
+    ply1 = PlyData.read(filename)
+    verify(ply0, ply1)
+
+
+def test_columnar_accepts_offsets_values_mapping():
+    columns = {'v': {'offsets': numpy.array([0, 0, 2]),
+                     'values': numpy.array([5, 6])}}
+    elt = PlyElement.from_columnar(columns, name='e')
+    assert elt.count == 2
+    assert elt['v'][0].size == 0
+    assert elt['v'][1].tolist() == [5, 6]
+    assert isinstance(elt.properties[0], PlyListProperty)
+
+
+@pytest.mark.parametrize('offsets,values', [
+    ([1, 2], [1]),
+    ([0, 3, 2], [1, 2, 3]),
+    ([0, 2], [1, 2, 3]),
+    ([0, 1], []),
+])
+def test_columnar_rejects_bad_offsets(offsets, values):
+    with Raises(PlyColumnarError):
+        PlyListColumn(offsets, numpy.array(values, dtype='i4'))
+
+
+def test_columnar_rejects_inconsistent_counts():
+    elt = PlyElement.from_columnar({'a': numpy.array([1, 2])}, name='e')
+    assert elt.count == 2
+    with Raises(PlyColumnarError):
+        PlyElement.from_columnar(
+            {'a': numpy.array([1, 2]),
+             'b': {'offsets': [0, 1], 'values': [3]}},
+            name='e', count=3)
+    with Raises(PlyColumnarError):
+        PlyElement.from_columnar(
+            {'a': numpy.array([1, 2]),
+             'b': {'offsets': [0, 1, 1, 2],
+                   'values': [3, 4]}}, name='e')
+
+
+def test_columnar_rejects_length_overflow():
+    values = numpy.empty(1, dtype=[('v', object)])
+    values['v'] = [numpy.arange(300, dtype='i4')]
+    elt = PlyElement.describe(values, 'e', len_types={'v': 'u1'},
+                              val_types={'v': 'i4'})
+    with Raises(PlyColumnarError):
+        elt.to_columnar()
+
+
+def test_columnar_never_shares_offsets():
+    array = numpy.empty(2, dtype=[('a', object), ('b', object)])
+    array['a'] = [numpy.array([1], 'i4'), numpy.array([], 'i4')]
+    array['b'] = [numpy.array([], 'i4'), numpy.array([2], 'i4')]
+    elt = PlyElement.describe(array, 'e', val_types={'a': 'i4',
+                                                     'b': 'i4'})
+    columns = elt.to_columnar()
+    assert columns['a'].offsets is not columns['b'].offsets
+    columns['a'].offsets[:] = 0
+    assert list(columns['b'].offsets) == [0, 0, 1]
+
+
+def test_columnar_element_columns_api():
+    columns = PlyElementColumns('e', count=2)
+    columns['x'] = numpy.array([1, 2], dtype='i4')
+    columns['v'] = PlyListColumn([0, 1, 1], numpy.array([3], 'i4'))
+    elt = columns.to_element()
+    assert elt.name == 'e'
+    assert elt.count == 2
+    assert columns.scalar_columns().keys() == {'x'}
+    assert columns.list_columns().keys() == {'v'}
+    assert elt['v'][0].tolist() == [3]
+
+
+def test_columnar_data_api(tmpdir):
+    ply0 = tet_ply(True, '=')
+    data = ply0.to_columnar()
+    assert isinstance(data, PlyColumnarData)
+    assert list(data.keys()) == ['vertex', 'face']
+    assert data['face'].comments == ply0['face'].comments
+    ply1 = data.to_plydata()
+    verify(ply0, ply1)
+
+    filename = str(tmpdir.join('col.ply'))
+    data.write(filename)
+    verify(ply0, PlyData.read(filename))
