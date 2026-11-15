@@ -1,0 +1,140 @@
+/*** PhF/PYLATEXENC - BEGIN CUSTOM PATCHES ***/
+
+//
+// Patch Transcrypt's implementations of some builtin object methods.
+//
+String.prototype.startswith = function (prefix, start) {
+    //console.log("Custom startswith()! prefix = ", prefix, ", start = ", start);
+    var pos_start = (typeof start === 'undefined' ? 0 : start);
+    if (prefix instanceof Array) {
+        for (var i=0;i<prefix.length;i++) {
+            if (this.substring(pos_start, pos_start+prefix[i].length) === prefix [i]) {
+                return true;
+            }
+        }
+    } else {
+        return (this.substring(pos_start, pos_start+prefix.length) === prefix);
+    }
+    return false;
+};
+String.prototype.count = function (ch) {
+    var i = 0;
+    var count = 0;
+    for(; i < this.length; ++i) {
+        if (ch == this[i]) {
+            ++count;
+        }
+    }
+    return count;
+};
+String.prototype.rjust = function(width, fill_char) {
+    if (this.length >= width) {
+        return this;
+    }
+    return fill_char.repeat(width - this.length) + this;
+};
+String.prototype.rstrip = function(chars) {
+    if (chars === undefined) {
+        return this.replace (/\s*$/g, '');
+    }
+    var s = this;
+    while (s.length && chars.indexOf(s.slice(-1)) !== -1) {
+        s = s.slice(0, -1);
+    }
+    return s;
+}
+//
+// Patch Transcrypt's __pop__() method which has a bug
+// (https://github.com/QQuick/Transcrypt/issues/827)
+//
+__pop__ = function (aKey, aDefault) {
+    var result = this [aKey];
+    if (result !== undefined) {
+        delete this [aKey];
+        return result;
+    } else {
+        if ( aDefault === undefined ) {
+            throw KeyError (aKey, new Error());
+        }
+    }
+    return aDefault;
+}
+//
+// Similar bug in __getdefault__() for dictionaries' .get() method
+//
+__getdefault__ = function (aKey, aDefault) {
+    var result = this [aKey];
+    if (result === undefined) {
+        result = this ['py_' + aKey]
+    }
+    if (result !== undefined) {
+        return result;
+    }
+    if (aDefault === undefined) {
+        return null;
+    }
+    return aDefault;
+}
+
+//
+// Check that a is not null, too, otherwise we get errors with "'__eq__' in a".
+// Also check for __eq__ in b object!
+//
+__eq__ = function (a, b) {
+    if (typeof a == 'object' && a != null && '__eq__' in a) {
+        return a.__eq__ (b);
+    } else if (typeof b == 'object' && b != null && '__eq__' in b) {
+        return b.__eq__ (a);
+    } else {
+        return a == b;
+    }
+};
+//
+// Same for __ne__, now that our getattr() patch below can hand back a null
+// default value, as in "getattr(obj, 'attr', None) != value".
+//
+__ne__ = function (a, b) {
+    if (typeof a == 'object' && a != null && '__ne__' in a) {
+        return a.__ne__ (b);
+    } else if (typeof b == 'object' && b != null && '__ne__' in b) {
+        return b.__ne__ (a);
+    } else {
+        return a != b;
+    }
+};
+
+
+
+
+
+//
+// Transcrypt's chr() and ord() are String.fromCharCode() and charCodeAt(),
+// which only cover the sixteen-bit range: a character that lies outside of
+// the basic multilingual plane comes back truncated.  The unicode math
+// alphabets that latex2text writes formulas with live exactly there.
+//
+// For a code point that does fit in sixteen bits, and for a string whose
+// first character does, the replacements below behave exactly as the
+// originals did.
+//
+chr = function (codePoint) {
+    return String.fromCodePoint (codePoint);
+};
+ord = function (aChar) {
+    return aChar.codePointAt (0);
+};
+
+//
+// Transcrypt's getattr() ignores the default value that Python's getattr()
+// accepts as its third argument, and hands back the undefined value instead.
+//
+getattr = function (obj, name, aDefault) {
+    var result = name in obj ? obj [name] : obj ['py_' + name];
+    if (result === undefined && aDefault !== undefined) {
+        return aDefault;
+    }
+    return result;
+};
+
+
+/*** PhF/PYLATEXENC - END CUSTOM PATCHES ***/

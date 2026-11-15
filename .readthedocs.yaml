@@ -1,0 +1,38 @@
+#
+# Configuration for readthedocs.org
+#
+
+# See uv builds on RTD:
+# https://docs.readthedocs.io/en/stable/build-customization.html#install-dependencies-with-uv
+
+version: 2
+
+build:
+
+  os: "ubuntu-22.04"
+
+  tools:
+    python: "3.10"
+
+  jobs:
+
+    post_create_environment:
+      # Install uv
+      # https://docs.astral.sh/uv/getting-started/installation/
+      - 'pip install uv'
+
+    post_install:
+      # Install the project along with the 'builddoc' dependency group.
+      # https://docs.astral.sh/uv/concepts/projects/dependencies/#dependency-groups
+      # VIRTUAL_ENV needs to be set manually for now.
+      # See https://github.com/readthedocs/readthedocs.org/pull/11152/
+      #
+      # '--active' makes uv sync into that virtualenv rather than create its own
+      # .venv/, and '--inexact' keeps the packages that readthedocs installed
+      # there itself (readthedocs-sphinx-ext & co.) from being pruned.
+      - 'VIRTUAL_ENV=$READTHEDOCS_VIRTUALENV_PATH uv sync --active --inexact --group builddoc'
+
+
+sphinx:
+  configuration: doc/conf.py
+  builder: 'dirhtml'
