@@ -21,6 +21,13 @@ Revision 0.7.0, released XX-XX-2026
   qualifies for a private advisory and a CVE versus what is handled
   as an ordinary public bug report
   [issue #96](https://github.com/pyasn1/pyasn1/issues/96)
+- Added ``pyasn1.codec.native.flatten`` with ``flatten()`` and ``rebuild()``
+  helpers. ``flatten()`` expands an ASN.1 value into a traceable field
+  table whose rows carry the full field path, including the CHOICE branch
+  actually taken and SEQUENCE OF/SET OF repetition indices, so fields that
+  share an outer tag under different CHOICE alternatives are never merged.
+  ``rebuild()`` reassembles the table against a schema with the known
+  field types and values unchanged while ANY content is preserved verbatim
 
 Revision 0.6.5, released 26-10-2026
 ---------------------------------------
