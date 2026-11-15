@@ -8,6 +8,7 @@ import warnings
 
 from pyasn1 import debug
 from pyasn1 import error
+from pyasn1.codec.native import PRESENCE_ATTRIBUTE
 from pyasn1.compat import _MISSING
 from pyasn1.type import base
 from pyasn1.type import char
@@ -33,12 +34,18 @@ class BitStringPayloadDecoder(AbstractScalarPayloadDecoder):
 class SequenceOrSetPayloadDecoder(object):
     def __call__(self, pyObject, asn1Spec, decodeFun=None, **options):
         asn1Value = asn1Spec.clone()
+        asn1Value.clear()
 
         componentsTypes = asn1Value.componentType
+
+        presentFields = []
 
         for field in asn1Value:
             if field in pyObject:
                 asn1Value[field] = decodeFun(pyObject[field], componentsTypes[field].asn1Object, **options)
+                presentFields.append(field)
+
+        setattr(asn1Value, PRESENCE_ATTRIBUTE, frozenset(presentFields))
 
         return asn1Value
 
@@ -46,6 +53,7 @@ class SequenceOrSetPayloadDecoder(object):
 class SequenceOfOrSetOfPayloadDecoder(object):
     def __call__(self, pyObject, asn1Spec, decodeFun=None, **options):
         asn1Value = asn1Spec.clone()
+        asn1Value.clear()
 
         for pyValue in pyObject:
             asn1Value.append(decodeFun(pyValue, asn1Value.componentType), **options)

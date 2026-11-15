@@ -17,6 +17,16 @@ Revision 0.7.0, released XX-XX-2026
   preserves component absence when inspected with ``instantiate=False``.
   Applications relying on ``encode()`` to populate defaulted components
   should explicitly instantiate or set those components before encoding.
+- Added presence tracking to the native codec. Schema-guided decoding of
+  constructed types now records which components were present in the
+  source mapping (see ``pyasn1.codec.native.PRESENCE_ATTRIBUTE``), and
+  the native encoder honours that information on export: components
+  absent from the source are omitted rather than substituted with schema
+  defaults, while explicitly submitted values equal to the default and
+  explicitly submitted empty collections are preserved. Decoding an
+  empty collection now produces a present, empty value object instead of
+  a schema object. Objects built by hand carry no presence information
+  and keep the previous behaviour of materialising defaults on export.
 - Expanded SECURITY.md with the project's vulnerability scope: what
   qualifies for a private advisory and a CVE versus what is handled
   as an ordinary public bug report

@@ -11,6 +11,7 @@ from tests.base import BaseTestCase
 
 from pyasn1.type import namedtype
 from pyasn1.type import univ
+from pyasn1.codec.native import decoder
 from pyasn1.codec.native import encoder
 from pyasn1.error import PyAsn1Error
 
@@ -106,6 +107,60 @@ class SequenceEncoderTestCase(BaseTestCase):
         assert s.getComponentByName('age', instantiate=False) is univ.noValue
         assert encoder.encode(s) == {'place-holder': None, 'age': 33}
         assert s.getComponentByName('age', instantiate=False) is univ.noValue
+
+
+class SequenceEncoderPresenceTestCase(BaseTestCase):
+    def setUp(self):
+        BaseTestCase.setUp(self)
+
+        self.s = univ.Sequence(componentType=namedtype.NamedTypes(
+            namedtype.NamedType('place-holder', univ.Null('')),
+            namedtype.OptionalNamedType('first-name', univ.OctetString('')),
+            namedtype.DefaultedNamedType('age', univ.Integer(33)),
+            namedtype.OptionalNamedType(
+                'tags', univ.SequenceOf(componentType=univ.OctetString())),
+        ))
+
+    def testAbsentComponentsOmitted(self):
+        s = decoder.decode({'place-holder': None}, asn1Spec=self.s)
+
+        assert encoder.encode(s) == {'place-holder': None}
+
+    def testExplicitDefaultExported(self):
+        s = decoder.decode({'place-holder': None, 'age': 33}, asn1Spec=self.s)
+
+        assert encoder.encode(s) == {'place-holder': None, 'age': 33}
+
+    def testExplicitEmptyCollectionExported(self):
+        s = decoder.decode({'place-holder': None, 'tags': []}, asn1Spec=self.s)
+
+        assert encoder.encode(s) == {'place-holder': None, 'tags': []}
+
+    def testPartialCorrectionKeepsPresence(self):
+        s = decoder.decode({'place-holder': None, 'age': 33}, asn1Spec=self.s)
+        s['first-name'] = 'abc'
+
+        assert encoder.encode(s) == {
+            'place-holder': None, 'first-name': b'abc', 'age': 33}
+
+    def testUntouchedComponentsKeepAbsence(self):
+        s = decoder.decode({'place-holder': None}, asn1Spec=self.s)
+        s['age'] = 34
+
+        assert encoder.encode(s) == {'place-holder': None, 'age': 34}
+
+    def testCorrectionToDefaultValueExported(self):
+        s = decoder.decode({'place-holder': None}, asn1Spec=self.s)
+        s['age'] = 33
+
+        assert encoder.encode(s) == {'place-holder': None, 'age': 33}
+
+    def testPresenceSurvivesRoundTrip(self):
+        s = decoder.decode(
+            {'place-holder': None, 'age': 33, 'tags': []}, asn1Spec=self.s)
+        s = decoder.decode(encoder.encode(s), asn1Spec=self.s)
+
+        assert encoder.encode(s) == {'place-holder': None, 'age': 33, 'tags': []}
 
 
 class ChoiceEncoderTestCase(BaseTestCase):

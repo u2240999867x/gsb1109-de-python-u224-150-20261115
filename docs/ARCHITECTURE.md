@@ -1133,7 +1133,10 @@ native encoder renders them, the BER family omits them. `SetEncoder.encode` in
 defaulted component, while `SequenceEncoder.encodeValue` in `ber/encoder.py`
 skips any component equal to its default. Both are correct, since DER must
 not transmit a value equal to its default while a Python dict is more useful
-with the effective value filled in.
+with the effective value filled in. The exception is presence-tracked
+objects, described in [The native codec](#the-native-codec): for those,
+`SetEncoder.encode` omits absent components instead of substituting
+defaults.
 
 Reverting any encoder loop to `value.values()` / `.items()` reintroduces the
 mutation and fails the snapshot assertions in
@@ -1181,6 +1184,29 @@ registered in `native.encoder.TYPE_MAP`. A subclass "fixed" via
 `Encoder.SINGLE_ITEM_ENCODER` while the assignment stands produces no
 observable effect: the debugging that follows is time spent on a path the
 module-level `encode` never takes.
+
+Schema-guided decoding records component presence so that a decode →
+partial-correction → export round trip does not invent or lose fields.
+`SequenceOrSetPayloadDecoder` in `native/decoder.py` attaches a frozenset
+of the source mapping's present field names to the decoded object (the
+attribute name lives in `pyasn1.codec.native.PRESENCE_ATTRIBUTE`), and
+`SetEncoder.encode` in `native/encoder.py` treats any object carrying
+that attribute as presence-tracked: a component read back as `noValue`
+is omitted from the produced mapping rather than substituted with the
+schema default, while stored components are always emitted — including
+values equal to the DEFAULT and empty collections, both of which the
+BER family would drop. Presence is decided by the `is univ.noValue`
+test alone, never by comparing values. Fields a correction sets become
+stored components and export normally; fields it does not touch keep
+the presence the source had. Objects built by hand carry no attribute
+and get the legacy default-materialising behaviour, so the choice is
+per-object and `clone()` of a decoded object silently drops the
+tracking. The same decoder `clear()`s freshly cloned SEQUENCE OF/SET OF
+(and SEQUENCE/SET) values before populating them, so an explicitly
+submitted empty collection decodes into a present, empty value object
+(`isValue` true) instead of a schema object that reads back as
+`noValue` through `getComponentByPosition(idx, instantiate=False)` —
+matching what the BER decoder produces for `30 00`.
 
 ## The decoder pipeline
 

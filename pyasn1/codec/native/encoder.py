@@ -9,6 +9,7 @@ import warnings
 
 from pyasn1 import debug
 from pyasn1 import error
+from pyasn1.codec.native import PRESENCE_ATTRIBUTE
 from pyasn1.compat import _MISSING
 from pyasn1.type import base
 from pyasn1.type import char
@@ -83,6 +84,8 @@ class SetEncoder(AbstractItemEncoder):
         namedTypes = value.componentType
         substrate = self.protoDict()
 
+        presentFields = getattr(value, PRESENCE_ATTRIBUTE, None)
+
         for idx in range(value._componentTypeLen or len(value._dynamicNames)):
             if namedTypes:
                 namedType = namedTypes[idx]
@@ -90,6 +93,8 @@ class SetEncoder(AbstractItemEncoder):
                 subValue = value.getComponentByPosition(idx, instantiate=False)
 
                 if subValue is univ.noValue:
+                    if presentFields is not None:
+                        continue
                     if namedType.isDefaulted:
                         subValue = namedType.asn1Object
                     elif namedType.isOptional:
