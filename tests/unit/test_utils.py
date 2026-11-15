@@ -219,3 +219,234 @@ def test_file_object_does_not_support_binary_real_file(tmpdir):
     testout = tmpdir.join('foo')
     with open(str(testout), 'w') as outfp:
         assert(not pycdlib.utils.file_object_supports_binary(outfp))
+
+
+def test_mangle_file_for_joliet_short_name_unchanged():
+    assert(pycdlib.utils.mangle_file_for_joliet('foo.txt') == 'foo.txt')
+
+
+def test_mangle_file_for_joliet_truncates_to_64():
+    name = 'a' * 70
+    result = pycdlib.utils.mangle_file_for_joliet(name)
+    assert(result == 'a' * 64)
+
+
+def test_mangle_dir_for_joliet_truncates_to_64():
+    name = 'd' * 65
+    result = pycdlib.utils.mangle_dir_for_joliet(name)
+    assert(result == 'd' * 64)
+
+
+def test_mangle_for_joliet_keeps_unicode():
+    name = 'café'
+    assert(pycdlib.utils.mangle_file_for_joliet(name) == name)
+
+
+def test_name_mapper_emits_both_names():
+    mapper = pycdlib.utils.NameMapper(3)
+    record = mapper.map_name('report.txt', False)
+    assert(record['joliet_name'] == 'report.txt')
+    assert(record['iso_name'] == 'REPORT.TXT;1')
+    assert(record['iso_basename'] == 'REPORT')
+    assert(record['iso_ext'] == 'TXT;1')
+    assert(not record['iso_aliased'])
+    assert(not record['joliet_aliased'])
+    assert(record['iso_conflicts'] == [])
+    assert(record['joliet_conflicts'] == [])
+
+
+def test_name_mapper_directory_has_no_version():
+    mapper = pycdlib.utils.NameMapper(3)
+    record = mapper.map_name('mydir', True)
+    assert(record['joliet_name'] == 'mydir')
+    assert(record['iso_name'] == 'MYDIR')
+    assert(record['iso_ext'] == '')
+
+
+def test_name_mapper_case_merge_iso_uses_alias():
+    mapper = pycdlib.utils.NameMapper(3)
+    first = mapper.map_name('foo', False)
+    second = mapper.map_name('FOO', False)
+    assert(first['iso_name'] == 'FOO.;1')
+    assert(second['iso_name'] == 'FOO_0.;1')
+    assert(second['iso_aliased'])
+    assert(second['iso_conflicts'] == ['foo'])
+
+
+def test_name_mapper_repeat_is_stable_and_idempotent():
+    mapper = pycdlib.utils.NameMapper(3)
+    first = mapper.map_name('stable.txt', False)
+    second = mapper.map_name('stable.txt', False)
+    assert(first is second)
+    assert(first['iso_name'] == second['iso_name'])
+    # A repeat must not consume an additional slot.
+    assert(len(mapper._iso_occupied) == 1)
+    assert(len(mapper._joliet_occupied) == 1)
+
+
+def test_name_mapper_appending_batch_keeps_old_mapping():
+    mapper = pycdlib.utils.NameMapper(3)
+    original = dict(mapper.map_name('keepme.txt', False))
+    for index in range(100):
+        mapper.map_name('keepme%d.txt' % (index,), False)
+    assert(dict(mapper.map_name('keepme.txt', False)) == original)
+
+
+def test_name_mapper_truncated_long_names_get_distinct_aliases():
+    mapper = pycdlib.utils.NameMapper(3)
+    first = mapper.map_name('a' * 40, True)
+    second = mapper.map_name('a' * 40 + 'b', True)
+    assert(first['iso_name'] == 'A' * 31)
+    assert(second['iso_name'] == 'A' * 29 + '_0')
+    assert(second['iso_conflicts'] == ['a' * 40])
+    assert(first['iso_name'] != second['iso_name'])
+
+
+def test_name_mapper_file_and_directory_cannot_share_slot_file_first():
+    mapper = pycdlib.utils.NameMapper(3)
+    file_rec = mapper.map_name('thing', False)
+    dir_rec = mapper.map_name('thing', True)
+    assert(file_rec['iso_name'] == 'THING.;1')
+    assert(dir_rec['iso_name'] == 'THING_0')
+    assert(file_rec['joliet_name'] == 'thing')
+    assert(dir_rec['joliet_name'] == 'thing_0')
+    assert(dir_rec['iso_conflicts'] == ['thing'])
+
+
+def test_name_mapper_file_and_directory_cannot_share_slot_dir_first():
+    mapper = pycdlib.utils.NameMapper(3)
+    dir_rec = mapper.map_name('thing', True)
+    file_rec = mapper.map_name('thing', False)
+    assert(dir_rec['iso_name'] == 'THING')
+    assert(file_rec['iso_name'] == 'THING_0.;1')
+    assert(dir_rec['joliet_name'] == 'thing')
+    assert(file_rec['joliet_name'] == 'thing_0')
+
+
+def test_name_mapper_level_one_preserves_extension_on_alias():
+    mapper = pycdlib.utils.NameMapper(1)
+    first = mapper.map_name('test.log', False)
+    second = mapper.map_name('TEST.LOG', False)
+    assert(first['iso_name'] == 'TEST.LOG;1')
+    assert(second['iso_name'] == 'TEST_0.LOG;1')
+    assert(second['iso_basename'] == 'TEST_0')
+    assert(second['iso_ext'] == 'LOG;1')
+    assert(len(second['iso_basename']) <= 8)
+
+
+def test_name_mapper_joliet_alias_stays_within_64_chars():
+    mapper = pycdlib.utils.NameMapper(3)
+    long_name = 'L' * 64
+    for index in range(1200):
+        record = mapper.map_name(long_name + str(index), index % 3 == 0)
+        assert(len(record['joliet_name']) <= 64)
+
+
+def test_name_mapper_iso_aliases_stay_within_level_limits():
+    for level, base_limit, dir_limit in ((1, 8, 8), (3, 30, 31)):
+        mapper = pycdlib.utils.NameMapper(level)
+        for index in range(500):
+            record = mapper.map_name('L' * 64 + str(index), index % 2 == 0)
+            if record['is_dir']:
+                assert(len(record['iso_basename']) <= dir_limit)
+            else:
+                assert(len(record['iso_basename']) <= base_limit)
+
+
+def test_name_mapper_all_iso_and_joliet_names_unique():
+    mapper = pycdlib.utils.NameMapper(3)
+    for index in range(300):
+        mapper.map_name('sameprefix%d' % (index,), index % 2 == 0)
+    iso_keys = list(mapper._iso_occupied.keys())
+    joliet_keys = list(mapper._joliet_occupied.keys())
+    assert(len(iso_keys) == len(set(iso_keys)))
+    assert(len(joliet_keys) == len(set(joliet_keys)))
+
+
+def test_name_mapper_unicode_truncation_collision():
+    mapper = pycdlib.utils.NameMapper(3)
+    name = '日本語' + 'x' * 70
+    first = mapper.map_name(name, False)
+    second = mapper.map_name(name + 'y', False)
+    assert(len(first['joliet_name']) == 64)
+    assert(len(second['joliet_name']) <= 64)
+    assert(first['joliet_name'] != second['joliet_name'])
+    assert(second['joliet_aliased'])
+    assert(second['joliet_conflicts'] == [name])
+
+
+def test_name_mapper_seed_blocks_existing_disc_names():
+    mapper = pycdlib.utils.NameMapper(3)
+    mapper.seed(iso_identifier='FOO.;1', joliet_identifier='foo')
+    record = mapper.map_name('foo', False)
+    assert(record['iso_name'] == 'FOO_0.;1')
+    assert(record['joliet_name'] == 'foo_0')
+    assert(record['iso_conflicts'] == ['<already on disc>'])
+    assert(record['joliet_conflicts'] == ['<already on disc>'])
+
+
+def test_name_mapper_lookup_accessors_are_type_aware():
+    mapper = pycdlib.utils.NameMapper(3)
+    mapper.map_name('dual', False)
+    mapper.map_name('dual', True)
+    assert(mapper.iso_name_for('dual', False) == 'DUAL.;1')
+    assert(mapper.iso_name_for('dual', True) == 'DUAL_0')
+    assert(mapper.joliet_name_for('dual', False) == 'dual')
+    assert(mapper.joliet_name_for('dual', True) == 'dual_0')
+    assert(mapper.lookup('dual', False)['is_dir'] is False)
+    assert(mapper.lookup('dual', True)['is_dir'] is True)
+    assert(mapper.lookup('missing', False) is None)
+
+
+def test_name_mapper_level_four_does_not_truncate_iso():
+    mapper = pycdlib.utils.NameMapper(4)
+    name = 'a' * 100
+    record = mapper.map_name(name, False)
+    assert(record['iso_name'] == name)
+    # Joliet still enforces its own 64-character limit.
+    assert(len(record['joliet_name']) == 64)
+
+
+def test_name_mapper_level_four_iso_names_stay_distinct():
+    # At level 4 the ISO mangler does not change case, so names that differ
+    # only by case keep distinct, untruncated ISO identifiers.
+    mapper = pycdlib.utils.NameMapper(4)
+    lower = mapper.map_name('long' * 30, False)
+    upper = mapper.map_name('LONG' * 30, False)
+    assert(lower['iso_name'] != upper['iso_name'])
+    assert(not lower['iso_aliased'])
+    assert(not upper['iso_aliased'])
+
+
+def test_name_mapper_level_four_joliet_truncation_still_aliases():
+    # ISO level 4 does not relax the separate Joliet 64-character limit.
+    mapper = pycdlib.utils.NameMapper(4)
+    first = mapper.map_name('j' * 70, False)
+    second = mapper.map_name('j' * 70 + 'k', False)
+    assert(len(first['iso_name']) > 64)
+    assert(len(second['joliet_name']) <= 64)
+    assert(first['joliet_name'] != second['joliet_name'])
+    assert(second['joliet_aliased'])
+
+
+def test_iso_collision_key_normalizes_file_and_dir():
+    assert(pycdlib.utils._iso_collision_key('FOO.;1') == 'FOO')
+    assert(pycdlib.utils._iso_collision_key('FOO.TXT;1') == 'FOO.TXT')
+    assert(pycdlib.utils._iso_collision_key('FOO') == 'FOO')
+
+
+def test_name_mapper_records_preserve_order_and_correspondence():
+    mapper = pycdlib.utils.NameMapper(3)
+    mapper.map_name('first.txt', False)
+    mapper.map_name('FIRST.TXT', False)
+    mapper.map_name('adir', True)
+    records = mapper.records()
+    assert([record['original'] for record in records] ==
+           ['first.txt', 'FIRST.TXT', 'adir'])
+    # The alias record keeps the original name alongside its ISO identifier.
+    assert(records[1]['original'] == 'FIRST.TXT')
+    assert(records[1]['iso_name'] == 'FIRST_0.TXT;1')
+    assert(records[1]['iso_conflicts'] == ['first.txt'])
+    # The returned list is a copy and cannot mutate the mapper.
+    records.clear()
+    assert(len(mapper.records()) == 3)

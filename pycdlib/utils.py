@@ -439,6 +439,463 @@ def mangle_dir_for_iso9660(orig, iso_level):
     return truncate_basename(orig, iso_level, True)
 
 
+# Joliet (the Microsoft SVD extension) stores identifiers as UCS-2 and limits a
+# single file or directory identifier to 64 Unicode characters (128 UTF-16-BE
+# bytes).
+JOLIET_MAX_NAME_CHARS = 64
+
+# The numeric suffix used to disambiguate a name once the preferred (possibly
+# truncated) identifier is already taken.  It is deliberately ASCII digits, so it
+# survives the ISO9660 uppercase/d-character translation and never collides with
+# a hand-authored name that uses an underscore in the same position.
+_NAME_CONFLICT_TEMPLATE = '_%d'
+
+
+def _iso_collision_key(identifier):
+    # type: (str) -> str
+    """
+    Reduce an ISO9660 identifier to the key used for collision detection.
+
+    Files carry a ``;1`` version and, when there is no extension, a trailing dot,
+    while directories carry neither.  Stripping both lets a file and a directory
+    that would otherwise render with the same visible name share one occupied
+    slot, so the two can never be assigned the same position.
+
+    Args:
+        identifier: The on-disk ISO9660 identifier.
+    Returns:
+        A normalized key suitable for comparing files and directories.
+    """
+    key = identifier
+    if key.endswith(';1'):
+        key = key[:-2]
+    if key.endswith('.'):
+        key = key[:-1]
+    return key
+
+
+def _iso_file_identifier(basename, ext):
+    # type: (str, str) -> str
+    """
+    Join an ISO9660 mangled basename and extension (including the ``;1``
+    version) into the exact identifier used on an ISO9660 directory record.
+
+    Args:
+        basename: The ISO9660-compliant basename.
+        ext: The ISO9660-compliant extension, or the empty string.
+    Returns:
+        The fully-qualified ISO9660 file identifier.
+    """
+    if ext == '':
+        return basename
+    return '.'.join([basename, ext])
+
+
+def mangle_file_for_joliet(orig, max_chars=JOLIET_MAX_NAME_CHARS):
+    # type: (str, int) -> str
+    """
+    A function to take a regular Unix-style filename and produce a
+    Joliet-valid basename (Joliet does not split a name into a basename and an
+    extension the way ISO9660 does).
+
+    Args:
+        orig: The original filename.
+        max_chars: The maximum number of Unicode characters allowed.
+    Returns:
+        A Joliet-compliant filename no longer than ``max_chars`` characters.
+    """
+    return orig[:max_chars]
+
+
+def mangle_dir_for_joliet(orig, max_chars=JOLIET_MAX_NAME_CHARS):
+    # type: (str, int) -> str
+    """
+    A function to take a regular Unix-style directory name and produce a
+    Joliet-valid directory name.
+
+    Args:
+        orig: The original directory name.
+        max_chars: The maximum number of Unicode characters allowed.
+    Returns:
+        A Joliet-compliant directory name no longer than ``max_chars``
+        characters.
+    """
+    return orig[:max_chars]
+
+
+class NameMapper:
+    """
+    A stable, collision-free mapper from long (Unicode) names to the paired
+    identifiers required on a hybrid disc: a Joliet name and a restricted
+    ISO9660 name.
+
+    The mapper is meant to live for the duration of building one directory
+    level.  Every original name is remembered forever, so:
+
+      * the same original name always maps to the same Joliet and ISO9660
+        identifiers, even if it is requested more than once;
+      * adding a new batch of files never renames an entry that was mapped
+        earlier, because previously assigned identifiers are never reused or
+        reassigned;
+      * names that only differ by case (``Foo`` versus ``foo``) or that truncate
+        to the same restricted spelling are given distinct, recognizable
+        numeric aliases;
+      * files and directories draw from the same occupied-name pool, so a file
+        and a directory can never occupy the same slot;
+      * the Joliet and ISO9660 namespaces are tracked independently, since they
+        are separate directory hierarchies on the disc.
+    """
+
+    # Owner recorded for identifiers pre-seeded with :meth:`seed` (for
+    # instance, names that already exist on an ISO being amended).  A NUL byte
+    # can never appear in a filesystem path component, so this can never match
+    # a real ``(original, is_dir)`` owner token.
+    _SEEDED_OWNER = ('\x00seeded', False)
+
+    __slots__ = ('iso_level', 'joliet_max_chars', '_iso_occupied',
+                 '_joliet_occupied', '_iso_by_orig', '_joliet_by_orig',
+                 '_records')
+
+    def __init__(self, iso_level, joliet_max_chars=JOLIET_MAX_NAME_CHARS):
+        # type: (int, int) -> None
+        self.iso_level = iso_level
+        self.joliet_max_chars = joliet_max_chars
+        # ISO9660 collisions are keyed through _iso_collision_key so that a
+        # file and a directory with the same visible spelling share one slot.
+        self._iso_occupied = {}  # type: dict
+        self._joliet_occupied = {}  # type: dict
+        self._iso_by_orig = {}  # type: dict
+        self._joliet_by_orig = {}  # type: dict
+        self._records = {}  # type: dict
+
+    @staticmethod
+    def _next_alias(base, max_len, occupied, owner, key_func):
+        # type: (str, int, dict, tuple, Any) -> str
+        """
+        Build a unique numeric alias from ``base``.
+
+        The alias has the form ``<trimmed-base>_<counter>``; the base is
+        trimmed so that the alias never exceeds ``max_len``, and the counter
+        advances until ``key_func`` reports a free slot in ``occupied``.  The
+        trim is recomputed for each counter so that widening the counter's
+        digit count (9 -> 10 -> 100) never pushes the alias past the limit.
+
+        Args:
+            base: The preferred (already mangled) name.
+            max_len: The hard length limit for the resulting alias.
+            occupied: Mapping of occupied key to the owner token that owns it.
+            owner: The ``(original, is_dir)`` token the alias is generated for.
+            key_func: Callable turning a candidate alias into the key used for
+                collision detection.
+        Returns:
+            A unique alias.
+        """
+        counter = 0
+        while True:
+            suffix = _NAME_CONFLICT_TEMPLATE % (counter,)
+            room = max_len - len(suffix)
+            if room < 1:
+                room = 1
+            alias = '%s%s' % (base[:room], suffix)
+            current_owner = occupied.get(key_func(alias))
+            if current_owner is None or current_owner == owner:
+                return alias
+            counter += 1
+
+    def _reserve_iso_dir(self, preferred, owner):
+        # type: (str, tuple) -> str
+        """
+        Reserve a unique ISO9660 directory identifier.
+
+        Args:
+            preferred: The mangled, preferred directory identifier.
+            owner: The ``(original, is_dir)`` token reserving the identifier.
+        Returns:
+            The reserved, unique ISO9660 directory identifier.
+        """
+        key = _iso_collision_key(preferred)
+        current_owner = self._iso_occupied.get(key)
+        if current_owner is None or current_owner == owner:
+            self._iso_occupied[key] = owner
+            return preferred
+
+        if self.iso_level == 4:
+            max_len = len(preferred) + len(_NAME_CONFLICT_TEMPLATE % (0,)) + 1
+        else:
+            max_len = 8 if self.iso_level == 1 else 31
+        alias = self._next_alias(preferred, max_len, self._iso_occupied,
+                                 owner, _iso_collision_key)
+        self._iso_occupied[_iso_collision_key(alias)] = owner
+        return alias
+
+    def _reserve_iso_file(self, basename, ext, owner):
+        # type: (str, str, tuple) -> Tuple[str, str, bool]
+        """
+        Reserve a unique ISO9660 file identifier, keeping the basename and
+        extension structure intact.
+
+        Args:
+            basename: The mangled, preferred basename.
+            ext: The mangled extension (including the ``;1`` version), or the
+                empty string.
+            owner: The ``(original, is_dir)`` token reserving the identifier.
+        Returns:
+            A tuple of the reserved basename, the reserved extension, and
+            whether a numeric alias had to be generated.
+        """
+        preferred = _iso_file_identifier(basename, ext)
+        key = _iso_collision_key(preferred)
+        current_owner = self._iso_occupied.get(key)
+        if current_owner is None or current_owner == owner:
+            self._iso_occupied[key] = owner
+            return basename, ext, False
+
+        suffix = _NAME_CONFLICT_TEMPLATE % (0,)
+        if self.iso_level == 4:
+            # Level 4 imposes no length limit, so the full basename is kept.
+            max_base_len = len(basename) + len(suffix) + 1
+        elif self.iso_level == 1:
+            # Level 1 caps the basename itself at 8 characters (the extension
+            # is independently capped at 3 by the initial mangling).
+            max_base_len = 8
+        else:
+            # Levels 2 and 3 cap the basename at 30 characters, matching
+            # truncate_basename(); the dot/extension/version tail is separate.
+            max_base_len = 30
+
+        def file_alias_key(alias_basename):
+            # type: (str) -> str
+            return _iso_collision_key(
+                _iso_file_identifier(alias_basename, ext))
+
+        aliased_base = self._next_alias(basename, max_base_len,
+                                        self._iso_occupied, owner,
+                                        file_alias_key)
+        self._iso_occupied[file_alias_key(aliased_base)] = owner
+        return aliased_base, ext, True
+
+    def _reserve_joliet(self, preferred, owner):
+        # type: (str, tuple) -> Tuple[str, bool]
+        """
+        Reserve a unique Joliet identifier, trimming the preferred name first
+        so a numeric suffix always fits within the 64-character limit.
+
+        Args:
+            preferred: The (possibly truncated) preferred Joliet identifier.
+            owner: The ``(original, is_dir)`` token reserving the identifier.
+        Returns:
+            A tuple of the reserved Joliet identifier and whether a numeric
+            alias had to be generated.
+        """
+        current_owner = self._joliet_occupied.get(preferred)
+        if current_owner is None or current_owner == owner:
+            self._joliet_occupied[preferred] = owner
+            return preferred, False
+
+        alias = self._next_alias(preferred, self.joliet_max_chars,
+                                 self._joliet_occupied, owner,
+                                 lambda candidate: candidate)
+        self._joliet_occupied[alias] = owner
+        return alias, True
+
+    def seed(self, iso_identifier=None, joliet_identifier=None):
+        # type: (Optional[str], Optional[str]) -> None
+        """
+        Mark identifiers as already occupied without mapping a new name.
+
+        This is used when amending an existing disc: names already present on
+        it must be treated as taken so that newly added files receive aliases
+        rather than colliding with them.
+
+        Args:
+            iso_identifier: An existing ISO9660 identifier (files may include
+                the ``;1`` version), or None.
+            joliet_identifier: An existing Joliet identifier, or None.
+        Returns:
+            Nothing.
+        """
+        if iso_identifier is not None:
+            self._iso_occupied.setdefault(
+                _iso_collision_key(iso_identifier), self._SEEDED_OWNER)
+        if joliet_identifier is not None:
+            self._joliet_occupied.setdefault(joliet_identifier,
+                                             self._SEEDED_OWNER)
+
+    def map_name(self, original, is_dir):
+        # type: (str, bool) -> dict
+        """
+        Map one long Unicode name to its stable Joliet and ISO9660
+        identifiers.
+
+        Args:
+            original: The original file or directory name (a single path
+                component, with no slashes).
+            is_dir: Whether the name refers to a directory.  Files and
+                directories share an occupied-name pool, so a name taken by a
+                directory forces a later file with the same spelling into an
+                alias (and vice versa).
+        Returns:
+            A record dictionary with these keys:
+
+            * ``original``: the name passed in;
+            * ``is_dir``: whether it is a directory;
+            * ``joliet_name``: the reserved Joliet identifier;
+            * ``iso_name``: the reserved ISO9660 identifier (including the
+              ``;1`` version for files);
+            * ``iso_basename`` and ``iso_ext``: the ISO9660 basename and
+              extension components (the extension includes ``;1`` for files);
+            * ``iso_aliased`` and ``joliet_aliased``: True when the preferred
+              identifier was already taken and a numeric alias was generated;
+            * ``iso_conflicts`` and ``joliet_conflicts``: the original names
+              that already held the preferred identifier, preserving the
+              original-name-to-alias correspondence.
+        """
+        # Records are keyed by (original, is_dir) so that the same spelling can
+        # be mapped once as a file and once as a directory, each getting its own
+        # distinct slot in the shared occupied-name pool.  The same tuple is used
+        # as the ownership token stored in each occupied-name map.
+        cache_key = (original, bool(is_dir))
+        existing = self._records.get(cache_key)
+        if existing is not None:
+            return existing
+
+        if is_dir:
+            iso_preferred = mangle_dir_for_iso9660(original, self.iso_level)
+            joliet_preferred = mangle_dir_for_joliet(original,
+                                                     self.joliet_max_chars)
+            iso_key = _iso_collision_key(iso_preferred)
+            iso_owner = self._iso_occupied.get(iso_key)
+            joliet_owner = self._joliet_occupied.get(joliet_preferred)
+            iso_conflicts = self._owner_conflict(iso_owner, cache_key)
+            joliet_conflicts = self._owner_conflict(joliet_owner, cache_key)
+
+            iso_basename = self._reserve_iso_dir(iso_preferred, cache_key)
+            iso_ext = ''
+            iso_name = iso_basename
+            iso_aliased = iso_name != iso_preferred
+            joliet_name, joliet_aliased = self._reserve_joliet(joliet_preferred,
+                                                               cache_key)
+        else:
+            mangled_base, mangled_ext = mangle_file_for_iso9660(original,
+                                                                self.iso_level)
+            iso_preferred = _iso_file_identifier(mangled_base, mangled_ext)
+            joliet_preferred = mangle_file_for_joliet(original,
+                                                      self.joliet_max_chars)
+            iso_owner = self._iso_occupied.get(
+                _iso_collision_key(iso_preferred))
+            joliet_owner = self._joliet_occupied.get(joliet_preferred)
+            iso_conflicts = self._owner_conflict(iso_owner, cache_key)
+            joliet_conflicts = self._owner_conflict(joliet_owner, cache_key)
+
+            iso_basename, iso_ext, iso_aliased = self._reserve_iso_file(
+                mangled_base, mangled_ext, cache_key)
+            iso_name = _iso_file_identifier(iso_basename, iso_ext)
+            joliet_name, joliet_aliased = self._reserve_joliet(joliet_preferred,
+                                                               cache_key)
+
+        self._iso_by_orig[cache_key] = iso_name
+        self._joliet_by_orig[cache_key] = joliet_name
+
+        record = {
+            'original': original,
+            'is_dir': bool(is_dir),
+            'joliet_name': joliet_name,
+            'iso_name': iso_name,
+            'iso_basename': iso_basename,
+            'iso_ext': iso_ext,
+            'iso_aliased': iso_aliased,
+            'joliet_aliased': joliet_aliased,
+            'iso_conflicts': iso_conflicts,
+            'joliet_conflicts': joliet_conflicts,
+        }
+        self._records[cache_key] = record
+        return record
+
+    @staticmethod
+    def _owner_conflict(owner, cache_key):
+        # type: (Any, tuple) -> List[str]
+        """
+        Translate the current owner of a preferred identifier into the
+        conflict list recorded on the mapping result.
+
+        Args:
+            owner: The token that currently owns the identifier, or None when
+                the slot is free.  Real owners are ``(original, is_dir)``
+                tuples; the seeded-owner sentinel marks names pre-existing on
+                a disc and is reported as an explicit marker rather than
+                leaked verbatim.
+            cache_key: The ``(original, is_dir)`` token attempting to take the
+                identifier.
+        Returns:
+            A list containing the conflicting owner's original name (an empty
+            list when there is no conflict, including an idempotent repeat).
+        """
+        if owner is None or owner == cache_key:
+            return []
+        if owner == NameMapper._SEEDED_OWNER:
+            return ['<already on disc>']
+        # A real owner is a (original, is_dir) tuple; surface just the name.
+        return [owner[0]]
+
+    def lookup(self, original, is_dir=False):
+        # type: (str, bool) -> Optional[dict]
+        """
+        Return the record previously produced for ``original``, if any.
+
+        Args:
+            original: The original name to look up.
+            is_dir: Whether to look up the directory mapping (True) or the
+                file mapping (False, the default).  The same spelling may have
+                one record of each type.
+        Returns:
+            The record dictionary, or None if the name was never mapped.
+        """
+        return self._records.get((original, bool(is_dir)))
+
+    def iso_name_for(self, original, is_dir=False):
+        # type: (str, bool) -> Optional[str]
+        """
+        Return the reserved ISO9660 identifier for an original name.
+
+        Args:
+            original: The original name to look up.
+            is_dir: Whether to look up the directory mapping (True) or the
+                file mapping (False, the default).
+        Returns:
+            The ISO9660 identifier, or None if the name was never mapped.
+        """
+        return self._iso_by_orig.get((original, bool(is_dir)))
+
+    def joliet_name_for(self, original, is_dir=False):
+        # type: (str, bool) -> Optional[str]
+        """
+        Return the reserved Joliet identifier for an original name.
+
+        Args:
+            original: The original name to look up.
+            is_dir: Whether to look up the directory mapping (True) or the
+                file mapping (False, the default).
+        Returns:
+            The Joliet identifier, or None if the name was never mapped.
+        """
+        return self._joliet_by_orig.get((original, bool(is_dir)))
+
+    def records(self):
+        # type: () -> List[dict]
+        """
+        Return every mapping record produced so far, in insertion order.
+
+        This is the complete original-name-to-alias correspondence table: each
+        record retains the original name alongside the Joliet and ISO9660
+        identifiers (and any conflict owners), which is useful for emitting a
+        translation table alongside the disc image.
+
+        Returns:
+            A list of the record dictionaries returned by :meth:`map_name`.
+        """
+        return list(self._records.values())
+
+
 class Win32RawDevice:
     """
     Class to read and seek a Windows Raw Device IO object without bother.
