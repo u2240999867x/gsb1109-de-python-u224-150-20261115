@@ -29,7 +29,21 @@ python-evtx operates on event log files from Windows operating systems newer tha
 
 Examples
 --------
-Provided with the parsing module `Evtx` are four scripts that mimic the tools distributed with Parse-Evtx.  `evtx_info.py` prints metadata about the event log and verifies the checksums of each chunk.  `evtx_templates.py` builds and prints the templates used throughout the event log. `evtx_dump.py` parses the event log and transforms the binary XML into a human readable ASCII XML format. Finally, `evtx_dump_json.py` parses event logs, similar to `evtx_dump.py` and transforms the binary XML into JSON with the added capability to output the JSON array to a file. 
+Provided with the parsing module `Evtx` are four scripts that mimic the tools distributed with Parse-Evtx.  `evtx_info.py` prints metadata about the event log and verifies the checksums of each chunk.  `evtx_templates.py` builds and prints the templates used throughout the event log. `evtx_dump.py` parses the event log and transforms the binary XML into a human readable ASCII XML format. Finally, `evtx_dump_json.py` parses event logs, similar to `evtx_dump.py` and transforms the binary XML into JSON with the added capability to output the JSON array to a file.
+
+Truncated files
+---------------
+A file that was copied while it was still being written keeps headers that describe more data than it holds. `evtx_recover_truncated.py` walks the bytes that are actually present instead of trusting those counts, and reports the records it verified, the end of the last complete record, and the byte ranges nobody accounted for:
+
+    evtx_recover_truncated truncated.evtx                  # coverage report
+    evtx_recover_truncated truncated.evtx -f manifest      # one row per verified record
+    evtx_recover_truncated truncated.evtx -f xml -o out.xml
+
+A record cut by the truncation is never padded or extrapolated: it is reported as incomplete and contributes no record and no size. A record whose BinXML cannot be decoded is still listed in the manifest but is left out of the XML and JSON exports, so exported files contain only events that were really read.
+
+Note that a header declaring a record count is only evidence. A dirty header may declare fewer records than are present, and a stale one may declare none at all, so the records found in the bytes are reported alongside the declarations rather than replaced by them.
+
+Event records in an EVTX file are not numbered contiguously within a chunk. Each chunk holds the records that were written to it, so a chunk can declare a record span far larger than the number of records it physically contains, and the record numbers from different chunks interleave in the file. Any count derived from the bytes must come from record framing, never from the difference between two record numbers. 
 
 Note the length of the `evtx_dump.py` script: its only 20 lines.  Now, review the contents and notice the complete implementation of the logic:
 
