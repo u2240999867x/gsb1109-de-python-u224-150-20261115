@@ -1,6 +1,13 @@
 Revision 0.7.0, released XX-XX-2026
 ---------------------------------------
 
+- Added ``pyasn1.codec.ber.records.RecordDecoder`` for incremental
+  framing of a BER record stream. Records are delivered only once their
+  complete encoding has arrived, including every nested indefinite-length
+  end-of-contents octet, and carry their absolute byte range. The consumer
+  can acknowledge a delivered record boundary so that a reconnect resumes
+  there; retransmitted bytes are verified and skipped instead of producing
+  duplicate records.
 - Fixed OverflowError from BER/CER/DER length values that fit in the
   supported 8-octet length field but exceed the platform maximum readable
   size. Such oversized definite lengths are now rejected with PyAsn1Error.

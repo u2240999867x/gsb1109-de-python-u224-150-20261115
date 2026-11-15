@@ -275,6 +275,7 @@ tests/
     ├── test_streaming.py          stream wrappers
     ├── test_encoder_no_mutation.py  cross-codec regression
     ├── ber/  cer/  der/  native/  test_encoder.py + test_decoder.py each
+    │                              (ber/ also has test_records.py)
 ```
 
 Every directory carries both `__init__.py` and `__main__.py`. Cross-codec

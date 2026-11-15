@@ -83,6 +83,7 @@ The package is thirty-two modules; four carry most of the weight:
 | `type/opentype.py` | `OpenType`, the ANY-defined-by mapping |
 | `type/error.py` | A *second* `ValueConstraintError`, the one actually raised |
 | `codec/streaming.py` | `asSeekableStream`, `CachingStreamWrapper`, `readFromStream`: the resumable-stream engine |
+| `codec/ber/records.py` | `RecordDecoder`, `Record`: acknowledgement-aware framing of a continuous BER record stream |
 | `codec/ber/decoder.py` | The base decoder: payload decoders, the state machine, every security limit |
 | `codec/ber/encoder.py` | The base encoder |
 | `codec/ber/eoo.py` | The end-of-octets singleton |
@@ -1570,6 +1571,51 @@ for long strings. DER's remaining decoder overrides are inventoried under
 [What each dialect changes](#what-each-dialect-changes), and this attribute
 is the one DER restriction that applies on every decode path
 ([Registration and import order](#registration-and-import-order)).
+
+### Record framing across reconnects
+
+`StreamingDecoder` resumes within a single top-level item, but it is not a
+commit protocol: it holds no notion of what the caller has consumed, and its
+`tell()` position lives in the substrate's coordinate system, which
+`CachingStreamWrapper` may renumber. `RecordDecoder`
+(`codec/ber/records.py`) adds the missing layer for a collection channel
+that reconnects and replays from an acknowledged offset.
+
+Framing and decoding are deliberately separate. The scanner walks identifier
+and length octets and skips payloads by length; it invokes the BER decoder
+only once a complete record has arrived. A record is therefore never
+delivered partially, and a short read of a tag or length field simply leaves
+the scanner parked mid-header. Definite-length containers are closed by
+arithmetic, indefinite-length containers by their `00 00` terminator. The
+scanner keeps a stack of enclosing extents so that a nested indefinite
+container cannot end the outer one: the outer record's end is the offset
+after its own end-of-octets octets, which is also the first offset that may
+be acknowledged. The same walk enforces `MAX_TAG_OCTETS`,
+`MAX_LENGTH_OCTETS` and `MAX_NESTING_DEPTH`, reading the constants from
+`ber/decoder.py` rather than duplicating them.
+
+`Record` is a named tuple of `asn1Object`, `start` and `end`, with `end`
+exclusive; `start` and `end` are absolute offsets, so they survive
+acknowledgement and remain meaningful to a reconnecting client. The decoder
+keeps received-but-unacknowledged bytes in a `bytearray` addressed by
+absolute offset. `feed(data, offset=...)` treats the offset as authoritative:
+a prefix at or before `acknowledged` is dropped, an overlapping region is
+compared against the bytes already held and rejected on mismatch, and a gap
+raises rather than silently inserting padding. That comparison is what makes
+replaying the last unacknowledged block safe; a second copy never reaches the
+scanner, so no duplicate record is produced.
+
+`acknowledge(offset)` only accepts an offset that a delivered record ended
+at. It drops the buffer prefix, advances `acknowledged`, and rejects
+backwards or undelivered offsets. Between acknowledgement and delivery the
+decoder tracks two positions: `acknowledged` is what the consumer has
+confirmed, `position` is where the next delivered record will start. A record
+that is framed but not yet read stays queued, so feeding more bytes cannot
+reorder or duplicate it. A fresh `RecordDecoder(offset=...)` starts its
+absolute coordinate system at a previously confirmed position, which keeps
+record ranges comparable across connections. `decodeRecords` is the
+finite-input helper; it drains bytes, a file-like object or an iterable of
+chunks into the same scanner and returns the framed records.
 
 ### Deferred typing: ANY and open types
 
