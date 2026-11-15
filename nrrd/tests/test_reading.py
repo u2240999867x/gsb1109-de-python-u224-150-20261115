@@ -570,6 +570,117 @@ class Abstract:
                 self.assertFalse(fh.closed)
 
 
+class TestDataPayloadExtent(unittest.TestCase):
+    @staticmethod
+    def _header(encoding: str, size: int = 3, **extra) -> dict:
+        header = {'type': 'uint8', 'dimension': 1, 'sizes': np.array([size]), 'encoding': encoding}
+        header.update(extra)
+        return header
+
+    def test_raw_short_exact_and_excess_payload(self):
+        cases = [
+            (b'\x01\x02', '3-2=1'),
+            (b'\x01\x02\x03', None),
+            (b'\x01\x02\x03\x04', '3-4=-1'),
+        ]
+        for payload, error in cases:
+            with self.subTest(payload=payload):
+                stream = io.BytesIO(payload)
+                if error is None:
+                    np.testing.assert_array_equal(nrrd.read_data(self._header('raw'), stream), [1, 2, 3])
+                else:
+                    with self.assertRaisesRegex(nrrd.NRRDError, error):
+                        nrrd.read_data(self._header('raw'), stream)
+
+    def test_raw_excess_single_byte_is_detected(self):
+        # A trailing newline is tolerated, but any other byte after the declared range is excess data.
+        with self.assertRaisesRegex(nrrd.NRRDError, '3-4=-1'):
+            nrrd.read_data(self._header('raw'), io.BytesIO(b'\x01\x02\x03\xff'))
+
+    def test_raw_prefix_with_byte_skip(self):
+        stream = io.BytesIO(b'header!!!\x01\x02\x03')
+        data = nrrd.read_data(self._header('raw', **{'byte skip': 9}), stream)
+        np.testing.assert_array_equal(data, [1, 2, 3])
+
+        stream = io.BytesIO(b'header!!!\x01\x02\x03\x04')
+        with self.assertRaisesRegex(nrrd.NRRDError, '3-4=-1'):
+            nrrd.read_data(self._header('raw', **{'byte skip': 9}), stream)
+
+    def test_raw_byteskip_minus_one_uses_final_declared_bytes(self):
+        # The 352 byte NIfTI-style prefix is skipped by counting the declared payload back from the end of the file.
+        stream = io.BytesIO(b'x' * 352 + b'\x01\x02\x03')
+        data = nrrd.read_data(self._header('raw', **{'byte skip': -1}), stream)
+        np.testing.assert_array_equal(data, [1, 2, 3])
+
+        stream = io.BytesIO(b'\x01\x02')
+        with self.assertRaisesRegex(nrrd.NRRDError, '3-2=1'):
+            nrrd.read_data(self._header('raw', **{'byte skip': -1}), stream)
+
+    def test_raw_byteskip_minus_one_with_attached_header(self):
+        # When the payload follows the header in the same stream, the header bytes must not be counted as payload.
+        header_bytes = b'NRRD0004\ntype: uint8\ndimension: 1\nsizes: 3\nencoding: raw\nbyte skip: -1\n\n'
+        for payload, error in [(b'\x01\x02\x03', None), (b'\x01\x02', '3-2=1')]:
+            with self.subTest(payload=payload):
+                stream = io.BytesIO(header_bytes + payload)
+                stream.seek(len(header_bytes))
+                if error is None:
+                    np.testing.assert_array_equal(nrrd.read_data(self._header('raw', **{'byte skip': -1}), stream),
+                                                  [1, 2, 3])
+                else:
+                    with self.assertRaisesRegex(nrrd.NRRDError, error):
+                        nrrd.read_data(self._header('raw', **{'byte skip': -1}), stream)
+
+    def test_compressed_byteskip_minus_one_uses_final_declared_bytes(self):
+        for encoding, compress in [('gzip', gzip.compress), ('bzip2', bz2.compress)]:
+            with self.subTest(encoding=encoding):
+                stream = io.BytesIO(compress(b'x' * 352 + b'\x01\x02\x03'))
+                data = nrrd.read_data(self._header(encoding, **{'byte skip': -1}), stream)
+                np.testing.assert_array_equal(data, [1, 2, 3])
+
+                stream = io.BytesIO(compress(b'\x01\x02'))
+                with self.assertRaisesRegex(nrrd.NRRDError, '3-2=1'):
+                    nrrd.read_data(self._header(encoding, **{'byte skip': -1}), stream)
+
+    def test_ascii_short_exact_and_excess_payload(self):
+        cases = [
+            ('1 2', '3-2=1'),
+            ('1 2 3', None),
+            ('1 2 3 4', '3-4=-1'),
+        ]
+        for payload, error in cases:
+            with self.subTest(payload=payload):
+                stream = io.BytesIO(payload.encode('ascii'))
+                if error is None:
+                    np.testing.assert_array_equal(nrrd.read_data(self._header('ASCII'), stream), [1, 2, 3])
+                else:
+                    with self.assertRaisesRegex(nrrd.NRRDError, error):
+                        nrrd.read_data(self._header('ASCII'), stream)
+
+    def test_ascii_trailing_comments_do_not_add_samples(self):
+        payload = b'1 2 3\n# 4 5 6 7 8 9\n# another 10 11\n'
+        data = nrrd.read_data(self._header('ASCII'), io.BytesIO(payload))
+        np.testing.assert_array_equal(data, [1, 2, 3])
+
+    def test_ascii_inline_comment_does_not_add_samples(self):
+        data = nrrd.read_data(self._header('ASCII'), io.BytesIO(b'1 2 3 # 4 5 6\n'))
+        np.testing.assert_array_equal(data, [1, 2, 3])
+
+    def test_ascii_prefix_lines_with_line_skip(self):
+        payload = b'this line\nand this line\n1 2 3\n'
+        data = nrrd.read_data(self._header('ASCII', **{'line skip': 2}), io.BytesIO(payload))
+        np.testing.assert_array_equal(data, [1, 2, 3])
+
+    def test_ascii_prefix_with_byte_skip(self):
+        payload = b'header!!!1 2 3'
+        data = nrrd.read_data(self._header('ASCII', **{'byte skip': 9}), io.BytesIO(payload))
+        np.testing.assert_array_equal(data, [1, 2, 3])
+
+    def test_ascii_byteskip_minus_one_is_rejected(self):
+        # ASCII data has no fixed byte width, so its payload cannot be counted back from the end of the stream.
+        with self.assertRaisesRegex(nrrd.NRRDError, 'byteskip'):
+            nrrd.read_data(self._header('ASCII', **{'byte skip': -1}), io.BytesIO(b'1 2 3'))
+
+
 class TestCompressedDataIntegrity(unittest.TestCase):
     def test_truncated_compressed_data(self):
         expected = np.arange(8, dtype=np.uint8)

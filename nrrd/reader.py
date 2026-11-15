@@ -1,5 +1,4 @@
 import bz2
-import io
 import os
 import re
 import shlex
@@ -306,6 +305,215 @@ def read_header(file: Union[str, Iterable[AnyStr]], custom_field_map: Optional[N
     return header
 
 
+_TEXT_ENCODINGS = ['ASCII', 'ascii', 'text', 'txt']
+_COMPRESSED_ENCODINGS = ['gzip', 'gz', 'bzip2', 'bz2']
+
+
+def _validate_data_size(total_data_points: int, data_points: int) -> None:
+    """Validate that the payload contains exactly the number of points declared in the header."""
+
+    if total_data_points != data_points:
+        raise NRRDError(f'Size of the data does not equal the product of all the dimensions: '
+                        f'{total_data_points}-{data_points}={total_data_points - data_points}')
+
+
+def _payload_data_points(payload_bytes: int, itemsize: int, total_data_points: int) -> int:
+    """Convert a payload byte count into a point count for size validation.
+
+    When the payload is not a whole number of points, round toward the declared size: floor for a short payload and
+    ceil for an oversized payload. This keeps the reported difference non-zero even when only a few stray bytes are
+    present.
+    """
+
+    declared_bytes = int(total_data_points) * itemsize
+    payload_bytes = max(payload_bytes, 0)
+
+    if payload_bytes <= declared_bytes:
+        return payload_bytes // itemsize
+
+    return int(total_data_points) + (payload_bytes - declared_bytes + itemsize - 1) // itemsize
+
+
+def _validate_payload_size(total_data_points: int, payload_bytes: int, itemsize: int) -> None:
+    """Validate the exact byte extent of a binary payload against the size declared in the header."""
+
+    if payload_bytes != int(total_data_points) * itemsize:
+        data_points = _payload_data_points(payload_bytes, itemsize, total_data_points)
+        _validate_data_size(total_data_points, data_points)
+
+
+def _is_allowed_trailing_tail(data: AnyStr) -> bool:
+    """Return True for the single end-of-line that some writers append after a binary payload.
+
+    A binary payload is byte-exact, but text-oriented tools may terminate the file with one newline. Anything else
+    after the declared range is excess data and is reported as such.
+    """
+
+    if isinstance(data, str):
+        return data in ['', '\n', '\r\n']
+
+    return data in [b'', b'\n', b'\r\n']
+
+
+def _validate_binary_payload(total_data_points: int, fh: IO, start: int, itemsize: int) -> None:
+    """Validate a binary payload range, tolerating only a single trailing end-of-line.
+
+    A raw payload is byte-exact by declaration. Some writers nevertheless terminate the file with a newline, so one
+    trailing newline is not treated as an extra sample. Any other byte after the declared range is excess data, and any
+    shortfall in the declared range is an error.
+    """
+
+    required_bytes = int(total_data_points) * itemsize
+    end = _stream_end(fh)
+    available_bytes = max(end - start, 0)
+
+    if available_bytes < required_bytes:
+        _validate_payload_size(total_data_points, available_bytes, itemsize)
+        return
+
+    if available_bytes == required_bytes:
+        return
+
+    fh.seek(start + required_bytes)
+    # Read at most one byte more than the longest permitted tail so a large trailing region is never buffered.
+    tail = fh.read(3)
+    if not _is_allowed_trailing_tail(tail):
+        _validate_payload_size(total_data_points, available_bytes, itemsize)
+
+
+def _stream_end(fh: IO) -> int:
+    """Return the absolute end position of a seekable stream without changing the current position."""
+
+    position = fh.tell()
+    end = fh.seek(0, os.SEEK_END)
+    fh.seek(position)
+    return end
+
+
+def _read_raw_data(fh: IO, dtype: np.dtype, total_data_points: int, byte_skip: int) -> npt.NDArray:
+    """Read fixed-width data using the header-declared byte range."""
+
+    required_bytes = int(total_data_points) * dtype.itemsize
+
+    if byte_skip == -1:
+        # The data occupies the final required_bytes of the file. This is the convention used by NIfTI files, where
+        # the payload follows a fixed-size header. Judge the shortfall from the current position (the start of the
+        # payload area), not from the start of the file, or an attached header could mask a short payload.
+        position = fh.tell()
+        end = _stream_end(fh)
+        available_bytes = max(end - position, 0)
+        if available_bytes < required_bytes:
+            _validate_payload_size(total_data_points, available_bytes, dtype.itemsize)
+        start = end - required_bytes
+        fh.seek(start)
+    else:
+        fh.seek(byte_skip, os.SEEK_CUR)
+        start = fh.tell()
+
+    # Do not use np.fromfile here: it reads past the declared payload (or consumes trailing bytes), which hides the
+    # difference between an exact payload and one with extra data. Reading only the declared range makes the size
+    # check authoritative for too little, exactly enough, and too much data.
+    _validate_binary_payload(total_data_points, fh, start, dtype.itemsize)
+    fh.seek(start)
+
+    raw_data = bytearray(fh.read(required_bytes))
+    return np.frombuffer(raw_data, dtype)
+
+
+def _read_ascii_data(fh: IO, dtype: np.dtype, total_data_points: int, byte_skip: int) -> npt.NDArray:
+    """Read text data using line-oriented skips and whitespace-separated samples."""
+
+    if byte_skip == -1:
+        raise NRRDError('Invalid byteskip for ASCII encoding. A byteskip of -1 requires fixed-width data.')
+
+    if byte_skip > 0:
+        fh.seek(byte_skip, os.SEEK_CUR)
+
+    text = fh.read()
+
+    # A '#' starts a comment which extends to the end of the line. Remove the entire comment before decoding or
+    # splitting into samples; otherwise numbers appearing in a trailing comment would be counted as additional data
+    # values. Strip comments before decoding so a comment may contain non-ASCII bytes without becoming a data error.
+    tokens = []
+    separator = b'#' if isinstance(text, bytes) else '#'
+    for line in text.splitlines():
+        line = line.split(separator, 1)[0]
+        if isinstance(line, bytes):
+            try:
+                line = line.decode('ascii')
+            except UnicodeDecodeError as e:
+                raise NRRDError(f'Unable to parse ASCII data: {e}')
+        tokens.extend(line.split())
+
+    try:
+        data = np.array(tokens, dtype=dtype)
+    except (TypeError, ValueError, OverflowError) as e:
+        raise NRRDError(f'Unable to parse ASCII data: {e}')
+
+    _validate_data_size(total_data_points, data.size)
+
+    return data
+
+
+def _read_compressed_data(fh: IO, encoding: str, dtype: np.dtype, total_data_points: int,
+                          byte_skip: int) -> npt.NDArray:
+    """Decompress a stream and read the header-declared byte range from the decompressed data."""
+
+    # Construct the decompression object based on encoding
+    if encoding in ['gzip', 'gz']:
+        decompobj = zlib.decompressobj(zlib.MAX_WBITS | 16)
+    else:
+        decompobj = bz2.BZ2Decompressor()
+
+    # Loop through the file and read a chunk at a time (see _READ_CHUNKSIZE why it is read in chunks)
+    decompressed_data = bytearray()
+
+    # Read all the remaining data from the file
+    # Obtain the length of the compressed data since we will be using it repeatedly, more efficient
+    compressed_data = fh.read()
+    compressed_data_len = len(compressed_data)
+    start_index = 0
+
+    # Loop through data and decompress it chunk by chunk
+    while start_index < compressed_data_len:
+        # Calculate the end index = start index plus chunk size
+        # Set to the string length to read the remaining chunk at the end
+        end_index = min(start_index + _READ_CHUNKSIZE, compressed_data_len)
+
+        # Decompress and append data
+        decompressed_data += decompobj.decompress(compressed_data[start_index:end_index])
+
+        # Update start index
+        start_index = end_index
+
+    # Delete the compressed data since we do not need it anymore
+    # This could potentially be using a lot of memory
+    del compressed_data
+
+    if not decompobj.eof:
+        raise NRRDError('Data ended before reaching the end of the compressed stream')
+
+    required_bytes = int(total_data_points) * dtype.itemsize
+
+    if byte_skip == -1:
+        # The data occupies the final required_bytes of the decompressed stream
+        start = len(decompressed_data) - required_bytes
+        if start < 0:
+            _validate_payload_size(total_data_points, len(decompressed_data), dtype.itemsize)
+    else:
+        start = byte_skip
+
+    available_bytes = max(len(decompressed_data) - start, 0)
+    if available_bytes < required_bytes:
+        _validate_payload_size(total_data_points, available_bytes, dtype.itemsize)
+    elif available_bytes > required_bytes and not _is_allowed_trailing_tail(
+            bytes(decompressed_data[start + required_bytes:start + required_bytes + 3])):
+        _validate_payload_size(total_data_points, available_bytes, dtype.itemsize)
+
+    # Slice the bytearray (rather than using bytes) so the resulting NumPy array remains writeable
+    return np.frombuffer(decompressed_data[start:start + required_bytes], dtype)
+
+
 def read_data(header: NRRDHeader, fh: Optional[IO] = None, filename: Optional[str] = None,
               index_order: IndexOrder = 'F') -> npt.NDArray:
     """Read data from file into :class:`numpy.ndarray`
@@ -353,7 +561,9 @@ def read_data(header: NRRDHeader, fh: Optional[IO] = None, filename: Optional[st
         raise NRRDError(f'Number of elements in sizes does not match dimension. Dimension: {header["dimension"]}, '
                         f'len(sizes): {len(header["sizes"])}')
 
-    if header['dimension'] < 1 or np.any(header['sizes'] <= 0):
+    sizes = np.asarray(header['sizes'])
+
+    if header['dimension'] < 1 or np.any(sizes <= 0):
         raise NRRDError('Dimension and sizes must be positive')
 
     # Determine the data type from the header
@@ -379,7 +589,7 @@ def read_data(header: NRRDHeader, fh: Optional[IO] = None, filename: Optional[st
         fh = open(data_filename, 'rb')
 
     # Get the total number of data points by multiplying the size of each dimension together
-    total_data_points = header['sizes'].prod(dtype=np.int64)
+    total_data_points = sizes.prod(dtype=np.int64)
 
     # Skip the number of lines requested when line_skip >= 0
     # Irrespective of the NRRD file having attached/detached header
@@ -403,89 +613,38 @@ def read_data(header: NRRDHeader, fh: Optional[IO] = None, filename: Optional[st
             fh.close()
 
         raise NRRDError('Invalid byteskip, allowed values are greater than or equal to -1')
-    elif byte_skip >= 0:
-        fh.seek(byte_skip, os.SEEK_CUR)
-    elif byte_skip == -1 and header['encoding'] not in ['gzip', 'gz', 'bzip2', 'bz2']:
-        fh.seek(-dtype.itemsize * total_data_points, os.SEEK_END)
-    else:
-        # The only case left should be: byte_skip == -1 and header['encoding'] == 'gzip'
-        byte_skip = -dtype.itemsize * total_data_points
 
-    # If a compression encoding is used, then byte skip AFTER decompressing
-    if header['encoding'] == 'raw':
-        if isinstance(fh, io.BytesIO):
-            raw_data = bytearray(fh.read(total_data_points * dtype.itemsize))
-            data = np.frombuffer(raw_data, dtype)
+    # Validate the encoding before attempting to read the payload
+    encoding = header['encoding']
+    if encoding != 'raw' and encoding not in _TEXT_ENCODINGS and encoding not in _COMPRESSED_ENCODINGS:
+        # Must close the file because if the file was opened above from detached filename, there is no "with" block to
+        # close it for us
+        if data_filename is not None:
+            fh.close()
+
+        raise NRRDError(f'Unsupported encoding: {encoding}')
+
+    # Dispatch on encoding so each encoding applies skips and defines the payload boundary in its own terms
+    try:
+        if encoding == 'raw':
+            data = _read_raw_data(fh, dtype, total_data_points, byte_skip)
+        elif encoding in _TEXT_ENCODINGS:
+            data = _read_ascii_data(fh, dtype, total_data_points, byte_skip)
         else:
-            data = np.fromfile(fh, dtype)
-    elif header['encoding'] in ['ASCII', 'ascii', 'text', 'txt']:
-        if isinstance(fh, io.BytesIO):
-            data = np.fromstring(fh.read(), dtype, sep=' ')
-        else:
-            data = np.fromfile(fh, dtype, sep=' ')
-    else:
-        # Handle compressed data now
-        # Construct the decompression object based on encoding
-        if header['encoding'] in ['gzip', 'gz']:
-            decompobj = zlib.decompressobj(zlib.MAX_WBITS | 16)
-        elif header['encoding'] in ['bzip2', 'bz2']:
-            decompobj = bz2.BZ2Decompressor()
-        else:
-            # Must close the file because if the file was opened above from detached filename, there is no "with" block
-            # to close it for us
-            if data_filename is not None:
-                fh.close()
+            data = _read_compressed_data(fh, encoding, dtype, total_data_points, byte_skip)
 
-            raise NRRDError(f'Unsupported encoding: {header["encoding"]}')
-
-        # Loop through the file and read a chunk at a time (see _READ_CHUNKSIZE why it is read in chunks)
-        decompressed_data = bytearray()
-
-        # Read all the remaining data from the file
-        # Obtain the length of the compressed data since we will be using it repeatedly, more efficient
-        compressed_data = fh.read()
-        compressed_data_len = len(compressed_data)
-        start_index = 0
-
-        # Loop through data and decompress it chunk by chunk
-        while start_index < compressed_data_len:
-            # Calculate the end index = start index plus chunk size
-            # Set to the string length to read the remaining chunk at the end
-            end_index = min(start_index + _READ_CHUNKSIZE, compressed_data_len)
-
-            # Decompress and append data
-            decompressed_data += decompobj.decompress(compressed_data[start_index:end_index])
-
-            # Update start index
-            start_index = end_index
-
-        # Delete the compressed data since we do not need it anymore
-        # This could potentially be using a lot of memory
-        del compressed_data
-
-        if not decompobj.eof:
-            if data_filename is not None:
-                fh.close()
-            raise NRRDError('Data ended before reaching the end of the compressed stream')
-
-        # Byte skip is applied AFTER the decompression. Skip first x bytes of the decompressed data and parse it using
-        # NumPy
-        data = np.frombuffer(decompressed_data[byte_skip:], dtype)
-
-    # Close the file if we opened it
-    if data_filename is not None:
-        fh.close()
-
-    if total_data_points != data.size:
-        raise NRRDError(f'Size of the data does not equal the product of all the dimensions: '
-                        f'{total_data_points}-{data.size}={total_data_points - data.size}')
+        _validate_data_size(total_data_points, data.size)
+    finally:
+        # Close the file if we opened it. Never close a file handle supplied by the caller.
+        if data_filename is not None:
+            fh.close()
 
     # In the NRRD header, the fields are specified in Fortran order, i.e, the first index is the one that changes
     # fastest and last index changes slowest. This needs to be taken into consideration since numpy uses C-order
     # indexing.
 
     # The array shape from NRRD (x,y,z) needs to be reversed as numpy expects (z,y,x).
-    data = np.reshape(data, tuple(header['sizes'][::-1]))
+    data = np.reshape(data, tuple(sizes[::-1]))
 
     # Transpose data to enable Fortran indexing if requested.
     if index_order == 'F':

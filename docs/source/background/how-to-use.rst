@@ -13,6 +13,10 @@ The :meth:`read` and :meth:`read_header` methods accept an optional parameter :o
 
 The :meth:`read_data` will typically be called in conjunction with :meth:`read_header` because header information is required in order to read the data. The function returns a :class:`numpy.ndarray` of the data saved in the given NRRD file.
 
+The header's ``lineskip`` and ``byteskip`` fields locate the payload when a file has extra lines or bytes before the data. ``lineskip`` skips whole lines first, and a non-negative ``byteskip`` then skips that many bytes from the resulting position. ``byteskip: -1`` is the exception: it means the payload is the final ``dimension``-declared number of bytes in the stream, so it is used for files such as NIfTI where the data follows a fixed-size header. For raw, gzip, and bzip2 encodings, the declared payload size is checked against the located range; too little data, an exact match, and extra non-newline data are distinguished in the error or result. A single trailing newline after a binary payload is tolerated.
+
+For ASCII encodings, data is whitespace-separated text and ``byteskip: -1`` is rejected because text samples do not have a fixed byte width. A ``#`` starts a comment that runs to the end of the line; comments are removed before samples are counted, so numbers in a comment are never read as additional samples.
+
 Some NRRD files, while prohibited by specification, may contain duplicated header fields causing an exception to be raised. Changing :data:`nrrd.reader.ALLOW_DUPLICATE_FIELD` to :obj:`True` will show a warning instead of an error while trying to read the file.
 
 Writing NRRD files
