@@ -30,6 +30,7 @@ import warnings
 from pycdlib import dr
 from pycdlib import eltorito
 from pycdlib import facade
+from pycdlib import health as healthmod
 from pycdlib import headervd
 from pycdlib import inode
 from pycdlib import isohybrid
@@ -587,7 +588,10 @@ def _find_dr_record_by_name(vd, path, encoding):
             else:
                 hi = mid
         index = lo
-        if index != len(thelist) and thelist[index].file_ident == currpath:
+        # A directory whose extent is empty or unreadable has fewer than two
+        # children, so the bisect can land past the end of the list; check
+        # the index before subscripting.
+        if index < len(thelist) and thelist[index].file_ident == currpath:
             child = thelist[index]
 
         if child is None:
@@ -1475,13 +1479,22 @@ class PyCdlib:
 
         for pl in parent_links:
             if pl.rock_ridge is not None:
-                pl.rock_ridge.parent_link = all_extent_to_dr[pl.rock_ridge.parent_link_extent()]
+                # A missing directory extent can leave the destination of a
+                # PL/CL pair unparsed; leave the link unresolved rather than
+                # turning it into a KeyError so callers can still inspect
+                # the rest of the ISO (see audit_missing_blocks).
+                dest = all_extent_to_dr.get(pl.rock_ridge.parent_link_extent())
+                if dest is not None:
+                    pl.rock_ridge.parent_link = dest
 
         for cl in child_links:
             if cl.rock_ridge is not None:
-                cl.rock_ridge.cl_to_moved_dr = all_extent_to_dr[cl.rock_ridge.child_link_extent()]
-                if cl.rock_ridge.cl_to_moved_dr.rock_ridge is not None:
-                    cl.rock_ridge.cl_to_moved_dr.rock_ridge.moved_to_cl_dr = cl
+                dest = all_extent_to_dr.get(cl.rock_ridge.child_link_extent())
+                if dest is None:
+                    continue
+                cl.rock_ridge.cl_to_moved_dr = dest
+                if dest.rock_ridge is not None:
+                    dest.rock_ridge.moved_to_cl_dr = cl
 
         # If our per-record opportunistic detection set self.rock_ridge but
         # no record carried a Rock Ridge ER record (RRIP_1991A or
@@ -4930,6 +4943,80 @@ class PyCdlib:
                 rec = rec.data_continuation
 
         return extents
+
+    def audit_missing_blocks(self, missing_blocks, block_size=None, views=None):
+        # type: (object, Optional[int], object) -> healthmod.HealthReport
+        """
+        Audit every file and directory on the ISO against a table of missing
+        logical blocks.
+
+        A file is reported as:
+
+        * 'complete' when all of its data bytes are readable.  This includes
+          zero-byte files, which have no data blocks and therefore are not
+          affected by the table.
+        * 'partial' when some, but not all, of its data bytes are readable.
+          Any file that shares an extent with a damaged file is affected in
+          the same way.
+        * 'missing' when it has data but none of it is readable.
+        * 'untrusted' when the directory chain that leads to it cannot be
+          trusted, or when its metadata is missing.  Files in an untrusted
+          directory are never reported as complete, because the directory
+          contents themselves may be missing or wrong.
+
+        A directory is reported as 'trusted' or 'untrusted'; if one of its
+        own logical blocks is missing, the directory is untrusted and every
+        entry below it inherits that status.  When no view is specified, a
+        single view is chosen in the same order pycdlib-extract-files uses:
+        UDF, then Rock Ridge, then Joliet, then ISO9660.  Pass several views
+        to get one entry per view for every file.
+
+        Args:
+            missing_blocks: A :class:`pycdlib.health.BlockTable`, a path to a
+                table file, a file object, table text, or an iterable of
+                block numbers and inclusive ranges.
+            block_size: The size of a block in the table.  When None, the
+                ISO's logical block size is used.  This allows, for example,
+                a table of 512-byte sectors to be used with a 2048-byte ISO.
+            views: The views to audit, in order; any of 'iso', 'rr',
+                'joliet', and 'udf'.  When None, one view is chosen as
+                described above.  A single view name is also accepted.
+        Returns:
+            A :class:`pycdlib.health.HealthReport`.
+        """
+        if not self._initialized:
+            raise pycdlibexception.PyCdlibInvalidInput('This object is not initialized; call either open() or new() to create an ISO')
+
+        return healthmod.audit_iso(self, missing_blocks, block_size, views)
+
+    def file_health(self, missing_blocks, block_size=None, **kwargs):
+        # type: (object, Optional[int], str) -> healthmod.FileHealth
+        """
+        Audit one file path on the ISO against a table of missing logical
+        blocks.
+
+        This is the single-file form of :meth:`audit_missing_blocks`; the
+        status values have the same meaning there.  If the directory chain
+        leading to the path is damaged and the table names that damage, the
+        result is 'untrusted' instead of a path-not-found error.
+
+        Args:
+            missing_blocks: A :class:`pycdlib.health.BlockTable`, a path to a
+                table file, a file object, table text, or an iterable of
+                block numbers and inclusive ranges.
+            block_size: The size of a block in the table.  When None, the
+                ISO's logical block size is used.
+            iso_path: The absolute ISO9660 path to the file.
+            rr_path: The absolute Rock Ridge path to the file.
+            joliet_path: The absolute Joliet path to the file.
+            udf_path: The absolute UDF path to the file.
+        Returns:
+            A :class:`pycdlib.health.FileHealth`.
+        """
+        if not self._initialized:
+            raise pycdlibexception.PyCdlibInvalidInput('This object is not initialized; call either open() or new() to create an ISO')
+
+        return healthmod.file_health(self, missing_blocks, block_size, **kwargs)
 
     def get_and_write(self, iso_path, local_path, blocksize=8192):
         # type: (str, str, int) -> None

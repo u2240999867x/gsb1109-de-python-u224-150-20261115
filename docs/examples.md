@@ -28,6 +28,7 @@ We'll start out each example with the entire source code needed to run the examp
 * [Creating a "hybrid" bootable ISO](example-creating-hybrid-bootable-iso.md)
 * [Walking the ISO filesystem](example-walking-iso-filesystem.md)
 * [Reading a large file in chunks](example-reading-file-in-chunks.md)
+* [Triage files against a missing block table](example-auditing-missing-blocks.md)
 
 ---
 

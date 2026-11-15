@@ -10562,3 +10562,19 @@ def test_new_write_range_overlap_detection():
     with pytest.raises(pycdlib.pycdlibexception.PyCdlibInternalError) as excinfo:
         WriteRange(0, 10) < WriteRange(5, 30)
     assert(str(excinfo.value) == 'Overlapping write WriteRange: 0 10, WriteRange: 5 30')
+
+def test_new_find_iso_record_directory_without_children():
+    # A directory whose extent is completely unreadable has no children at
+    # all, so the binary search starts past the end of the list; looking up
+    # a child must report 'Could not find path' instead of an IndexError.
+    iso = pycdlib.PyCdlib()
+    iso.new()
+    iso.add_directory('/DIR1')
+    rec = iso.get_record(iso_path='/DIR1')
+    rec.children[:] = []
+
+    with pytest.raises(pycdlib.pycdlibexception.PyCdlibInvalidInput) as excinfo:
+        iso.get_record(iso_path='/DIR1/FOO.;1')
+    assert(str(excinfo.value) == 'Could not find path')
+
+    iso.close()

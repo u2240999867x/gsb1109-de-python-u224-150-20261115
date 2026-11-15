@@ -26,6 +26,7 @@ from typing import TYPE_CHECKING
 if TYPE_CHECKING:
     from typing import BinaryIO, Generator, Optional, Tuple  # noqa: F401
     # NOTE: these imports have to be here to avoid circular deps
+    from pycdlib import health as healthmod  # noqa: F401
     from pycdlib import pycdlib  # noqa: F401  pylint: disable=cyclic-import
     from pycdlib import pycdlibio  # noqa: F401
 
@@ -254,6 +255,41 @@ class PyCdlibISO9660:
         """
         return self.pycdlib_obj.open_file_from_iso(iso_path=iso_path)
 
+    def audit_missing_blocks(self, missing_blocks, block_size=None):
+        # type: (object, Optional[int]) -> healthmod.HealthReport
+        """
+        Audit the ISO9660 view against a table of missing logical blocks.
+
+        Args:
+            missing_blocks: A :class:`pycdlib.health.BlockTable`, a path to a
+                table file, a file object, table text, or an iterable of
+                block numbers and inclusive ranges.
+            block_size: The size of a block in the table.  When None, the
+                ISO's logical block size is used.
+        Returns:
+            A :class:`pycdlib.health.HealthReport` covering the ISO9660 view.
+        """
+        return self.pycdlib_obj.audit_missing_blocks(missing_blocks,
+                                                     block_size, views='iso')
+
+    def file_health(self, missing_blocks, iso_path, block_size=None):
+        # type: (object, str, Optional[int]) -> healthmod.FileHealth
+        """
+        Audit one ISO9660 file path against a table of missing logical blocks.
+
+        Args:
+            missing_blocks: A :class:`pycdlib.health.BlockTable`, a path to a
+                table file, a file object, table text, or an iterable of
+                block numbers and inclusive ranges.
+            iso_path: The absolute ISO9660 path to the file.
+            block_size: The size of a block in the table.  When None, the
+                ISO's logical block size is used.
+        Returns:
+            A :class:`pycdlib.health.FileHealth`.
+        """
+        return self.pycdlib_obj.file_health(missing_blocks, block_size,
+                                            iso_path=iso_path)
+
 
 class PyCdlibJoliet:
     """The class representing the PyCdlib Joliet facade."""
@@ -444,6 +480,42 @@ class PyCdlibJoliet:
             A PyCdlibIO object allowing access to the file.
         """
         return self.pycdlib_obj.open_file_from_iso(joliet_path=joliet_path)
+
+    def audit_missing_blocks(self, missing_blocks, block_size=None):
+        # type: (object, Optional[int]) -> healthmod.HealthReport
+        """
+        Audit the Joliet view against a table of missing logical blocks.
+
+        Args:
+            missing_blocks: A :class:`pycdlib.health.BlockTable`, a path to a
+                table file, a file object, table text, or an iterable of
+                block numbers and inclusive ranges.
+            block_size: The size of a block in the table.  When None, the
+                ISO's logical block size is used.
+        Returns:
+            A :class:`pycdlib.health.HealthReport` covering the Joliet view.
+        """
+        return self.pycdlib_obj.audit_missing_blocks(missing_blocks,
+                                                     block_size,
+                                                     views='joliet')
+
+    def file_health(self, missing_blocks, joliet_path, block_size=None):
+        # type: (object, str, Optional[int]) -> healthmod.FileHealth
+        """
+        Audit one Joliet file path against a table of missing logical blocks.
+
+        Args:
+            missing_blocks: A :class:`pycdlib.health.BlockTable`, a path to a
+                table file, a file object, table text, or an iterable of
+                block numbers and inclusive ranges.
+            joliet_path: The absolute Joliet path to the file.
+            block_size: The size of a block in the table.  When None, the
+                ISO's logical block size is used.
+        Returns:
+            A :class:`pycdlib.health.FileHealth`.
+        """
+        return self.pycdlib_obj.file_health(missing_blocks, block_size,
+                                            joliet_path=joliet_path)
 
 
 class PyCdlibRockRidge:
@@ -734,6 +806,43 @@ class PyCdlibRockRidge:
         """
         return self.pycdlib_obj.open_file_from_iso(rr_path=rr_path)
 
+    def audit_missing_blocks(self, missing_blocks, block_size=None):
+        # type: (object, Optional[int]) -> healthmod.HealthReport
+        """
+        Audit the Rock Ridge view against a table of missing logical blocks.
+
+        Args:
+            missing_blocks: A :class:`pycdlib.health.BlockTable`, a path to a
+                table file, a file object, table text, or an iterable of
+                block numbers and inclusive ranges.
+            block_size: The size of a block in the table.  When None, the
+                ISO's logical block size is used.
+        Returns:
+            A :class:`pycdlib.health.HealthReport` covering the Rock Ridge
+            view.
+        """
+        return self.pycdlib_obj.audit_missing_blocks(missing_blocks,
+                                                     block_size, views='rr')
+
+    def file_health(self, missing_blocks, rr_path, block_size=None):
+        # type: (object, str, Optional[int]) -> healthmod.FileHealth
+        """
+        Audit one Rock Ridge file path against a table of missing logical
+        blocks.
+
+        Args:
+            missing_blocks: A :class:`pycdlib.health.BlockTable`, a path to a
+                table file, a file object, table text, or an iterable of
+                block numbers and inclusive ranges.
+            rr_path: The absolute Rock Ridge path to the file.
+            block_size: The size of a block in the table.  When None, the
+                ISO's logical block size is used.
+        Returns:
+            A :class:`pycdlib.health.FileHealth`.
+        """
+        return self.pycdlib_obj.file_health(missing_blocks, block_size,
+                                            rr_path=rr_path)
+
 
 class PyCdlibUDF:
     """The class representing the PyCdlib UDF facade."""
@@ -929,3 +1038,39 @@ class PyCdlibUDF:
             A PyCdlibIO object allowing access to the file.
         """
         return self.pycdlib_obj.open_file_from_iso(udf_path=udf_path)
+
+    def audit_missing_blocks(self, missing_blocks, block_size=None):
+        # type: (object, Optional[int]) -> healthmod.HealthReport
+        """
+        Audit the UDF view against a table of missing logical blocks.
+
+        Args:
+            missing_blocks: A :class:`pycdlib.health.BlockTable`, a path to a
+                table file, a file object, table text, or an iterable of
+                block numbers and inclusive ranges.
+            block_size: The size of a block in the table.  When None, the
+                ISO's logical block size is used.
+        Returns:
+            A :class:`pycdlib.health.HealthReport` covering the UDF view.
+        """
+        return self.pycdlib_obj.audit_missing_blocks(missing_blocks,
+                                                     block_size,
+                                                     views='udf')
+
+    def file_health(self, missing_blocks, udf_path, block_size=None):
+        # type: (object, str, Optional[int]) -> healthmod.FileHealth
+        """
+        Audit one UDF file path against a table of missing logical blocks.
+
+        Args:
+            missing_blocks: A :class:`pycdlib.health.BlockTable`, a path to a
+                table file, a file object, table text, or an iterable of
+                block numbers and inclusive ranges.
+            udf_path: The absolute UDF path to the file.
+            block_size: The size of a block in the table.  When None, the
+                ISO's logical block size is used.
+        Returns:
+            A :class:`pycdlib.health.FileHealth`.
+        """
+        return self.pycdlib_obj.file_health(missing_blocks, block_size,
+                                            udf_path=udf_path)
