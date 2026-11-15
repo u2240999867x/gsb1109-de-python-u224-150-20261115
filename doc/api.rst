@@ -29,6 +29,7 @@ Errors and exceptions
 
     .. autoattribute:: invalid_tag
     .. autoattribute:: invalid_child
+    .. autoattribute:: reconciliation
 
 .. autoexception:: xmlschema.XMLSchemaStopValidation
 .. autoexception:: xmlschema.XMLSchemaIncludeWarning

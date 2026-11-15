@@ -21,6 +21,7 @@ except ImportError:
 
 from xmlschema import XMLSchema, XMLResource, iter_errors
 from xmlschema.utils.etree import is_etree_element
+from xmlschema.validators import ChoiceBranchFail, ChoiceReconciliationError
 from xmlschema.validators.exceptions import XMLSchemaValidatorError, \
     XMLSchemaNotBuiltError, XMLSchemaParseError, XMLSchemaModelDepthError, \
     XMLSchemaValidationError, XMLSchemaDecodeError, XMLSchemaEncodeError, \
@@ -343,6 +344,41 @@ class TestValidatorExceptions(unittest.TestCase):
 
         lines = str(ctx.exception).split('\n')
         self.assertTrue(lines[2].endswith("Tag 'b2' expected."))
+
+    def test_children_validation_error_with_reconciliation(self):
+        schema = XMLSchema("""
+            <xs:schema xmlns:xs="http://www.w3.org/2001/XMLSchema">
+              <xs:element name="a">
+                <xs:complexType>
+                  <xs:choice>
+                    <xs:element name="b1"/>
+                    <xs:element name="b2"/>
+                  </xs:choice>
+                </xs:complexType>
+              </xs:element>
+            </xs:schema>""")
+
+        group = schema.elements['a'].type.content
+        reconciliation = group.get_model_visitor().reconcile_choice_error(
+            tag='x',
+            elem=ElementTree.Element('x'),
+            root=ElementTree.Element('a'),
+        )
+        self.assertIsInstance(reconciliation, ChoiceReconciliationError)
+        self.assertEqual(
+            {f.branch.name for f in reconciliation.branch_failures}, {'b1', 'b2'}
+        )
+        self.assertTrue(
+            all(isinstance(f, ChoiceBranchFail)
+                for f in reconciliation.branch_failures)
+        )
+
+        root = ElementTree.XML('<a><x/></a>')
+        error = XMLSchemaChildrenValidationError(
+            group, root, 0, group, 0, reconciliation=reconciliation
+        )
+        self.assertIs(error.reconciliation, reconciliation)
+        self.assertIn('Choice reconciliation for child', str(error))
 
     def test_invalid_child_property(self):
         schema = XMLSchema("""

@@ -17,12 +17,14 @@ from itertools import zip_longest
 from textwrap import dedent
 from typing import Any, Union, List, Optional
 
-from xmlschema import XMLSchema11
+from xmlschema import XMLSchema, XMLSchema11, XMLResource
 from xmlschema.exceptions import XMLSchemaValueError
-from xmlschema.validators.exceptions import XMLSchemaValidationError, XMLSchemaModelError
+from xmlschema.utils.etree import is_etree_element
+from xmlschema.validators.exceptions import XMLSchemaValidationError, \
+    XMLSchemaModelError, XMLSchemaChildrenValidationError
 from xmlschema.validators.particles import ParticleMixin
 from xmlschema.validators.models import distinguishable_paths, ModelVisitor, \
-    sort_content, iter_collapsed_content
+    ChoiceBranchFail, ChoiceReconciliationError, sort_content, iter_collapsed_content
 from xmlschema.validators.groups import XsdGroup
 from xmlschema.validators.elements import XsdElement
 from xmlschema.testing import XsdValidatorTestCase
@@ -1738,6 +1740,200 @@ class TestModelPaths(unittest.TestCase):
 
         group[0][0][1].min_occurs = 0
         self.assertFalse(distinguishable_paths(path1, path2))  # All univocal subgroups
+
+
+class TestChoiceReconciliation(unittest.TestCase):
+    """Tests for the choice group reconciliation results on content errors."""
+
+    schema: XMLSchema
+
+    @classmethod
+    def setUpClass(cls) -> None:
+        cls.schema = XMLSchema("""
+        <xs:schema xmlns:xs="http://www.w3.org/2001/XMLSchema">
+          <xs:element name="root">
+            <xs:complexType>
+              <xs:sequence>
+                <xs:choice>
+                  <xs:element name="a"/>
+                  <xs:element name="b"/>
+                </xs:choice>
+                <xs:choice>
+                  <xs:element name="c"/>
+                  <xs:element name="d"/>
+                </xs:choice>
+                <xs:element name="tail"/>
+              </xs:sequence>
+            </xs:complexType>
+          </xs:element>
+        </xs:schema>""")
+
+    def test_reconciliation_result_on_failed_child(self) -> None:
+        result, errors = self.schema.decode(
+            '<root><x/><c/><tail/></root>', validation='lax'
+        )
+        self.assertEqual(result, {'c': None, 'tail': None})
+        self.assertEqual(len(errors), 1)
+
+        error = errors[0]
+        self.assertIsInstance(error, XMLSchemaChildrenValidationError)
+        reconciliation = error.reconciliation
+        self.assertIsInstance(reconciliation, ChoiceReconciliationError)
+        self.assertEqual(reconciliation.tag, 'x')
+        self.assertEqual(reconciliation.path, '/root/x')
+        self.assertFalse(reconciliation.has_viable_branch)
+
+        choice = self.schema.elements['root'].type.content[0]
+        self.assertEqual(reconciliation.open_choices, (choice,))
+        self.assertEqual([f.branch.name for f in reconciliation.branch_failures],
+                         ['a', 'b'])
+        for failure in reconciliation.branch_failures:
+            self.assertIsInstance(failure, ChoiceBranchFail)
+            self.assertIs(failure.choice, choice)
+            self.assertEqual(failure.context, (failure.branch,))
+            self.assertEqual(failure.expected_tags, [failure.branch.name])
+
+    def test_reconciliation_does_not_count_parser_branches(self) -> None:
+        # Only the open schema choice is reported, regardless of the branches
+        # the parser tried before raising the error.
+        _result, errors = self.schema.decode('<root><x/></root>', validation='lax')
+        reconciliation = errors[0].reconciliation
+        self.assertEqual(len(reconciliation.open_choices), 1)
+        self.assertEqual(len(reconciliation.branch_failures), 2)
+        self.assertEqual(
+            {f.branch.name for f in reconciliation.branch_failures}, {'a', 'b'}
+        )
+
+    def test_later_siblings_are_still_located(self) -> None:
+        result, errors = self.schema.decode(
+            '<root><x/><a/><d/><tail/></root>', validation='lax'
+        )
+        self.assertEqual(result, {'a': None, 'd': None, 'tail': None})
+        self.assertEqual(len(errors), 1)
+        self.assertEqual(errors[0].invalid_tag, 'x')
+
+    def test_lazy_resource_path(self) -> None:
+        resource = XMLResource('<root><x/><a/><c/><tail/></root>', lazy=True)
+        result, errors = self.schema.decode(resource, validation='lax')
+        self.assertEqual(set(result), {'a', 'c', 'tail'})
+
+        error = errors[0]
+        self.assertIsNone(error.invalid_child)
+        reconciliation = error.reconciliation
+        self.assertEqual(reconciliation.path, '/root/x')
+        self.assertEqual(reconciliation.tag, 'x')
+        self.assertIsNone(reconciliation.elem)
+
+    def test_viable_branch_of_a_partially_consumed_choice(self) -> None:
+        schema = XMLSchema("""
+        <xs:schema xmlns:xs="http://www.w3.org/2001/XMLSchema">
+          <xs:element name="root">
+            <xs:complexType>
+              <xs:choice>
+                <xs:sequence>
+                  <xs:element name="a"/>
+                  <xs:element name="b"/>
+                </xs:sequence>
+                <xs:element name="c"/>
+              </xs:choice>
+            </xs:complexType>
+          </xs:element>
+        </xs:schema>""")
+
+        _result, errors = schema.decode('<root><a/><c/></root>', validation='lax')
+        reconciliation = errors[0].reconciliation
+        self.assertEqual(reconciliation.path, '/root/c')
+        self.assertTrue(reconciliation.has_viable_branch)
+        self.assertEqual([b.name for b in reconciliation.viable_branches], ['c'])
+
+        active_failure = next(f for f in reconciliation.branch_failures
+                              if isinstance(f.branch, XsdGroup))
+        self.assertEqual(active_failure.expected_tags, ['b'])
+
+    def test_minimal_context_of_nested_branch(self) -> None:
+        schema = XMLSchema("""
+        <xs:schema xmlns:xs="http://www.w3.org/2001/XMLSchema">
+          <xs:element name="root">
+            <xs:complexType>
+              <xs:choice>
+                <xs:element name="a"/>
+                <xs:sequence>
+                  <xs:element name="b"/>
+                  <xs:sequence>
+                    <xs:element name="c"/>
+                    <xs:element name="d"/>
+                  </xs:sequence>
+                </xs:sequence>
+              </xs:choice>
+            </xs:complexType>
+          </xs:element>
+        </xs:schema>""")
+
+        _result, errors = schema.decode('<root><x/></root>', validation='lax')
+        reconciliation = errors[0].reconciliation
+        self.assertEqual(len(reconciliation.open_choices), 1)
+
+        sequence_failure = next(f for f in reconciliation.branch_failures
+                                if isinstance(f.branch, XsdGroup))
+        self.assertEqual(sequence_failure.expected_tags, ['b'])
+        self.assertTrue(all(isinstance(p, XsdGroup)
+                            for p in sequence_failure.context))
+
+    def test_no_reconciliation_without_open_choice(self) -> None:
+        schema = XMLSchema("""
+        <xs:schema xmlns:xs="http://www.w3.org/2001/XMLSchema">
+          <xs:element name="root">
+            <xs:complexType>
+              <xs:sequence>
+                <xs:element name="a"/>
+                <xs:element name="b"/>
+              </xs:sequence>
+            </xs:complexType>
+          </xs:element>
+        </xs:schema>""")
+
+        _result, errors = schema.decode('<root><b/></root>', validation='lax')
+        self.assertIsNone(errors[0].reconciliation)
+
+    def test_reconciliation_on_encoding(self) -> None:
+        _elem, errors = self.schema.encode(
+            {'root': {'x': None, 'tail': None}}, validation='lax'
+        )
+        reconciliation = next(
+            e.reconciliation for e in errors
+            if isinstance(e, XMLSchemaChildrenValidationError)
+            and e.reconciliation is not None
+        )
+        self.assertIsNone(reconciliation.path)  # no source element while encoding
+        self.assertEqual(
+            {f.branch.name for f in reconciliation.branch_failures}, {'a', 'b'}
+        )
+
+    def test_reconciliation_with_xsd_11(self) -> None:
+        schema = XMLSchema11("""
+        <xs:schema xmlns:xs="http://www.w3.org/2001/XMLSchema">
+          <xs:element name="root">
+            <xs:complexType>
+              <xs:choice>
+                <xs:element name="a"/>
+                <xs:element name="b"/>
+              </xs:choice>
+            </xs:complexType>
+          </xs:element>
+        </xs:schema>""")
+
+        _result, errors = schema.decode('<root><x/></root>', validation='lax')
+        reconciliation = errors[0].reconciliation
+        self.assertEqual(
+            {f.branch.name for f in reconciliation.branch_failures}, {'a', 'b'}
+        )
+
+    def test_error_message_contains_reconciliation(self) -> None:
+        _result, errors = self.schema.decode('<root><x/></root>', validation='lax')
+        message = str(errors[0])
+        self.assertIn('Choice reconciliation for child', message)
+        self.assertIn('/root/x', message)
+        self.assertIn("failed branches (2)", message)
 
 
 if __name__ == '__main__':

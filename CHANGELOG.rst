@@ -2,6 +2,16 @@
 CHANGELOG
 *********
 
+Unreleased
+==========
+* Add choice reconciliation results to children validation errors: when a child
+  element fails a content model with open choice groups, the error exposes the
+  real element path, the choice branches that can still accept the tag and the
+  minimal model context of each failed branch (new ``ChoiceReconciliationError``
+  and ``ChoiceBranchFail`` classes and the ``ModelVisitor.reconcile_choice_error``
+  method). Parser-tried branches are not counted as source data and later valid
+  siblings keep being located.
+
 `v4.3.2`_ (2026-06-30)
 ======================
 * Fix for issues #473, #474 and #475

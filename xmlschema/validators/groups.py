@@ -23,7 +23,9 @@ from xmlschema.aliases import ElementType, NsmapType, SchemaType, ModelParticleT
     SchemaElementType, ComponentClassType, OccursCounterType
 from xmlschema.converters import ElementData
 from xmlschema.translation import gettext as _
+from xmlschema.resources import XMLResource
 from xmlschema.utils.decoding import Empty, raw_encode_value, raw_encode_attributes
+from xmlschema.utils.etree import etree_getpath
 from xmlschema.utils.qnames import get_qname, local_name
 from xmlschema import _limits
 from xmlschema.caching import schema_cache, schema_cached_property
@@ -37,7 +39,7 @@ from .particles import ParticleMixin
 from .elements import XsdElement, XsdAlternative
 from .wildcards import XsdAnyElement, XsdOpenContent
 from .models import ModelVisitor, InterleavedModelVisitor, SuffixedModelVisitor, \
-    iter_unordered_content, iter_collapsed_content
+    ChoiceReconciliationError, iter_unordered_content, iter_collapsed_content
 
 if TYPE_CHECKING:
     from .complex_types import XsdComplexType  # noqa: F401
@@ -992,7 +994,9 @@ class XsdGroup(XsdComponent, MutableSequence[ModelParticleType],
 
         over_max_depth = context.max_depth is not None and context.max_depth <= context.level
 
-        errors: list[tuple[int, ModelParticleType, int, Optional[list[SchemaElementType]]]]
+        errors: list[tuple[int, ModelParticleType, int,
+                           Optional[list[SchemaElementType]],
+                           Optional[ChoiceReconciliationError]]]
         xsd_element: Optional[SchemaElementType]
         expected: Optional[list[SchemaElementType]]
 
@@ -1007,12 +1011,37 @@ class XsdGroup(XsdComponent, MutableSequence[ModelParticleType],
 
             context.converter.set_xmlns_context(child, context.level)
             name = context.converter.map_qname(child.tag)
+            reconciliation: Optional[ChoiceReconciliationError] = None
 
             while model.element is not None:
                 xsd_element = model.match_element(child.tag)
                 if xsd_element is None:
+                    # Reconcile the open schema choices before advancing the model,
+                    # so the parser-tried branches are not counted as source data.
+                    source = context.source
+                    if isinstance(source, XMLResource) and source.is_lazy():
+                        # Do not retain a lazy element, keep its path instead.
+                        elem_path = etree_getpath(
+                            child, source.root, namespaces,
+                            relative=False, add_position=True,
+                        )
+                        reconciliation = model.reconcile_choice_error(
+                            tag=child.tag,
+                            elem=None,
+                            root=source.root,
+                            namespaces=namespaces,
+                            elem_path=elem_path,
+                        )
+                    else:
+                        reconciliation = model.reconcile_choice_error(
+                            tag=child.tag,
+                            elem=child,
+                            root=getattr(source, 'root', None),
+                            namespaces=namespaces,
+                        )
                     for particle, occurs, expected in model.advance(False):
-                        errors.append((index, particle, occurs, expected))
+                        errors.append((index, particle, occurs, expected,
+                                       reconciliation))
                         model.clear()
                         broken_model = True  # the model is broken, continues with raw decoding.
                         xsd_element = self.match_element(child.tag)
@@ -1027,15 +1056,15 @@ class XsdGroup(XsdComponent, MutableSequence[ModelParticleType],
                     context.validation_error(validation, self, err, obj)
 
                 for particle, occurs, expected in model.advance(True):
-                    errors.append((index, particle, occurs, expected))
+                    errors.append((index, particle, occurs, expected, reconciliation))
                 break
             else:
                 xsd_element = self.match_element(child.tag)
                 if xsd_element is None:
-                    errors.append((index, self, 0, None))
+                    errors.append((index, self, 0, None, reconciliation))
                     broken_model = True
                 elif not broken_model:
-                    errors.append((index, xsd_element, 0, []))
+                    errors.append((index, xsd_element, 0, [], reconciliation))
                     broken_model = True
 
             # Optional checks on matched XSD child
@@ -1077,13 +1106,14 @@ class XsdGroup(XsdComponent, MutableSequence[ModelParticleType],
         if model.element is not None:
             index = len(obj)
             for particle, occurs, expected in model.stop():
-                errors.append((index, particle, occurs, expected))
+                errors.append((index, particle, occurs, expected, None))
                 break
 
         if errors:
-            for index, particle, occurs, expected in errors:
+            for index, particle, occurs, expected, reconciliation in errors:
                 context.children_validation_error(
-                    validation, self, obj, index, particle, occurs, expected
+                    validation, self, obj, index, particle, occurs, expected,
+                    reconciliation=reconciliation,
                 )
 
         if index or result is not None or obj.text is None:
@@ -1147,20 +1177,28 @@ class XsdGroup(XsdComponent, MutableSequence[ModelParticleType],
                 continue
 
             xsd_element: Optional[SchemaElementType]
+            reconciliation: Optional[ChoiceReconciliationError] = None
             while model.element is not None:
                 xsd_element = model.match_element(name)
                 if xsd_element is None:
+                    # No source element exists while encoding, so only the tag-based
+                    # branch reconciliation is attached (the element path is absent).
+                    reconciliation = model.reconcile_choice_error(
+                        tag=name, namespaces=context.namespaces
+                    )
                     for particle, occurs, expected in model.advance():
-                        errors.append((index - cdata_index, particle, occurs, expected))
+                        errors.append((index - cdata_index, particle, occurs,
+                                       expected, reconciliation))
                     continue
                 elif isinstance(xsd_element, XsdAnyElement):
                     value = get_qname(default_namespace, name), value
 
                 for particle, occurs, expected in model.advance(True):
-                    errors.append((index - cdata_index, particle, occurs, expected))
+                    errors.append((index - cdata_index, particle, occurs,
+                                   expected, reconciliation))
                 break
             else:
-                errors.append((index - cdata_index, self, 0, []))
+                errors.append((index - cdata_index, self, 0, [], reconciliation))
                 xsd_element = self.match_element(name)
                 if isinstance(xsd_element, XsdAnyElement):
                     value = get_qname(default_namespace, name), value
@@ -1186,7 +1224,8 @@ class XsdGroup(XsdComponent, MutableSequence[ModelParticleType],
 
         if model.element is not None:
             for particle, occurs, expected in model.stop():
-                errors.append((index - cdata_index + 1, particle, occurs, expected))
+                errors.append((index - cdata_index + 1, particle, occurs,
+                               expected, None))
                 break
 
         context.set_element_content(
@@ -1206,9 +1245,10 @@ class XsdGroup(XsdComponent, MutableSequence[ModelParticleType],
             reason = _("character data between child elements not allowed")
             context.validation_error(validation, self, reason, elem)
 
-        for index, particle, occurs, expected in errors:
+        for index, particle, occurs, expected, reconciliation in errors:
             context.children_validation_error(
-                validation, self, elem, index, particle, occurs, expected
+                validation, self, elem, index, particle, occurs, expected,
+                reconciliation=reconciliation,
             )
 
         return elem

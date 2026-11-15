@@ -46,6 +46,7 @@ if TYPE_CHECKING:
     from .xsdbase import XsdValidator  # noqa: F401
     from .facets import XsdPatternFacets  # noqa: F401
     from .identities import XsdIdentity, IdentityCounter  # noqa: F401
+    from .models import ChoiceReconciliationError  # noqa: F401
 
 logger = logging.getLogger('xmlschema')
 
@@ -264,7 +265,8 @@ class ValidationContext:
     def children_validation_error(
             self, validation: str, validator: 'XsdValidator', elem: ElementType,
             index: int, particle: ModelParticleType, occurs: int = 0,
-            expected: Optional[Iterable[SchemaElementType]] = None) \
+            expected: Optional[Iterable[SchemaElementType]] = None,
+            reconciliation: Optional['ChoiceReconciliationError'] = None) \
             -> XMLSchemaValidationError:
 
         error = XMLSchemaChildrenValidationError(
@@ -276,6 +278,7 @@ class ValidationContext:
             expected=expected,
             source=self.source,
             namespaces=self.namespaces,
+            reconciliation=reconciliation,
         )
         return self.raise_or_collect(validation, error)
 

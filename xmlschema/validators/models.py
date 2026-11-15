@@ -12,15 +12,17 @@ This module contains a function and a class for validating XSD content models,
 plus a set of functions for manipulating encoded content.
 """
 import warnings
+from dataclasses import dataclass, field
 from collections import defaultdict, deque, Counter
 from collections.abc import Iterable, Iterator, MutableMapping, MutableSequence
 from copy import copy
 from typing import Any, Optional, Union
 
-from xmlschema.aliases import ModelGroupType, ModelParticleType, SchemaElementType, \
-    OccursCounterType
+from xmlschema.aliases import ElementType, ModelGroupType, ModelParticleType, \
+    NsmapType, OccursCounterType, SchemaElementType
 from xmlschema.exceptions import XMLSchemaRuntimeError, XMLSchemaTypeError, XMLSchemaValueError
 from xmlschema.translation import gettext as _
+from xmlschema.utils.etree import etree_getpath
 from xmlschema import _limits
 
 from .exceptions import XMLSchemaModelError, XMLSchemaModelDepthError
@@ -31,6 +33,114 @@ AdvanceYieldedType = tuple[ModelParticleType, int, list[SchemaElementType]]
 ContentItemType = tuple[Union[int, str], Any]
 EncodedContentType = Union[MutableMapping[Union[int, str], Any], Iterable[ContentItemType]]
 StepType = Union[str, SchemaElementType, tuple[Union[str, SchemaElementType], int]]
+
+
+@dataclass(frozen=True)
+class ChoiceBranchFail:
+    """
+    Details about a choice branch that cannot accept a child element.
+
+    :ivar choice: the choice model group the branch belongs to.
+    :ivar branch: the branch particle that has been analyzed.
+    :ivar context: the minimal model path, from the branch to the deepest \
+    group reached while looking for an element matching the child tag.
+    :ivar expected: the elements still acceptable at the deepest context point.
+    """
+    choice: ModelGroupType
+    branch: ModelParticleType
+    context: tuple[ModelParticleType, ...] = ()
+    expected: tuple[SchemaElementType, ...] = ()
+
+    @property
+    def expected_tags(self) -> list[str]:
+        """The display names of the elements still acceptable by the branch."""
+        expected_tags: list[str] = []
+        for particle in self.expected:
+            name = particle.display_name
+            if name is not None:
+                expected_tags.append(name)
+            elif isinstance(particle, XsdAnyElement):
+                expected_tags.append('from %r namespace/s' % tuple(particle.namespace))
+        return expected_tags
+
+
+@dataclass(frozen=True)
+class ChoiceReconciliationError:
+    """
+    Reconciliation result for a child element that fails to match a content
+    model having one or more open choice groups.
+
+    The result distinguishes the schema branches that can still accept the
+    child from the branches that cannot, recording for each failed branch
+    the minimal model context reached during the analysis. Only schema
+    particles are inspected, so the branches tried by the parser (the visitor
+    state) are not counted as source data.
+
+    :ivar tag: the tag of the child element that failed the match.
+    :ivar open_choices: the choice groups still open at the failure position.
+    :ivar viable_branches: the branch particles that can still accept the tag.
+    :ivar branch_failures: the details of the branches that reject the tag.
+    :ivar elem: the failing child element, if available.
+    :ivar root: the root of the XML source, used to calculate the element path.
+    :ivar namespaces: an optional mapping from namespace prefix to URI.
+    :ivar elem_path: a precomputed element path, used when the element cannot \
+    be retained (e.g. lazy resources) instead of deriving it from *elem*.
+    """
+    tag: str
+    open_choices: tuple[ModelGroupType, ...]
+    viable_branches: tuple[ModelParticleType, ...]
+    branch_failures: tuple[ChoiceBranchFail, ...]
+    elem: Optional[ElementType] = None
+    root: Optional[ElementType] = field(default=None, repr=False, compare=False)
+    namespaces: Optional[NsmapType] = field(default=None, repr=False, compare=False)
+    elem_path: Optional[str] = None
+
+    @property
+    def path(self) -> Optional[str]:
+        """The real XPath of the failing child element within the XML source."""
+        if self.elem_path is not None:
+            return self.elem_path
+        elif self.elem is None or self.root is None:
+            return None
+        return etree_getpath(self.elem, self.root, self.namespaces,
+                             relative=False, add_position=True)
+
+    @property
+    def has_viable_branch(self) -> bool:
+        """Returns `True` if at least one open choice branch accepts the tag."""
+        return bool(self.viable_branches)
+
+    @staticmethod
+    def _particle_label(particle: ModelParticleType) -> str:
+        if isinstance(particle, groups.XsdGroup):
+            return repr(particle)
+        name = particle.display_name
+        return repr(name) if name is not None else repr(particle)
+
+    def __str__(self) -> str:
+        lines = [_("Choice reconciliation for child %r:") % self.tag]
+        path = self.path
+        if path is not None:
+            lines.append(_("  path: %s") % path)
+
+        lines.append(_("  open choice groups: %d") % len(self.open_choices))
+
+        if self.viable_branches:
+            labels = ', '.join(self._particle_label(b) for b in self.viable_branches)
+            lines.append(_("  viable branches (%d): %s")
+                         % (len(self.viable_branches), labels))
+        else:
+            lines.append(_("  viable branches (0): none"))
+
+        lines.append(_("  failed branches (%d):") % len(self.branch_failures))
+        for failure in self.branch_failures:
+            labels = ' > '.join(self._particle_label(p) for p in failure.context) \
+                or self._particle_label(failure.branch)
+            expected = ' | '.join(repr(tag) for tag in failure.expected_tags) or 'none'
+            lines.append(_("    - %s of %s, expected %s at %s")
+                         % (self._particle_label(failure.branch),
+                            repr(failure.choice), expected, labels))
+        return '\n'.join(lines)
 
 
 def distinguishable_paths(path1: list[ModelParticleType], path2: list[ModelParticleType]) -> bool:
@@ -187,12 +297,15 @@ class ModelVisitor:
     :ivar group: the current XSD model group, initialized to *root* argument.
     :ivar items: the current XSD group's items iterator.
     :ivar match: if the XSD group has an effective item match.
+    :ivar open_choices: the choice groups that have not yet been closed, keeping \
+    track also of the choices skipped while advancing toward the current element.
     """
     _groups: list[tuple[ModelGroupType, Iterator[ModelParticleType], bool]]
     element: Optional[SchemaElementType]
     occurs: OccursCounterType
 
-    __slots__ = '_groups', 'root', 'occurs', 'element', 'group', 'items', 'match'
+    __slots__ = '_groups', 'root', 'occurs', 'element', 'group', 'items', \
+        'match', 'open_choices'
 
     def __init__(self, root: ModelGroupType) -> None:
         self._groups = []
@@ -202,6 +315,7 @@ class ModelVisitor:
         self.group = root
         self.items = self.iter_group()
         self.match = False
+        self.open_choices: list[groups.XsdGroup] = []
         self._start()
 
     def __repr__(self) -> str:
@@ -214,6 +328,7 @@ class ModelVisitor:
         self.group = self.root
         self.items = self.iter_group()
         self.match = False
+        del self.open_choices[:]
 
     def _start(self) -> None:
         while True:
@@ -230,6 +345,12 @@ class ModelVisitor:
                 self.group = item
                 self.items = self.iter_group()
                 self.match = False
+                if item.model == 'choice':
+                    self.open_choices.append(item)
+
+        # The root group is entered implicitly, so register it when it is a choice.
+        if self.root.model == 'choice' and self.root not in self.open_choices:
+            self.open_choices.insert(0, self.root)
 
     @property
     def expected(self) -> list[SchemaElementType]:
@@ -264,6 +385,169 @@ class ModelVisitor:
         else:
             return self.element.match(tag, group=self.root, occurs=self.occurs)
 
+    @staticmethod
+    def _head_children(group: ModelGroupType) -> list[ModelParticleType]:
+        """
+        Returns the particles that can start the content of the group. For a
+        sequence only the leading emptiable particles and the first required
+        particle are heads; for choice and all groups every child is a head.
+        """
+        effective = group if group.ref is None else group.ref
+        if effective.max_occurs == 0 or not len(effective):
+            return []
+        elif effective.model == 'sequence':
+            heads: list[ModelParticleType] = []
+            for child in effective.content:
+                heads.append(child)
+                if not child.is_emptiable():
+                    break
+            return heads
+        else:
+            return list(effective.content)
+
+    def _analyze_choice_branch(
+            self, branch: ModelParticleType, tag: str, occurs: OccursCounterType) \
+            -> tuple[bool, tuple[ModelParticleType, ...], tuple[SchemaElementType, ...]]:
+        """
+        Analyzes a choice branch checking if it can still accept an element with
+        the provided tag. Returns a triple with the match result, the minimal
+        model path reached and the head elements expected at that path.
+        """
+        stack: list[tuple[ModelParticleType, tuple[ModelParticleType, ...]]] = \
+            [(branch, (branch,))]
+        failures: list[tuple[int, tuple[ModelParticleType, ...], SchemaElementType]] = []
+
+        while stack:
+            particle, path = stack.pop()
+            if len(path) > _limits.MAX_MODEL_DEPTH:
+                raise XMLSchemaModelDepthError(self.group)
+
+            if isinstance(particle, groups.XsdGroup):
+                heads = self._head_children(particle)
+                for child in reversed(heads):
+                    stack.append((child, path + (child,)))
+                continue
+            elif particle.max_occurs == 0:
+                continue
+            elif particle.match(tag, group=self.root, occurs=occurs) is not None:
+                return True, (), ()
+
+            context = path[:-1] if len(path) > 1 else (branch,)
+            failures.append((len(path), context, particle))
+
+        if not failures:
+            return False, (branch,), ()
+
+        deepest = max(depth for depth, _path, _element in failures)
+        context = next(path for depth, path, _element in failures if depth == deepest)
+        expected: list[SchemaElementType] = []
+        for depth, _path, element in failures:
+            if depth == deepest and element not in expected:
+                expected.append(element)
+        return False, context, tuple(expected)
+
+    def _active_branch_context(
+            self, choice: ModelGroupType, branch: ModelParticleType) \
+            -> Optional[tuple[tuple[ModelParticleType, ...],
+                              tuple[SchemaElementType, ...]]]:
+        """
+        If *branch* is the choice branch currently driven by the visitor,
+        returns the live model path and the elements the model still expects
+        on it. Returns `None` if the branch is not the active one, so that a
+        static head analysis is used instead.
+        """
+        nested_groups = [group for group, _items, _match in self._groups]
+        nested_groups.append(self.group)
+
+        if choice not in nested_groups:
+            return None
+
+        index = nested_groups.index(choice)
+        if index + 1 < len(nested_groups):
+            if nested_groups[index + 1] is not branch:
+                return None
+            context = tuple(nested_groups[index + 1:])
+        elif branch is self.element:
+            context = (branch,)
+        else:
+            return None
+
+        expected = (self.element,) if self.element is not None else tuple(self.expected)
+        return context, expected
+
+    def reconcile_choice_error(
+            self, tag: str,
+            elem: Optional[ElementType] = None,
+            root: Optional[ElementType] = None,
+            namespaces: Optional[NsmapType] = None,
+            elem_path: Optional[str] = None) -> Optional[ChoiceReconciliationError]:
+        """
+        Builds a reconciliation result for a child that fails to match the
+        current model. Each still open choice group is analyzed on its schema
+        branches, separating the branches that can still accept *tag* from the
+        branches that reject it, recording the minimal model context and the
+        expected head elements for every failed branch.
+
+        The analysis only inspects schema particles, so the branches already
+        tried by the parser are never counted as source data. Returns `None`
+        if no choice group is open at the current model position.
+        """
+        if not self.open_choices:
+            return None
+
+        viable_branches: list[ModelParticleType] = []
+        branch_failures: list[ChoiceBranchFail] = []
+
+        for choice in self.open_choices:
+            effective_choice = choice if choice.ref is None else choice.ref
+            for branch in effective_choice.content:
+                if branch.max_occurs == 0:
+                    continue
+
+                active_context = self._active_branch_context(choice, branch)
+                if active_context is not None:
+                    # The branch is currently driven by the visitor, so the tag
+                    # failed on its live expected element rather than a head.
+                    context, expected = active_context
+                    branch_failures.append(
+                        ChoiceBranchFail(
+                            choice=choice,
+                            branch=branch,
+                            context=context,
+                            expected=expected,
+                        )
+                    )
+                    continue
+
+                matched, context, expected = \
+                    self._analyze_choice_branch(branch, tag, self.occurs)
+                if matched:
+                    if branch not in viable_branches:
+                        viable_branches.append(branch)
+                else:
+                    branch_failures.append(
+                        ChoiceBranchFail(
+                            choice=choice,
+                            branch=branch,
+                            context=tuple(context),
+                            expected=tuple(expected),
+                        )
+                    )
+
+        if not viable_branches and not branch_failures:
+            return None
+
+        return ChoiceReconciliationError(
+            tag=tag,
+            open_choices=tuple(self.open_choices),
+            viable_branches=tuple(viable_branches),
+            branch_failures=tuple(branch_failures),
+            elem=elem,
+            root=root,
+            namespaces=namespaces,
+            elem_path=elem_path,
+        )
+
     def advance(self, match: bool = False) -> Iterator[AdvanceYieldedType]:
         """
         Generator function for advance to the next element. Yields tuples with
@@ -286,6 +570,11 @@ class ModelVisitor:
 
             item_occurs = occurs[item]
             if isinstance(item, groups.XsdGroup):
+                if item.model == 'choice':
+                    try:
+                        self.open_choices.remove(item)
+                    except ValueError:
+                        pass
                 self.group, self.items, self.match = self._groups.pop()
 
             if self.group.model == 'choice':
@@ -389,6 +678,8 @@ class ModelVisitor:
                         self.items = self.iter_group()
                         self.match = False
                         occurs[obj] = occurs[obj.oid] = 0
+                        if obj.model == 'choice':
+                            self.open_choices.append(obj)
                         break
                     else:
                         # XsdElement or XsdAnyElement
@@ -494,6 +785,7 @@ class ModelVisitor:
         model.group = self.group
         model.match = self.match
         model.occurs = self.occurs.copy()
+        model.open_choices = self.open_choices.copy()
 
         # Can't copy iterators so create new ones and iter them at the same item
         model._groups = []

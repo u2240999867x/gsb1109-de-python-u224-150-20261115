@@ -27,6 +27,7 @@ if TYPE_CHECKING:
     from .xsdbase import XsdValidator  # noqa: F401
     from .wildcards import XsdAnyElement  # noqa: F401
     from .groups import XsdGroup  # noqa: F401
+    from .models import ChoiceReconciliationError  # noqa: F401
 
 ValidatorType = Union['XsdValidator', Callable[[Any], None]]
 
@@ -367,6 +368,10 @@ class XMLSchemaValidationError(XMLSchemaValidatorError, ValueError):
         if self.path is not None:
             chunks.append("Path: %s\n" % self.path)
 
+        reconciliation = getattr(self, 'reconciliation', None)
+        if reconciliation is not None:
+            chunks.append("%s\n" % reconciliation)
+
         return '\n'.join(chunks) if len(chunks) > 1 else chunks[0][:-2]
 
     def get_obj_as_string(self, indent: str = '', max_lines: Optional[int] = None) -> str:
@@ -451,6 +456,9 @@ class XMLSchemaChildrenValidationError(XMLSchemaValidationError):
     invalid_tag: Optional[str]
     """The tag of the invalid child element, `None` in case of an incomplete content."""
 
+    reconciliation: Optional['ChoiceReconciliationError'] = None
+    """The reconciliation result across open choice groups, when available."""
+
     def __init__(self, validator: 'XsdValidator',
                  elem: ElementType,
                  index: int,
@@ -458,12 +466,14 @@ class XMLSchemaChildrenValidationError(XMLSchemaValidationError):
                  occurs: int = 0,
                  expected: Optional[Iterable[SchemaElementType]] = None,
                  source: Optional[Any] = None,
-                 namespaces: Optional[NsmapType] = None) -> None:
+                 namespaces: Optional[NsmapType] = None,
+                 reconciliation: Optional['ChoiceReconciliationError'] = None) -> None:
 
         self.index = index
         self.particle = particle
         self.occurs = occurs
         self.expected = expected
+        self.reconciliation = reconciliation
 
         if namespaces is None:
             namespaces = getattr(validator, 'namespaces', {})
