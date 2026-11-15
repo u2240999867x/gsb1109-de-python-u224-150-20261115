@@ -21,6 +21,7 @@ from . import cdp
 from . import dhcp
 from . import diameter
 from . import dns
+from . import dnsflow
 from . import dtp
 from . import esp
 from . import ethernet
