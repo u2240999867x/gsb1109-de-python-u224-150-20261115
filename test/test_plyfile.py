@@ -698,10 +698,12 @@ invalid_cases = [
 
     (ply_list_a('binary_little_endian', 1,
                 b'\x03\x01\x00\x00\x00\x02\x00\x00\x00'),
-     "row 0: property 'a': early end-of-file"),
+     "row 0: property 'a': list length 3 requires 12 byte(s) of "
+     "element data but only 8 byte(s) remain"),
 
     (ply_list_a('binary_little_endian', 1, b'\x01\x02'),
-     "row 0: property 'a': early end-of-file"),
+     "row 0: property 'a': list length 1 requires 4 byte(s) of "
+     "element data but only 1 byte(s) remain"),
 
     (ply_abc('binary_little_endian', 2, b'\x01\x02\x03'),
      "row 1: early end-of-file")
@@ -714,6 +716,114 @@ def test_invalid(tmpdir, s, error_string):
     with Raises(PlyElementParseError) as e:
         read_str(s, tmpdir)
     assert str(e) == "element 'test': " + error_string
+
+
+def _face_ply(count, len_type, body):
+    header = (
+        b"ply\nformat binary_little_endian 1.0\n"
+        b"element face " + str(count).encode('ascii') + b"\n"
+        b"property list " + len_type.encode('ascii') +
+        b" int vertex_indices\n"
+        b"property uchar red\nproperty uchar green\n"
+        b"property uchar blue\nend_header\n"
+    )
+    return header, header + body
+
+
+def _face_record(indices, rgb, length_byte=None):
+    length = len(indices) if length_byte is None else length_byte
+    return (bytes([length]) +
+            numpy.array(indices, dtype='<i4').tobytes() +
+            bytes(rgb))
+
+
+class _NonSeekable(BytesIO):
+    def tell(self):
+        raise OSError("not seekable")
+
+    def seek(self, *args):
+        raise OSError("not seekable")
+
+
+def test_bin_list_negative_length(tmpdir):
+    good = _face_record([0, 1, 2], (10, 20, 30))
+    # 0xff is -1 for the signed (char) length type.
+    header, data = _face_ply(3, 'char', good + b'\xff' + b'\x00' * 8)
+
+    with Raises(PlyElementParseError) as e:
+        read_str(data, tmpdir)
+
+    assert str(e) == ("element 'face': row 1: property "
+                      "'vertex_indices': negative list length -1")
+    assert e.exc_val.row == 1
+    assert e.exc_val.prop.name == 'vertex_indices'
+    assert e.exc_val.byte_offset == len(header) + len(good)
+
+    retained = e.exc_val.element
+    assert retained.count == 1
+    assert (retained.data[0]['vertex_indices'] == [0, 1, 2]).all()
+    assert retained.data[0]['red'] == 10
+    assert retained.data[0]['green'] == 20
+    assert retained.data[0]['blue'] == 30
+
+
+def test_bin_list_length_exceeds_remaining(tmpdir):
+    good = _face_record([0, 1, 2], (10, 20, 30))
+    body = good + bytes([200]) + b'\x01\x02\x03'
+    header, data = _face_ply(3, 'uchar', body)
+
+    with Raises(PlyElementParseError) as e:
+        read_str(data, tmpdir)
+
+    assert str(e) == (
+        "element 'face': row 1: property 'vertex_indices': "
+        "list length 200 requires 800 byte(s) of element data but "
+        "only 3 byte(s) remain")
+    assert e.exc_val.row == 1
+    assert e.exc_val.byte_offset == len(header) + len(good)
+    assert e.exc_val.element.count == 1
+
+
+def test_bin_list_bad_face_retains_prior_records(tmpdir):
+    good0 = _face_record([0, 1, 2], (10, 20, 30))
+    good1 = _face_record([3, 4, 5], (1, 2, 3))
+    _header, data = _face_ply(3, 'uchar',
+                              good0 + good1 + bytes([200]))
+
+    with Raises(PlyElementParseError) as e:
+        read_str(data, tmpdir)
+
+    assert e.exc_val.row == 2
+    retained = e.exc_val.element
+    assert retained.count == 2
+    assert (retained.data[0]['vertex_indices'] == [0, 1, 2]).all()
+    assert (retained.data[1]['vertex_indices'] == [3, 4, 5]).all()
+
+
+def test_bin_list_negative_length_nonseekable():
+    good = _face_record([0, 1, 2], (10, 20, 30))
+    _header, data = _face_ply(3, 'char', good + b'\xff' + b'\x00' * 8)
+
+    with Raises(PlyElementParseError) as e:
+        PlyData.read(_NonSeekable(data))
+
+    assert "negative list length -1" in str(e)
+    assert e.exc_val.byte_offset is None
+    assert e.exc_val.element.count == 1
+
+
+def test_bin_list_over_length_nonseekable():
+    good = _face_record([0, 1, 2], (10, 20, 30))
+    _header, data = _face_ply(3, 'uchar',
+                              good + bytes([200]) + b'\x01\x02\x03')
+
+    with Raises(PlyElementParseError) as e:
+        PlyData.read(_NonSeekable(data))
+
+    assert str(e).endswith("property 'vertex_indices': "
+                           "early end-of-file")
+    assert e.exc_val.byte_offset is None
+    assert e.exc_val.element.count == 1
 
 
 def test_assign_elements(tet_ply_txt):

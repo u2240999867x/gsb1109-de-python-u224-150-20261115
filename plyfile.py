@@ -655,6 +655,14 @@ class PlyElement(object):
         Load a PLY element from a binary PLY file.  The element may
         contain list properties.
 
+        The byte extent of the stream is probed once so that each
+        variable-length list property can be validated against the
+        bytes actually remaining from the current position.  A negative
+        length, or one that runs past the remaining bytes, is rejected
+        on the offending record instead of being allowed to chain-read
+        into later properties or records.  Records fully parsed before
+        such a failure are retained on the element and remain usable.
+
         Parameters
         ----------
         stream : readable open file
@@ -662,14 +670,57 @@ class PlyElement(object):
         """
         self._data = _np.empty(self.count, dtype=self.dtype(byte_order))
 
+        stream_end = None
+        element_start = None
+        try:
+            element_start = stream.tell()
+            stream.seek(0, 2)
+            stream_end = stream.tell()
+            stream.seek(element_start)
+        except (AttributeError, OSError, ValueError):
+            # The stream is not seekable, so the remaining byte range
+            # cannot be determined.  Length validation that does not
+            # depend on it (e.g. rejecting negative lengths) still runs.
+            stream_end = None
+            if element_start is not None:
+                try:
+                    stream.seek(element_start)
+                except (AttributeError, OSError, ValueError):
+                    pass
+
         for k in range(self.count):
+            row_start = stream.tell() if stream_end is not None else None
             for prop in self.properties:
                 try:
-                    self._data[prop.name][k] = \
-                        prop._read_bin(stream, byte_order)
+                    if isinstance(prop, PlyListProperty):
+                        remaining = (stream_end - stream.tell()
+                                     if stream_end is not None else None)
+                        self._data[prop.name][k] = prop._read_bin(
+                            stream, byte_order, remaining_bytes=remaining)
+                    else:
+                        self._data[prop.name][k] = \
+                            prop._read_bin(stream, byte_order)
                 except StopIteration:
-                    raise PlyElementParseError("early end-of-file",
-                                               self, k, prop)
+                    # Build the error before truncating so the element's
+                    # original count is still reflected in the message.
+                    error = PlyElementParseError(
+                        "early end-of-file", self, k, prop,
+                        byte_offset=row_start)
+                    self._retain_complete_records(k)
+                    raise error
+                except PlyElementParseError as cause:
+                    error = PlyElementParseError(
+                        cause.message, self, k, prop,
+                        byte_offset=row_start)
+                    self._retain_complete_records(k)
+                    raise error from cause
+
+    def _retain_complete_records(self, k):
+        """
+        Truncate the element's data to the `k` fully-parsed records so
+        they remain usable after a parse failure on a later record.
+        """
+        self.data = self._data[:k]
 
     def _write_bin(self, stream, byte_order):
         """
@@ -973,14 +1024,28 @@ class PlyListProperty(PlyProperty):
         for x in data:
             yield x
 
-    def _read_bin(self, stream, byte_order):
+    def _read_bin(self, stream, byte_order, remaining_bytes=None):
         """
         Read data from a binary stream.
+
+        The length field is validated independently from the element
+        payload: a negative length, or one whose declared elements would
+        extend past the bytes remaining in the stream, raises
+        `PlyElementParseError` before any element is read, so a bad
+        length cannot cause the parser to chain-read into the following
+        properties or records.  A shortfall while reading the declared
+        number of elements of the value dtype is reported separately as
+        an early end-of-file.
 
         Parameters
         ----------
         stream : readable open binary file
         byte_order : {'<', '>', '='}
+        remaining_bytes : int or None, optional
+            Number of bytes remaining in the stream from the start of
+            this property (including its length field).  If None, the
+            stream is not seekable and the range check is skipped; the
+            negative-length check still runs.
 
         Returns
         -------
@@ -988,17 +1053,37 @@ class PlyListProperty(PlyProperty):
 
         Raises
         ------
+        PlyElementParseError
+            If the length is negative or exceeds the remaining bytes.
         StopIteration
-            If data could not be read.
+            If the length field or element data could not be read.
         """
         (len_t, val_t) = self.list_dtype(byte_order)
+        len_dtype = _np.dtype(len_t)
+        val_dtype = _np.dtype(val_t)
 
         try:
-            n = _read_array(stream, _np.dtype(len_t), 1)[0]
+            n = int(_read_array(stream, len_dtype, 1)[0])
         except IndexError:
             raise StopIteration
 
-        data = _read_array(stream, _np.dtype(val_t), n)
+        # Length-count validation, independent of the element payload.
+        if n < 0:
+            raise PlyElementParseError(
+                "negative list length %d" % n)
+
+        if remaining_bytes is not None:
+            element_bytes = n * val_dtype.itemsize
+            bytes_for_elements = remaining_bytes - len_dtype.itemsize
+            if element_bytes > bytes_for_elements:
+                raise PlyElementParseError(
+                    "list length %d requires %d byte(s) of element "
+                    "data but only %d byte(s) remain" %
+                    (n, element_bytes, bytes_for_elements))
+
+        # Element-type validation: read exactly n values of the declared
+        # value dtype and confirm none are missing.
+        data = _read_array(stream, val_dtype, n)
         if len(data) < n:
             raise StopIteration
 
@@ -1052,13 +1137,20 @@ class PlyElementParseError(PlyParseError):
     element : PlyElement
     row : int
     prop : PlyProperty
+    byte_offset : int or None
+        Absolute byte offset in the source stream at which the offending
+        record begins, when it could be determined.  This locates the
+        bad record within the source even though its declared length may
+        be untrustworthy.  None when the stream is not seekable.
     """
 
-    def __init__(self, message, element=None, row=None, prop=None):
+    def __init__(self, message, element=None, row=None, prop=None,
+                 byte_offset=None):
         self.message = message
         self.element = element
         self.row = row
         self.prop = prop
+        self.byte_offset = byte_offset
 
         s = ''
         if self.element:
@@ -1072,9 +1164,10 @@ class PlyElementParseError(PlyParseError):
         Exception.__init__(self, s)
 
     def __repr__(self):
-        return ('%s(%r, element=%r, row=%r, prop=%r)' %
+        return ('%s(%r, element=%r, row=%r, prop=%r, byte_offset=%r)' %
                 (self.__class__.__name__,
-                 self.message, self.element, self.row, self.prop))
+                 self.message, self.element, self.row, self.prop,
+                 self.byte_offset))
 
 
 class PlyHeaderParseError(PlyParseError):

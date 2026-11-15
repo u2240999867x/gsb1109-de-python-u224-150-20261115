@@ -3,6 +3,15 @@
 All notable changes to this project will be documented here.
 
 ## [Unreleased]
+### Fixed
+- Binary parsing of list properties (e.g. a face's variable-length
+  vertex indices followed by scalar properties) now validates the list
+  length and element payload separately. A negative length, or one that
+  extends past the remaining bytes, is rejected on the offending record
+  instead of being allowed to chain-read into later properties or
+  records. `PlyElementParseError` now records the source byte offset of
+  the bad record, and records fully parsed before the failure are
+  retained on the element rather than discarded.
 
 ## [1.1.5] - 2026-07-25
 ### Fixed
