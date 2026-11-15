@@ -13,4 +13,5 @@ an introduction and worked examples, see the `main documentation
    facade
    inplaceeditor
    pycdlibio
+   rangeresult
    exceptions

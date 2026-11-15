@@ -1,5 +1,9 @@
 Changelog for PyCdlib
 
+1.23.0 (unreleased)
+-------------------
+* Add read_file_range() for logical byte-range reads over multi-extent files, returning the reassembled data together with each segment's on-disc source range; cross-extent and tail reads are framed against the original file length, and a missing or short trailing extent is reported as a partial (incomplete) result rather than a false EOF so already-complete leading ranges are still delivered
+
 1.22.0 (2026-10-09)
 -------------------
 * Fix a potential infinite loop in UDF File Entry parsing; pointed out by R0ck3t (zhangyan8216 on GitHub)

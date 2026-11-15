@@ -36,6 +36,7 @@ from pycdlib import isohybrid
 from pycdlib import path_table_record
 from pycdlib import pycdlibexception
 from pycdlib import pycdlibio
+from pycdlib import rangeresult
 from pycdlib import rockridge
 from pycdlib import udf as udfmod
 from pycdlib import utils
@@ -4930,6 +4931,231 @@ class PyCdlib:
                 rec = rec.data_continuation
 
         return extents
+
+    def _collect_file_extents(self, record, is_udf):
+        # type: (Union[dr.DirectoryRecord, udfmod.UDFFileEntry], bool) -> Tuple[List[Tuple[int, int, Optional[inode.Inode], int, Optional[int]]], int]
+        """
+        An internal method to flatten a file's data into an ordered list of
+        on-disc extents.
+
+        Each entry is a tuple of (file-logical offset, extent length, backing
+        Inode, read base, disc offset).  The read base is the byte offset to
+        seek relative to the position established by opening the Inode through
+        :class:`inode.InodeOpenData`; that keeps reads correct both for an
+        ISO opened from disc (each chunk has its own Inode positioned at its
+        extent) and for an ISO being mastered (the chunks share one Inode over
+        the source file and are distinguished by data_extent_offset).  The
+        disc offset is the absolute byte offset of the extent in the disc
+        image, used purely for provenance; it is None when the extent has no
+        readable Inode, so a missing trailing extent is not mistaken for EOF.
+
+        Args:
+            record: The directory record or UDF File Entry describing the file.
+            is_udf: True when record is a UDF File Entry, False for an
+                ISO9660 / Joliet / Rock Ridge directory record.
+        Returns:
+            A tuple of the extent list and the logical length of the original
+            file.
+        """
+        extents = []  # type: List[Tuple[int, int, Optional[inode.Inode], int, Optional[int]]]
+        logical_offset = 0
+
+        if is_udf:
+            part_start = self.udf_main_descs.partitions[0].part_start_location
+            file_ino = record.inode
+            for desc in record.alloc_descs:
+                ext_len = desc.extent_length
+                if ext_len == 0:
+                    continue
+                # UDF allocation descriptors are consecutive from the start
+                # of the Inode, so a descriptor's read base is its file-logical
+                # offset (the same contiguity the whole-file UDF read relies on).
+                if file_ino is None:
+                    disc_offset = None  # type: Optional[int]
+                else:
+                    disc_offset = ((part_start + desc.log_block_num) *
+                                   self.logical_block_size +
+                                   getattr(desc, 'offset', 0))
+                extents.append((logical_offset, ext_len, file_ino,
+                                logical_offset, disc_offset))
+                logical_offset += ext_len
+            file_length = record.get_data_length()
+        else:
+            rec = record  # type: Optional[dr.DirectoryRecord]
+            while rec is not None:
+                if rec.data_length == 0:
+                    break
+                ext_ino = rec.inode
+                if ext_ino is None:
+                    # A parsed record whose backing data is absent.  Keep a
+                    # placeholder and keep accumulating the original file
+                    # length so a missing trailing extent is reported as a
+                    # partial read rather than shrinking the logical file.
+                    extents.append((logical_offset, rec.data_length,
+                                    None, 0, None))
+                else:
+                    read_base = rec.data_extent_offset * self.logical_block_size
+                    disc_offset = ((ext_ino.extent_location() +
+                                    rec.data_extent_offset) *
+                                   self.logical_block_size)
+                    extents.append((logical_offset, rec.data_length, ext_ino,
+                                    read_base, disc_offset))
+                logical_offset += rec.data_length
+                rec = rec.data_continuation
+            file_length = logical_offset
+
+        return extents, file_length
+
+    def read_file_range(self, offset=0, length=None, **kwargs):
+        # type: (int, Optional[int], str) -> rangeresult.RangeReadResult
+        """
+        Read a logical byte range of a file, returning both the data and the
+        on-disc provenance of every piece.
+
+        Large files are stored across several extents -- multi-extent ISO9660
+        files (larger than one directory record can describe) and UDF files
+        with several allocation descriptors.  This method maps a logical
+        range onto the underlying extents, reads just the overlapping bytes,
+        and reports the disc byte range each piece came from.
+
+        Reads are always framed against the original file length, not the
+        number of extents that happen to be readable.  A range crossing an
+        extent boundary is served from each backing extent in turn, and a
+        range reaching past the end of the file is clamped to the file length
+        rather than padded.  When a trailing extent is missing or returns a
+        short read, the already-complete leading extents are still returned
+        independently -- this never masquerades as a clean EOF.  Inspect
+        :attr:`rangeresult.RangeReadResult.complete` and
+        :attr:`rangeresult.RangeReadResult.short_read` to detect the partial
+        case, and :attr:`rangeresult.RangeReadResult.segments` for the
+        per-extent sources.
+
+        Args:
+            offset: The zero-based file-logical byte offset to start reading
+                at.  Defaults to 0.  Offsets at or past the end of the file
+                yield an empty result.
+            length: The maximum number of bytes to read, clamped to the
+                original file length.  None (the default) reads through the
+                end of the file.
+            iso_path: The absolute ISO9660 path to lookup on the ISO
+                (exclusive with rr_path, joliet_path, and udf_path).
+            rr_path: The absolute Rock Ridge path to lookup on the ISO
+                (exclusive with iso_path, joliet_path, and udf_path).
+            joliet_path: The absolute Joliet path to lookup on the ISO
+                (exclusive with iso_path, rr_path, and udf_path).
+            udf_path: The absolute UDF path to lookup on the ISO (exclusive
+                with iso_path, rr_path, and joliet_path).
+        Returns:
+            A :class:`rangeresult.RangeReadResult` holding the reassembled
+            bytes, the per-extent segments with their on-disc source ranges,
+            and completeness bookkeeping.
+        """
+        if not self._initialized:
+            raise pycdlibexception.PyCdlibInvalidInput('This object is not initialized; call either open() or new() to create an ISO')
+
+        if isinstance(offset, float) or isinstance(length, float):
+            raise pycdlibexception.PyCdlibInvalidInput('an integer is required')
+        if offset < 0:
+            raise pycdlibexception.PyCdlibInvalidInput('Invalid offset value (must be positive)')
+        if length is not None and length < 0:
+            raise pycdlibexception.PyCdlibInvalidInput('Invalid length value (must be positive)')
+
+        num_paths = 0
+        rec = None  # type: Optional[Union[dr.DirectoryRecord, udfmod.UDFFileEntry]]
+        for key, value in kwargs.items():
+            if key in ('joliet_path', 'rr_path', 'iso_path', 'udf_path'):
+                if value is not None:
+                    num_paths += 1
+            else:
+                raise pycdlibexception.PyCdlibInvalidInput("Invalid keyword, must be one of 'iso_path', 'rr_path', 'joliet_path', or 'udf_path'")
+
+        if num_paths != 1:
+            raise pycdlibexception.PyCdlibInvalidInput("Must specify one, and only one of 'iso_path', 'rr_path', 'joliet_path', or 'udf_path'")
+
+        is_udf = 'udf_path' in kwargs
+        if 'joliet_path' in kwargs:
+            joliet_path = self._normalize_joliet_path(kwargs['joliet_path'])
+            rec = self._find_joliet_record(joliet_path)
+        elif is_udf:
+            if self.udf_root is None:
+                raise pycdlibexception.PyCdlibInvalidInput('Can only specify a UDF path for a UDF ISO')
+            (ident_unused, rec) = self._find_udf_record(utils.normpath(kwargs['udf_path']))
+            if rec is None:
+                raise pycdlibexception.PyCdlibInvalidInput('Cannot get entry for empty UDF File Entry')
+        elif 'rr_path' in kwargs:
+            if not self.rock_ridge:
+                raise pycdlibexception.PyCdlibInvalidInput('Cannot fetch a rr_path from a non-Rock Ridge ISO')
+            rec = self._find_rr_record(utils.normpath(kwargs['rr_path']))
+        else:
+            rec = self._find_iso_record(utils.normpath(kwargs['iso_path']))
+
+        if not rec.is_file():
+            raise pycdlibexception.PyCdlibInvalidInput('Path to read must be a file')
+
+        if rec.inode is None:
+            raise pycdlibexception.PyCdlibInvalidInput('File has no data')
+
+        # The provenance disc offsets are derived from extent locations, which
+        # are only assigned during a reshuffle.  On an ISO built with new() that
+        # has not been written out, force one rather than reporting unassigned
+        # extents (the same contract get_file_byte_extents() offers).
+        if self._needs_reshuffle:
+            self._reshuffle_extents()
+
+        extents, file_length = self._collect_file_extents(rec, is_udf)
+
+        # Frame the request against the original file length so cross-extent
+        # and tail reads never grow beyond the logical end of the file.
+        logical_start = min(offset, file_length)
+        if length is None:
+            logical_end = file_length
+        else:
+            logical_end = min(file_length, offset + length)
+        requested_length = max(0, logical_end - logical_start)
+
+        segments = []  # type: List[rangeresult.RangeReadSegment]
+        short_read = False
+        available_length = 0
+
+        for ext_logical, ext_len, ext_ino, read_base, disc_offset in extents:
+            ext_logical_end = ext_logical + ext_len
+            overlap_start = max(logical_start, ext_logical)
+            overlap_end = min(logical_end, ext_logical_end)
+            if overlap_start >= overlap_end:
+                continue
+
+            # A missing trailing extent is not EOF: stop here and report the
+            # complete leading prefix gathered so far as its own delivery.
+            if ext_ino is None or disc_offset is None:
+                break
+
+            want = overlap_end - overlap_start
+            within = overlap_start - ext_logical
+            disc_read_pos = disc_offset + within
+            with inode.InodeOpenData(ext_ino, self.logical_block_size) as (data_fp, _):
+                # InodeOpenData leaves the descriptor at the Inode start; the
+                # read base reaches the chunk's slice within a shared run.
+                data_fp.seek(read_base + within, os.SEEK_CUR)
+                data = data_fp.read(want)
+            got = len(data)
+
+            segments.append(rangeresult.RangeReadSegment(
+                overlap_start, data, disc_read_pos, want))
+            available_length += got
+
+            if got < want:
+                # The backing extent ended early (a truncated image).  Later
+                # extents live further out and cannot be read either, so
+                # deliver the complete prefix rather than pad or fake EOF.
+                short_read = True
+                break
+
+        complete = (not short_read) and available_length == requested_length
+
+        return rangeresult.RangeReadResult(segments, file_length,
+                                           logical_start, requested_length,
+                                           available_length, complete,
+                                           short_read)
 
     def get_and_write(self, iso_path, local_path, blocksize=8192):
         # type: (str, str, int) -> None
