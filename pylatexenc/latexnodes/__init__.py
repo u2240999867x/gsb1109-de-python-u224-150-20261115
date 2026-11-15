@@ -86,3 +86,8 @@ from ._parsedargsinfo import (
 from ._latex_recomposer import (
     LatexNodesLatexRecomposer
 )
+
+from ._partialparse import (
+    LatexIncompleteRange,
+    LatexPartialParseResult,
+)

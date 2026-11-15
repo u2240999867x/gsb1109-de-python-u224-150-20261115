@@ -15,8 +15,26 @@ The main `LatexWalker` class
 .. autoclass:: pylatexenc.latexwalker.LatexWalker
    :members:
 
-
 .. autofunction:: pylatexenc.latexwalker.get_default_latex_context_db
+
+
+Partial parsing
+~~~~~~~~~~~~~~~
+
+Use :py:meth:`LatexWalker.parse_partial()
+<pylatexenc.latexwalker.LatexWalker.parse_partial>` when the input may be
+truncated.  It returns a
+:py:class:`~pylatexenc.latexnodes.LatexPartialParseResult` whose trusted prefix
+is parsed strictly, along with a separate tolerant parse and the exact
+:py:class:`~pylatexenc.latexnodes.LatexIncompleteRange` that could not be read::
+
+    >>> from pylatexenc.latexwalker import LatexWalker
+    >>> latex = r'\section{Intro} \begin{verbatim}\notacommand{x'
+    >>> result = LatexWalker(latex).parse_partial()
+    >>> [ n.latex_verbatim() for n in result.trusted_nodes ]
+    ['\\section{Intro}', ' ']
+    >>> result.incomplete_range.source
+    '\\begin{verbatim}\\notacommand{x'
 
 
 Exception Classes

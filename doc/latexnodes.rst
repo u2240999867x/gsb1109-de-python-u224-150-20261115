@@ -79,6 +79,16 @@ Nodes Collector
    :members:
 
 
+Partial Parsing
+---------------
+
+.. autoclass:: LatexIncompleteRange
+   :members:
+
+.. autoclass:: LatexPartialParseResult
+   :members:
+
+
 Recomposing latex code
 ----------------------
 

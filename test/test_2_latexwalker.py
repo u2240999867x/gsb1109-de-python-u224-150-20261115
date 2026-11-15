@@ -18,6 +18,10 @@ from pylatexenc.latexwalker import (
 from pylatexenc import macrospec
 
 from pylatexenc.latexnodes import ParsedArgumentsInfo
+from pylatexenc.latexnodes import (
+    LatexIncompleteRange,
+    LatexPartialParseResult,
+)
 from pylatexenc.latexnodes import parsers as latexnodes_parsers
 
 from ._helpers_tests import HelperProvideAssertEqualsForLegacyTests
@@ -2113,6 +2117,216 @@ Use macros: \a{} and \b{xxx}{yyy}.
         self.assertEqual(len(envnode.nodelist), 2)
         self.assertEqual(envnode.nodelist[0].macroname, 'item')
         self.assertEqual(envnode.nodelist[1].chars, 'one')
+
+
+    def test_parse_partial_complete_document(self):
+        latextext = r'''\section{Intro}
+Some text with \textbf{bold} and $x$.
+'''
+        result = LatexWalker(latextext).parse_partial()
+
+        self.assertIsInstance(result, LatexPartialParseResult)
+        self.assertIsInstance(result.incomplete_range, LatexIncompleteRange)
+        self.assertTrue(result.is_complete)
+        self.assertTrue(result.incomplete_range.is_empty)
+        self.assertEqual(result.incomplete_range.pos, len(latextext))
+        self.assertEqual(result.incomplete_range.pos_end, len(latextext))
+        self.assertEqual(result.incomplete_range.source, '')
+        self.assertEqual(result.trusted_source, latextext)
+        self.assertEqual(result.trusted_nodes, result.nodelist)
+        self.assertEqual(result.tolerant_nodes, result.tolerant_nodelist)
+        self.assertIsNone(result.strict_error)
+
+    def test_parse_partial_keeps_trusted_prefix_and_reports_tail(self):
+        latextext = r'''\section{Intro}
+Some text with \textbf{bold} and then \emph{unclosed'''
+        result = LatexWalker(latextext).parse_partial()
+
+        self.assertFalse(result.is_complete)
+        self.assertEqual(
+            [ n.latex_verbatim() for n in result.trusted_nodes ],
+            [
+                '\\section{Intro}',
+                '\nSome text with ',
+                '\\textbf{bold}',
+                ' and then ',
+            ]
+        )
+        self.assertEqual(
+            result.incomplete_range,
+            LatexIncompleteRange(
+                pos=latextext.index('\\emph'),
+                pos_end=len(latextext),
+                source='\\emph{unclosed',
+            )
+        )
+        # The two source pieces join back to the original input exactly.
+        self.assertEqual(
+            result.trusted_source + result.incomplete_range.source,
+            latextext
+        )
+        self.assertEqual(result.incomplete_source, '\\emph{unclosed')
+
+        # The tolerant parse is reported separately and is not merged into
+        # the trusted node list.
+        self.assertIsNotNone(result.tolerant_nodelist)
+        self.assertNotEqual(result.tolerant_nodelist, result.trusted_nodes)
+        self.assertEqual(
+            result.tolerant_nodelist[-1].latex_verbatim(),
+            '\\emph{unclosed'
+        )
+
+    def test_parse_partial_trusted_prefix_matches_standalone_parse(self):
+        latextext = r'''Title
+\begin{itemize}
+\item one
+\item two
+\section{The end'''
+        result = LatexWalker(latextext, tolerant_parsing=True).parse_partial()
+
+        prefix = result.trusted_source
+        self.assertEqual(prefix + result.incomplete_range.source, latextext)
+
+        standalone_nodes, _ = LatexWalker(
+            prefix,
+            tolerant_parsing=False,
+        ).parse_content()
+
+        self.assertEqual(
+            [ n.latex_verbatim() for n in standalone_nodes ],
+            [ n.latex_verbatim() for n in result.trusted_nodes ]
+        )
+        self.assertEqual(
+            [(n.pos, n.pos_end) for n in standalone_nodes],
+            [(n.pos, n.pos_end) for n in result.trusted_nodes]
+        )
+
+    def test_parse_partial_verbatim_environment_keeps_slashes_literal(self):
+        latextext = r'''\section{Before}
+\begin{verbatim}
+\notacommand{unclosed}
+\end{verbatim'''
+
+        result = LatexWalker(latextext).parse_partial()
+
+        self.assertEqual(
+            [ (n.nodeType(), n.latex_verbatim()) for n in result.trusted_nodes ],
+            [
+                (LatexMacroNode, '\\section{Before}'),
+                (LatexCharsNode, '\n'),
+            ]
+        )
+        self.assertEqual(
+            result.incomplete_range.source,
+            '\\begin{verbatim}\n\\notacommand{unclosed}\n\\end{verbatim'
+        )
+        self.assertEqual(
+            result.trusted_source + result.incomplete_range.source,
+            latextext
+        )
+
+        # In particular, the incomplete text is not interpreted as a macro
+        # named 'notacommand' or as a group.  The tolerant parse may offer a
+        # recovered environment node, but it is kept separately.
+        self.assertIsNotNone(result.tolerant_nodelist)
+        self.assertFalse(any(
+            n.isNodeType(LatexMacroNode) and n.macroname == 'notacommand'
+            for n in result.trusted_nodes
+        ))
+        recovered_env = result.tolerant_nodelist[-1]
+        self.assertTrue(recovered_env.isNodeType(LatexEnvironmentNode))
+        self.assertEqual(recovered_env.environmentname, 'verbatim')
+        self.assertEqual(
+            recovered_env.nodelist[0].chars,
+            '\\notacommand{unclosed}\n\\end{verbatim'
+        )
+
+    def test_parse_partial_verbatim_argument_at_end(self):
+        latextext = r'''Before \verb+\notacommand{x}'''
+        result = LatexWalker(latextext).parse_partial()
+
+        self.assertFalse(result.is_complete)
+        self.assertEqual(
+            [ n.latex_verbatim() for n in result.trusted_nodes ],
+            ['Before ']
+        )
+        self.assertEqual(
+            result.incomplete_range.source,
+            '\\verb+\\notacommand{x}'
+        )
+
+    def test_parse_partial_reports_unclosed_group(self):
+        latextext = r'''A {braced group that never closes'''
+        result = LatexWalker(latextext).parse_partial()
+
+        self.assertFalse(result.is_complete)
+        self.assertEqual(
+            [ n.latex_verbatim() for n in result.trusted_nodes ],
+            ['A ']
+        )
+        self.assertEqual(
+            result.incomplete_range,
+            LatexIncompleteRange(
+                pos=2,
+                pos_end=len(latextext),
+                source='{braced group that never closes',
+            )
+        )
+
+    def test_parse_partial_reports_incomplete_environment_name(self):
+        latextext = r'''Text \begin{documen'''
+        result = LatexWalker(latextext).parse_partial()
+
+        self.assertFalse(result.is_complete)
+        self.assertEqual(
+            [ n.latex_verbatim() for n in result.trusted_nodes ],
+            ['Text']
+        )
+        self.assertEqual(
+            result.incomplete_range.source,
+            ' \\begin{documen'
+        )
+
+    def test_parse_partial_does_not_mark_a_syntax_error_as_complete(self):
+        # A stray closing brace is not an incomplete tail; it is a real
+        # syntax error.  The method still returns a prefix, but the range
+        # must start at the offending character.
+        latextext = r'''Text } more'''
+        result = LatexWalker(latextext).parse_partial()
+
+        self.assertFalse(result.is_complete)
+        self.assertEqual(
+            [ n.latex_verbatim() for n in result.trusted_nodes ],
+            ['Text ']
+        )
+        self.assertEqual(result.incomplete_range.source, '} more')
+        self.assertIsNotNone(result.strict_error)
+        self.assertEqual(
+            result.strict_error.error_type_info['what'],
+            'nodes_unexpected_closing_group_delimiter'
+        )
+
+    def test_parse_partial_strict_and_tolerant_are_separate(self):
+        latextext = r'''\textbf{unclosed'''
+        walker = LatexWalker(latextext, tolerant_parsing=True)
+        result = walker.parse_partial()
+
+        self.assertFalse(result.is_complete)
+        self.assertEqual(result.trusted_nodes, [])
+
+        # The ordinary tolerant parse of the same walker still recovers a
+        # macro node; that node is not the trusted prefix.
+        tolerant_nodes, _ = walker.parse_content()
+        self.assertEqual(len(tolerant_nodes), 1)
+        self.assertEqual(tolerant_nodes[0].macroname, 'textbf')
+
+        self.assertEqual(
+            [ n.latex_verbatim() for n in result.tolerant_nodes ],
+            ['\\textbf{unclosed']
+        )
+        self.assertFalse(
+            any(n.isNodeType(LatexMacroNode) for n in result.trusted_nodes)
+        )
 
 
     def test_bug_issueno49(self):

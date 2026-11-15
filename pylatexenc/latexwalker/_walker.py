@@ -583,6 +583,160 @@ class LatexWalker(latexnodes.LatexWalkerBase):
         return nodes, info
 
 
+    def parse_partial(self, parser=None, token_reader=None, parsing_state=None,
+                      tolerant_parsing=None):
+        r"""
+        Parse as much of the stored LaTeX code as can be read reliably, and
+        report the part that is incomplete.
+
+        This is useful for input that was cut off, for instance an uploaded
+        TeX file that is missing some closing braces at the end.  The method
+        returns a :py:class:`~pylatexenc.latexnodes.LatexPartialParseResult`
+        instance whose `nodelist` (also available as `trusted_nodes`) contains
+        only the top-level nodes that were parsed completely by strict parsing.
+        The exact source range that could not be parsed is reported as
+        `incomplete_range`.
+
+        The trusted prefix is always obtained with strict parsing.  Tolerant
+        parsing is performed separately, on the entire input, and its result is
+        reported as `tolerant_nodelist` (also available as `tolerant_nodes`).
+        The two node lists are never merged: a node in `tolerant_nodelist` may
+        have been recovered from an open construct and is therefore not part of
+        the trusted prefix.
+
+        In particular, if the input ends while a verbatim environment or a
+        verbatim argument is still open, everything from the opening of that
+        construct to the end of the input is reported as incomplete.  The
+        backslashes and braces in that range are kept as literal source text;
+        they are never interpreted as macros or groups in the trusted result.
+
+        Arguments are the same as for :py:meth:`parse_content()`.  If
+        `tolerant_parsing` is `None`, the walker's `tolerant_parsing` flag is
+        used to decide whether to produce `tolerant_nodelist`.
+
+        The returned trusted nodes satisfy
+        ``node.latex_verbatim() == source[node.pos:node.pos_end]`` and their
+        source spans lie entirely before `incomplete_range.pos`.  Consequently,
+        ``source[:incomplete_range.pos] + incomplete_range.source`` is the
+        original input, and parsing the trusted prefix on its own gives the same
+        trusted nodes.
+
+        .. versionadded:: 3.0
+        """
+
+        if token_reader is None:
+            token_reader = self.make_token_reader()
+
+        if parsing_state is None:
+            parsing_state = self.make_parsing_state()
+
+        if tolerant_parsing is None:
+            tolerant_parsing = self.tolerant_parsing
+
+        source = self.s
+        start_pos = token_reader.cur_pos()
+        if start_pos is None:
+            start_pos = 0
+
+        def as_nodelist(nodes, pos):
+            if nodes is None:
+                return self.make_nodelist(
+                    [],
+                    parsing_state=parsing_state,
+                    pos=pos,
+                    pos_end=pos,
+                )
+            if isinstance(nodes, LatexNodeList):
+                return nodes
+            return self.make_nodelist(
+                [ nodes ],
+                parsing_state=parsing_state,
+            )
+
+        def parse_in_mode(use_tolerant_parsing, reader):
+            # The trusted prefix must always come from strict parsing, even if
+            # this walker was constructed with tolerant_parsing=True (which is
+            # the default).  The tolerant result is obtained in a separate call
+            # so that recovery nodes can never be mistaken for trusted ones.
+            saved_tolerant_parsing = self.tolerant_parsing
+            saved_reader_tolerant_parsing = None
+            has_reader_tolerant_parsing = hasattr(reader, 'tolerant_parsing')
+            if has_reader_tolerant_parsing:
+                saved_reader_tolerant_parsing = reader.tolerant_parsing
+
+            self.tolerant_parsing = use_tolerant_parsing
+            if has_reader_tolerant_parsing:
+                reader.tolerant_parsing = use_tolerant_parsing
+            try:
+                return self.parse_content(
+                    parser,
+                    token_reader=reader,
+                    parsing_state=parsing_state,
+                )
+            finally:
+                self.tolerant_parsing = saved_tolerant_parsing
+                if has_reader_tolerant_parsing:
+                    reader.tolerant_parsing = saved_reader_tolerant_parsing
+
+        # Strict parse of the entire input.  On success, every top-level node
+        # is trusted.  On error, the parser reports the complete nodes it had
+        # collected before the error; anything from the end of those nodes to
+        # the end of the input is the incomplete range.
+        strict_error = None
+        try:
+            strict_nodelist, _ = parse_in_mode(False, token_reader)
+        except LatexWalkerParseError as exc:
+            strict_error = exc
+            strict_nodelist = None
+            if hasattr(exc, 'recovery_nodes'):
+                strict_nodelist = exc.recovery_nodes
+
+        strict_nodelist = as_nodelist(strict_nodelist, start_pos)
+        strict_nodelist_end = strict_nodelist.pos_end
+        if strict_nodelist_end is None:
+            strict_nodelist_end = start_pos
+        if strict_nodelist_end < start_pos:
+            strict_nodelist_end = start_pos
+        if strict_nodelist_end > len(source):
+            strict_nodelist_end = len(source)
+
+        incomplete_pos = strict_nodelist_end
+        incomplete_source = source[incomplete_pos:]
+
+        incomplete_range = latexnodes.LatexIncompleteRange(
+            pos=incomplete_pos,
+            pos_end=len(source),
+            source=incomplete_source,
+        )
+
+        # A separate tolerant parse of the full input.  This intentionally does
+        # not influence the trusted prefix above.  Use a fresh token reader and
+        # parsing state so that the strict parse cannot affect it.
+        tolerant_nodelist = None
+        tolerant_error = None
+        if tolerant_parsing:
+            try:
+                tolerant_nodelist, _ = parse_in_mode(
+                    True,
+                    self.make_token_reader(pos=start_pos),
+                )
+            except LatexWalkerParseError as exc:
+                tolerant_error = exc
+                if hasattr(exc, 'recovery_nodes'):
+                    tolerant_nodelist = exc.recovery_nodes
+            tolerant_nodelist = as_nodelist(tolerant_nodelist, start_pos)
+
+        return latexnodes.LatexPartialParseResult(
+            nodelist=strict_nodelist,
+            incomplete_range=incomplete_range,
+            tolerant_nodelist=tolerant_nodelist,
+            strict_error=strict_error,
+            tolerant_error=tolerant_error,
+            source=source,
+            start_pos=start_pos,
+        )
+
+
     def make_nodes_collector(self,
                              token_reader,
                              parsing_state,
