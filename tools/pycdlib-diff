@@ -1,0 +1,606 @@
+#!/usr/bin/env python3
+
+# Copyright (C) 2021  Chris Lalancette <clalancette@gmail.com>
+
+# This library is free software; you can redistribute it and/or
+# modify it under the terms of the GNU Lesser General Public
+# License as published by the Free Software Foundation;
+# version 2.1 of the License.
+
+# This library is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
+# Lesser General Public License for more details.
+
+# You should have received a copy of the GNU Lesser General Public
+# License along with this library; if not, write to the Free Software
+# Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301  USA
+
+"""
+The main code for the pycdlib-diff tool, which compares two ISO images and
+reports a classified diff: content updates, path migrations, directory
+attribute-only changes, shared-block (hard-link) relationship changes,
+additions, and deletions.
+
+The identity mapping between the two images is decided by explicit directory
+evidence (the path of an entry within the directory hierarchy) together with
+content digests: entries at the same path are considered the same object even
+when their contents changed, while entries with identical digests at different
+paths are considered migrations.  Because the two images may store the same
+data at completely different extents, extent *locations* are never compared
+directly; only the sharing relationship (which paths share a single extent)
+is compared.  When the old image is incomplete (truncated, or flagged with
+--old-is-partial), deletions cannot be inferred and are not reported.
+"""
+
+import argparse
+import hashlib
+import os
+import sys
+
+import pycdlib
+from pycdlib import pycdlibexception
+
+
+CHUNK_SIZE = 65536
+
+
+class Entry:
+    """A single file, directory, or symlink found while walking an ISO."""
+
+    __slots__ = ('path', 'kind', 'digest', 'extent', 'length', 'date',
+                 'rr_mode')
+
+    def __init__(self, path, kind, digest, extent, length, date, rr_mode):
+        self.path = path
+        self.kind = kind  # one of 'dir', 'file', 'symlink'
+        self.digest = digest  # hex digest of contents, or None if unknown
+        self.extent = extent  # extent (block) location, or None
+        self.length = length  # data length in bytes
+        self.date = date  # raw directory-record date bytes, or None
+        self.rr_mode = rr_mode  # Rock Ridge POSIX mode, or None
+
+
+def join_path(parent, name):
+    """
+    Join a child name onto a parent ISO path.
+
+    Parameters:
+     parent - The absolute ISO path of the parent directory.
+     name - The name of the child within the parent.
+    Returns:
+     The absolute ISO path of the child.
+    """
+    if parent == '/':
+        return '/' + name
+    return parent + '/' + name
+
+
+def digest_file(iso, pathname, path):
+    """
+    Compute the SHA-256 digest of a file on the ISO.
+
+    Parameters:
+     iso - The PyCdlib object to read from.
+     pathname - The path type keyword ('iso_path', 'rr_path', etc).
+     path - The absolute path of the file on the ISO.
+    Returns:
+     A tuple of (hex digest or None, complete); the digest is None and
+     complete is False if the file data could not be fully read (for
+     instance, because the image is truncated).
+    """
+    filehash = hashlib.sha256()
+    total = 0
+    try:
+        with iso.open_file_from_iso(**{pathname: path}) as infp:
+            while True:
+                data = infp.read(CHUNK_SIZE)
+                if not data:
+                    break
+                filehash.update(data)
+                total += len(data)
+    except pycdlibexception.PyCdlibException:
+        return None, False
+
+    rec = iso.get_record(**{pathname: path})
+    if total != rec.get_data_length():
+        return None, False
+
+    return filehash.hexdigest(), True
+
+
+def record_date(rec):
+    """
+    Get the raw directory-record date bytes for a record, or None.
+
+    Parameters:
+     rec - The directory record (or UDF File Entry) to query.
+    Returns:
+     The packed date bytes, or None if the record has no date.
+    """
+    date = getattr(rec, 'date', None)
+    if date is None:
+        return None
+    try:
+        return date.record()
+    except pycdlibexception.PyCdlibException:
+        return None
+
+
+def record_rr_mode(rec):
+    """
+    Get the Rock Ridge POSIX file mode for a record, or None.
+
+    Parameters:
+     rec - The directory record to query.
+    Returns:
+     The POSIX mode bits, or None if the record has no Rock Ridge PX entry.
+    """
+    rock_ridge = getattr(rec, 'rock_ridge', None)
+    if rock_ridge is None:
+        return None
+    try:
+        return rock_ridge.get_file_mode()
+    except pycdlibexception.PyCdlibException:
+        return None
+
+
+def collect_entries(iso, pathname, suspect_tail=False, iso_size=0):
+    """
+    Walk an ISO and collect a description of every entry on it.
+
+    Parameters:
+     iso - The PyCdlib object to walk.
+     pathname - The path type keyword ('iso_path', 'rr_path', etc).
+     suspect_tail - Whether the image is known to be incomplete (truncated);
+                    files whose data ends exactly at the end of the image may
+                    have been silently shortened, so their digests cannot be
+                    trusted.
+     iso_size - The physical size of the image in bytes.
+    Returns:
+     A tuple of (entries, complete); entries is a dictionary mapping absolute
+     paths to Entry objects, and complete is False if any file data could not
+     be fully read (indicating an incomplete image).
+    """
+    entries = {}
+    complete = True
+
+    for dirpath, dirlist, filelist in iso.walk(**{pathname: '/'}):
+        dir_rec = iso.get_record(**{pathname: dirpath})
+        entries[dirpath] = Entry(dirpath, 'dir', None,
+                                 dir_rec.extent_location(),
+                                 dir_rec.get_data_length(),
+                                 record_date(dir_rec),
+                                 record_rr_mode(dir_rec))
+
+        for name in dirlist:
+            child = join_path(dirpath, name)
+            child_rec = iso.get_record(**{pathname: child})
+            entries[child] = Entry(child, 'dir', None,
+                                   child_rec.extent_location(),
+                                   child_rec.get_data_length(),
+                                   record_date(child_rec),
+                                   record_rr_mode(child_rec))
+
+        for name in filelist:
+            child = join_path(dirpath, name)
+            child_rec = iso.get_record(**{pathname: child})
+            if child_rec.is_symlink():
+                target = None
+                rock_ridge = getattr(child_rec, 'rock_ridge', None)
+                if rock_ridge is not None:
+                    try:
+                        target = rock_ridge.symlink_path()
+                    except pycdlibexception.PyCdlibException:
+                        target = None
+                if target is None:
+                    digest = None
+                else:
+                    digest = hashlib.sha256(target).hexdigest()
+                entries[child] = Entry(child, 'symlink', digest, None, 0,
+                                       record_date(child_rec),
+                                       record_rr_mode(child_rec))
+                continue
+
+            digest, read_complete = digest_file(iso, pathname, child)
+            if not read_complete:
+                complete = False
+            length = child_rec.get_data_length()
+            extent = child_rec.extent_location()
+            if (suspect_tail and length > 0 and
+                    extent * iso.logical_block_size + length >= iso_size):
+                # The image is incomplete and this file's data ends exactly
+                # at the end of the image; pycdlib silently clamps the
+                # lengths of truncated files while parsing, so the digest
+                # above may only cover part of the original data.  Treat the
+                # contents as unknown rather than risk a false report.
+                digest = None
+            entries[child] = Entry(child, 'file', digest, extent, length,
+                                   record_date(child_rec),
+                                   record_rr_mode(child_rec))
+
+    return entries, complete
+
+
+def image_is_complete(iso, image_path):
+    """
+    Check whether an opened ISO image looks complete.  An image whose file
+    size is smaller than the volume space size recorded in the Primary Volume
+    Descriptor has been truncated and is not complete.
+
+    Parameters:
+     iso - The opened PyCdlib object.
+     image_path - The local path to the image file.
+    Returns:
+     True if the image looks complete, False otherwise.
+    """
+    try:
+        actual = os.path.getsize(image_path)
+    except OSError:
+        return True
+    expected = iso.pvd.space_size * iso.logical_block_size
+    return actual >= expected
+
+
+def group_by_content(entries, paths):
+    """
+    Group entry paths by (kind, digest) so identical contents can be matched.
+
+    Parameters:
+     entries - The dictionary of paths to Entry objects.
+     paths - The paths to consider.
+    Returns:
+     A dictionary mapping (kind, digest) to a sorted list of paths.
+    """
+    groups = {}
+    for path in paths:
+        entry = entries[path]
+        if entry.kind == 'dir' or entry.digest is None:
+            continue
+        groups.setdefault((entry.kind, entry.digest), []).append(path)
+    for paths in groups.values():
+        paths.sort()
+    return groups
+
+
+def extent_partitions(entries, paths):
+    """
+    Partition paths by the extent their data is stored in.
+
+    Parameters:
+     entries - The dictionary of paths to Entry objects.
+     paths - The paths to partition.
+    Returns:
+     A frozenset of frozensets of paths; each inner set is a group of paths
+     that share a single extent on the image.
+    """
+    by_extent = {}
+    for path in paths:
+        entry = entries[path]
+        by_extent.setdefault((entry.extent, entry.length), set()).add(path)
+    return frozenset(frozenset(group) for group in by_extent.values())
+
+
+def compute_shared_block_changes(old_entries, new_entries, identity):
+    """
+    Find changes in the extent-sharing (hard-link) relationships between the
+    two images.  Only the *relationship* (which paths share one extent) is
+    compared, never the extent locations themselves, since the two images may
+    store the same data at completely different locations.
+
+    Parameters:
+     old_entries - The entries collected from the old image.
+     new_entries - The entries collected from the new image.
+     identity - The mapping of old-image paths to new-image paths.
+    Returns:
+     A sorted list of (digest, old partition, new partition) tuples, one for
+     each content digest whose sharing relationship changed.
+    """
+    def paths_by_digest(entries):
+        by_digest = {}
+        for path, entry in entries.items():
+            if entry.kind != 'file' or entry.digest is None or entry.length == 0:
+                continue
+            by_digest.setdefault(entry.digest, set()).add(path)
+        return by_digest
+
+    old_by_digest = paths_by_digest(old_entries)
+    new_by_digest = paths_by_digest(new_entries)
+
+    changes = []
+    for digest in sorted(set(old_by_digest) | set(new_by_digest)):
+        old_paths = old_by_digest.get(digest, set())
+        new_paths = new_by_digest.get(digest, set())
+        if len(old_paths) < 2 and len(new_paths) < 2:
+            # No sharing on either side, so nothing to compare.
+            continue
+        if any(path not in identity for path in old_paths):
+            # Some of the old paths have no counterpart in the new image;
+            # this is covered by the added/deleted/migrated sections.
+            continue
+        mapped_old_paths = frozenset(identity[path] for path in old_paths)
+        if mapped_old_paths != new_paths:
+            # The set of objects with this content changed; again, this is
+            # covered by the other sections.
+            continue
+
+        mapped_entries = {}
+        for old_path, new_path in identity.items():
+            if new_path in new_paths:
+                mapped_entries[new_path] = old_entries[old_path]
+        old_partition = extent_partitions(mapped_entries, new_paths)
+        new_partition = extent_partitions(new_entries, new_paths)
+        if old_partition != new_partition:
+            changes.append((digest, old_partition, new_partition))
+
+    return changes
+
+
+def compute_diff(old_entries, new_entries):
+    """
+    Compute the classified diff between the entries of two images.
+
+    Parameters:
+     old_entries - The entries collected from the old image.
+     new_entries - The entries collected from the new image.
+    Returns:
+     A dictionary with the classified changes: 'content_updates',
+     'migrations', 'dir_attr_changes', 'shared_block_changes', 'added', and
+     'deleted'.
+    """
+    identity = {}
+    content_updates = []
+    dir_attr_changes = []
+
+    # Phase 1: explicit directory evidence.  Entries at the same path in
+    # both images are the same object, even if their contents changed.
+    for path in sorted(set(old_entries) & set(new_entries)):
+        old_entry = old_entries[path]
+        new_entry = new_entries[path]
+        identity[path] = path
+        if old_entry.kind == 'dir' and new_entry.kind == 'dir':
+            if (old_entry.date != new_entry.date or
+                    old_entry.rr_mode != new_entry.rr_mode):
+                dir_attr_changes.append(path)
+        elif old_entry.kind != new_entry.kind:
+            content_updates.append(
+                (path, '%s -> %s' % (old_entry.kind, new_entry.kind)))
+        elif old_entry.digest is not None and new_entry.digest is not None:
+            if old_entry.digest != new_entry.digest:
+                content_updates.append(
+                    (path, 'sha256 %s -> %s' % (old_entry.digest[:12],
+                                                new_entry.digest[:12])))
+
+    # Phase 2: content digests.  Unmatched entries with identical contents
+    # at different paths are migrations, not delete+add pairs.
+    matched_new = set(identity.values())
+    old_remaining = [p for p in sorted(old_entries) if p not in identity]
+    new_remaining = [p for p in sorted(new_entries) if p not in matched_new]
+    old_by_content = group_by_content(old_entries, old_remaining)
+    new_by_content = group_by_content(new_entries, new_remaining)
+
+    migrations = []
+    for key in sorted(set(old_by_content) & set(new_by_content)):
+        olds = old_by_content[key]
+        news = new_by_content[key]
+        for old_path, new_path in zip(olds, news):
+            identity[old_path] = new_path
+            migrations.append((old_path, new_path))
+
+    matched_new = set(identity.values())
+    added = [p for p in sorted(new_entries) if p not in matched_new]
+    deleted = [p for p in sorted(old_entries) if p not in identity]
+
+    shared_block_changes = compute_shared_block_changes(old_entries,
+                                                        new_entries,
+                                                        identity)
+
+    return {
+        'content_updates': content_updates,
+        'migrations': migrations,
+        'dir_attr_changes': dir_attr_changes,
+        'shared_block_changes': shared_block_changes,
+        'added': added,
+        'deleted': deleted,
+    }
+
+
+def render_partition(partition):
+    """
+    Render an extent partition as a human-readable string, with paths sharing
+    an extent joined by '+' and separate extents joined by '|'.
+
+    Parameters:
+     partition - A frozenset of frozensets of paths.
+    Returns:
+     The rendered string.
+    """
+    groups = sorted(sorted(group) for group in partition)
+    return ' | '.join(' + '.join(group) for group in groups)
+
+
+def print_diff(diff, report_deletions):
+    """
+    Print the classified diff.
+
+    Parameters:
+     diff - The dictionary returned by compute_diff().
+     report_deletions - Whether to report deletions (only possible when the
+                         old image is complete).
+    Returns:
+     The number of reported differences.
+    """
+    count = 0
+
+    if diff['content_updates']:
+        print('Content updates:')
+        for path, detail in diff['content_updates']:
+            print('  %s (%s)' % (path, detail))
+        count += len(diff['content_updates'])
+
+    if diff['migrations']:
+        print('Path migrations:')
+        for old_path, new_path in diff['migrations']:
+            print('  %s -> %s' % (old_path, new_path))
+        count += len(diff['migrations'])
+
+    if diff['dir_attr_changes']:
+        print('Directory attribute changes:')
+        for path in diff['dir_attr_changes']:
+            print('  %s' % (path,))
+        count += len(diff['dir_attr_changes'])
+
+    if diff['shared_block_changes']:
+        print('Shared block changes:')
+        for digest, old_partition, new_partition in diff['shared_block_changes']:
+            print('  sha256 %s' % (digest[:12],))
+            print('    old: %s' % (render_partition(old_partition),))
+            print('    new: %s' % (render_partition(new_partition),))
+        count += len(diff['shared_block_changes'])
+
+    if diff['added']:
+        print('Added:')
+        for path in diff['added']:
+            print('  %s' % (path,))
+        count += len(diff['added'])
+
+    if report_deletions and diff['deleted']:
+        print('Deleted:')
+        for path in diff['deleted']:
+            print('  %s' % (path,))
+        count += len(diff['deleted'])
+
+    return count
+
+
+def parse_arguments():
+    """
+    A function to parse all of the arguments passed to the executable.
+
+    Parameters:
+     None.
+    Returns:
+     An ArgumentParser object with the parsed command-line arguments.
+    """
+    parser = argparse.ArgumentParser(
+        description='Compare two ISO images and report a classified diff')
+    parser.add_argument('-path-type', help='Which path type to use for comparison', action='store', choices=['auto', 'iso', 'joliet', 'rockridge', 'udf'], default='auto')
+    parser.add_argument('--old-is-partial', help='Declare the old image incomplete; deletions cannot be inferred and will not be reported', action='store_true')
+    parser.add_argument('old_iso', help='The old ISO to compare', action='store')
+    parser.add_argument('new_iso', help='The new ISO to compare', action='store')
+    return parser.parse_args()
+
+
+def pick_path_type(iso, path_type):
+    """
+    Pick the path type keyword to use for an ISO, mirroring the logic in
+    pycdlib-extract-files.
+
+    Parameters:
+     iso - The opened PyCdlib object.
+     path_type - The user's requested path type ('auto', 'iso', 'joliet',
+                 'rockridge', or 'udf').
+    Returns:
+     The path type keyword ('iso_path', 'rr_path', 'joliet_path', or
+     'udf_path'), or None if the requested type is not supported by the ISO.
+    """
+    if path_type == 'auto':
+        if iso.has_udf():
+            return 'udf_path'
+        if iso.has_rock_ridge():
+            return 'rr_path'
+        if iso.has_joliet():
+            return 'joliet_path'
+        return 'iso_path'
+    if path_type == 'rockridge':
+        if not iso.has_rock_ridge():
+            return None
+        return 'rr_path'
+    if path_type == 'joliet':
+        if not iso.has_joliet():
+            return None
+        return 'joliet_path'
+    if path_type == 'udf':
+        if not iso.has_udf():
+            return None
+        return 'udf_path'
+    return 'iso_path'
+
+
+def diff(args):
+    """
+    Compare two ISO images given the parameters specified by the user.
+
+    Parameters:
+     args - The parsed command-line arguments.
+    Returns:
+     The exit code for the process: 0 if there are no differences, 1 if
+     there are differences, and 2 on error.
+    """
+    old_iso = pycdlib.PyCdlib()
+    new_iso = pycdlib.PyCdlib()
+    try:
+        old_iso.open(args.old_iso)
+        new_iso.open(args.new_iso)
+
+        pathname = pick_path_type(old_iso, args.path_type)
+        if pathname is None:
+            print("Old ISO does not support path type '%s'" % (args.path_type),
+                  file=sys.stderr)
+            return 2
+        new_pathname = pick_path_type(new_iso, args.path_type)
+        if new_pathname != pathname:
+            print("New ISO does not support path type '%s'" % (pathname,),
+                  file=sys.stderr)
+            return 2
+
+        old_complete = image_is_complete(old_iso, args.old_iso)
+        if args.old_is_partial:
+            old_complete = False
+        if not image_is_complete(new_iso, args.new_iso):
+            print('New ISO is incomplete; cannot compare', file=sys.stderr)
+            return 2
+
+        old_size = os.path.getsize(args.old_iso)
+        old_entries, read_complete = collect_entries(
+            old_iso, pathname, suspect_tail=not old_complete,
+            iso_size=old_size)
+        old_complete = old_complete and read_complete
+
+        new_entries, new_read_complete = collect_entries(new_iso, pathname)
+        if not new_read_complete:
+            print('New ISO is incomplete; cannot compare',
+                  file=sys.stderr)
+            return 2
+
+        classified = compute_diff(old_entries, new_entries)
+
+        if not old_complete:
+            print('Old image is incomplete; not reporting deletions',
+                  file=sys.stderr)
+
+        count = print_diff(classified, old_complete)
+        if count == 0:
+            print('No differences')
+            return 0
+        return 1
+    finally:
+        old_iso.close()
+        new_iso.close()
+
+
+def main():
+    """
+    The main function for this executable that diffs two ISO images.
+    """
+    args = parse_arguments()
+
+    try:
+        return diff(args)
+    except pycdlibexception.PyCdlibException as exc:
+        print('Error: %s' % (exc), file=sys.stderr)
+        return 2
+
+
+if __name__ == '__main__':
+    sys.exit(main())

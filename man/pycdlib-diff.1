@@ -1,0 +1,47 @@
+.TH PYCDLIB-DIFF 1 "Nov 2026" "pycdlib-diff"
+
+.SH NAME
+pycdlib-diff - tool to compare two ISO images using pycdlib
+
+.SH SYNOPSIS
+.B pycdlib-diff [OPTIONS] <old-iso-file> <new-iso-file>
+
+.SH DESCRIPTION
+This is a tool to compare two ISO images and report a classified diff.  The
+two images may store the same file data at completely different locations, so
+only the contents and the relationships between entries are compared, never
+the raw data locations.  The identity of entries is decided by explicit
+directory evidence (the path within the directory hierarchy) together with
+content digests: entries at the same path are considered the same object even
+when their contents changed, while entries with identical contents at
+different paths are considered migrations.  The reported sections are:
+content updates (same path, different contents), path migrations (same
+contents, different path), directory attribute changes (same directory, only
+metadata such as the recording date or Rock Ridge permissions changed),
+shared block changes (the extent-sharing, i.e. hard-link, relationship
+between entries changed), additions, and deletions.  Deletions can only be
+inferred from a complete old image; if the old image is truncated or declared
+partial, deletions are not reported.  The exit code is 0 when there are no
+differences, 1 when there are differences, and 2 on error.
+
+.SH OPTIONS
+.TP
+.BI \-path\-type " [auto,iso,rockridge,joliet,udf]"
+Specifies the path name convention to use while comparing the images.  If
+either ISO doesn't contain the path type specified, an error is thrown.  If
+not specified, defaults to auto, which first tries the UDF path, then the
+Rock Ridge path, then the Joliet path, and finally falls back to the ISO9660
+path if all else fails.
+.TP
+.B \-\-old\-is\-partial
+Declares the old image incomplete.  When the old image is not complete,
+deletions cannot be inferred (entries missing from the new image may simply
+be unreadable in the old one), so they are not reported.  Truncated old
+images are detected automatically; this flag is useful when the old image is
+known to be partial for other reasons.
+
+.SH SEE ALSO
+pycdlib-explorer(1), pycdlib-extract-files(1), pycdlib-genisoimage(1)
+
+.SH AUTHOR
+Chris Lalancette <clalancette@gmail.com>

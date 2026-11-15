@@ -1,6 +1,9 @@
 # Tools
 PyCdlib comes with several tools built on the main library API.  These tools are useful in themselves, but also give (relatively) simple examples on how to use the PyCdlib API in a real application.
 
+## pycdlib-diff
+The `pycdlib-diff` tool compares two ISO images and reports a classified diff: content updates, path migrations, directory attribute-only changes, shared-block (hard-link) relationship changes, additions, and deletions.  Since the two images may store the same data at different locations, only contents and relationships are compared, never raw data locations.  Please see the man page [pycdlib-diff](pycdlib-diff.html) for more information.
+
 ## pycdlib-genisoimage
 The `pycdlib-genisoimage` tool aims to be a flag-compatible drop-in replacement for the venerable [genisoimage](https://linux.die.net/man/1/genisoimage) tool, with the big exception that it uses PyCdlib under the hood.  Please see the man page [pycdlib-genisoimage](pycdlib-genisoimage.html) for more information.
 
