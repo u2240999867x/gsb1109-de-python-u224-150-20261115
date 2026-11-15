@@ -2,6 +2,13 @@
 CHANGELOG
 *********
 
+Unreleased
+==========
+* Union (`|`/`union`) of node sequences: define an explicit source order convention
+  for nodes from different documents (first contributing operand document leads), keep
+  node identity deduplication and within-document order; atomic value sequences are not
+  subject to node deduplication
+
 `v5.1.4`_ (2026-08-08)
 ======================
 * Add *allow_environment* and *allow_external_resources* arguments to XPath30Parser

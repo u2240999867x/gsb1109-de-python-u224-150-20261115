@@ -883,6 +883,41 @@ class XPath2ParserTest(test_xpath1_parser.XPath1ParserTest):
         self.wrong_type('$seq1 union 1', 'XPTY0004',
                         'only XPath nodes are allowed', context=context)
 
+    def test_union_cross_document_source_order(self):
+        doc1 = self.etree.parse(io.StringIO('<root><a>1</a><b>2</b></root>'))
+        doc2 = self.etree.parse(io.StringIO('<root><c>3</c><d>4</d></root>'))
+        context = XPathContext(doc1, documents={'u2': doc2})
+
+        root1 = context.root.getroot()
+        root2 = context.documents['u2'].getroot()
+
+        # First contributing document leads; nodes within a document keep document order.
+        self.check_select("doc('u2')//* union /root/*",
+                          [root2, root2[0], root2[1], root1[0], root1[1]],
+                          context=context)
+
+        # Reversing the operands reverses the document groups (source order convention).
+        self.check_select("/root/* union doc('u2')//*",
+                          [root1[0], root1[1], root2, root2[0], root2[1]],
+                          context=context)
+
+        # The same node hit by both paths is included only once.
+        self.check_select("/root/a union /root/a", [root1[0]], context=context)
+
+        # Distinct nodes with identical text are both retained.
+        same_text_root = self.etree.XML('<r><a>x</a><b>x</b></r>')
+        same_text_context = XPathContext(same_text_root)
+        self.check_select("/r/a union /r/b",
+                          [same_text_context.root[0], same_text_context.root[1]],
+                          context=same_text_context)
+
+        # A chained union across documents applies the same source ordering rule.
+        self.check_select("doc('u2')//c union /root/a union /root/b",
+                          [root2[0], root1[0], root1[1]], context=context)
+
+        # Atomic value sequences are concatenated without node deduplication.
+        self.check_select("(1, 1, 'x', 'x')", [1, 1, 'x', 'x'], context=context)
+
     def test_node_comparison_operators(self):
         # Test cases from https://www.w3.org/TR/xpath20/#id-node-comparisons
         root = self.etree.XML('''

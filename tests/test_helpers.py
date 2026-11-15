@@ -18,7 +18,9 @@ from elementpath.helpers import LazyPattern, days_from_common_era, \
     months2days, round_number, is_idrefs, collapse_white_spaces, escape_json_string, \
     get_double, numeric_equal, numeric_not_equal, equal, not_equal, \
     match_wildcard, unescape_json_string, split_function_test, is_allowed_variable, \
-    is_allowed_uri
+    is_allowed_uri, merge_node_sequences, node_document
+from elementpath.tree_builders import get_node_tree
+from elementpath.xpath_nodes import AttributeNode
 from elementpath.xpath30.xpath30_helpers import decimal_to_string, int_to_roman, \
     int_to_month, int_to_weekday, int_to_words, int_to_alphabetic, week_in_month, \
     to_ordinal_en, to_ordinal_it, format_digits, ordinal_suffix
@@ -331,6 +333,41 @@ class HelperFunctionsTest(unittest.TestCase):
                                         allow_external_resources))
         self.assertFalse(is_allowed_uri('scheme://example.com', allow_external_resources))
         self.assertFalse(is_allowed_uri('a:b', allow_external_resources))
+
+    def test_merge_node_sequences_dedup_by_identity(self):
+        tree = get_node_tree(ElementTree.XML('<root><a>x</a><b>x</b></root>'))
+        node_a = tree.elements[tree.value[0]]
+        node_b = tree.elements[tree.value[1]]
+
+        # The same node hit by both paths is included only once ...
+        result = merge_node_sequences([node_a], [node_a])
+        self.assertEqual(result, [node_a])
+
+        # ... but distinct nodes are all kept even with identical string value.
+        result = merge_node_sequences([node_a, node_b], [node_a])
+        self.assertEqual(result, [node_a, node_b])
+
+    def test_merge_node_sequences_document_order(self):
+        doc1 = get_node_tree(ElementTree.ElementTree(
+            ElementTree.XML('<root><a>1</a><b id="b">2</b></root>')))
+        doc2 = get_node_tree(ElementTree.ElementTree(
+            ElementTree.XML('<root><c id="c">3</c><d>4</d></root>')))
+
+        node_b = doc1.elements[doc1.getroot().value[1]]
+        node_c = doc2.elements[doc2.getroot().value[0]]
+
+        # Different documents: first contributing document leads (source order),
+        # nodes within the same document follow their document position.
+        self.assertEqual(merge_node_sequences([node_c], [node_b]), [node_c, node_b])
+        self.assertEqual(merge_node_sequences([node_b], [node_c]), [node_b, node_c])
+
+        # Attribute nodes have no own tree: document identity is resolved via parent.
+        attr_b = next(iter(node_b.attributes))
+        attr_c = next(iter(node_c.attributes))
+        self.assertIsInstance(attr_b, AttributeNode)
+        self.assertIs(node_document(attr_b), node_document(node_b))
+        self.assertEqual(
+            merge_node_sequences([attr_c], [attr_b]), [attr_c, attr_b])
 
 
 class XPath30HelperFunctionsTest(unittest.TestCase):

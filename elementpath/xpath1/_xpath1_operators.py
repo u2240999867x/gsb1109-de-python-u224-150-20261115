@@ -22,7 +22,7 @@ from elementpath.datatypes import AbstractDateTime, ArithmeticProxy, Duration, N
 from elementpath.xpath_nodes import XPathNode, ElementNode, DocumentNode
 
 from elementpath.exceptions import ElementPathTypeError
-from elementpath.helpers import node_position
+from elementpath.helpers import node_position, merge_node_sequences
 from elementpath.xpath_context import XPathSchemaContext
 from elementpath.xpath_tokens import XPathToken, NameToken, VariableToken, \
     ContextItemToken, AsteriskToken, ParentShortcutToken, XPathAxis
@@ -254,17 +254,26 @@ def select__union_operator(self: XPathToken, context: ta.ContextType = None) \
     if context is None:
         raise self.missing_context()
 
-    results: set[XPathNode] = set()
-    for k in range(2):
+    def operand(k: int) -> Iterator[XPathNode]:
         for item in self[k].select(copy(context)):
             if not isinstance(item, XPathNode):
                 raise self.error('XPTY0004', 'only XPath nodes are allowed')
-            results.add(item)
+            yield item
 
     if self.concatenated:
-        yield from results
+        # Inner part of a chained union expression: deduplicate by node identity
+        # while preserving the operands encounter order. The outermost union
+        # operator applies the final document-order sorting.
+        seen: set[XPathNode] = set()
+        for k in range(2):
+            for node in operand(k):
+                if node not in seen:
+                    seen.add(node)
+                    yield node
     else:
-        yield from sorted(results, key=node_position)
+        # Outermost union: node identity deduplication and document order, with
+        # an explicit source order convention for nodes from different documents.
+        yield from merge_node_sequences(operand(0), operand(1))
 
 
 ###

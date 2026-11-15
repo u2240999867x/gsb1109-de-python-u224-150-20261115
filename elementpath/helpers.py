@@ -11,7 +11,7 @@ import re
 import math
 import operator
 from calendar import isleap, leapdays
-from collections.abc import Mapping
+from collections.abc import Iterable, Mapping
 from decimal import Decimal
 from typing import Any, Generic, Optional, SupportsFloat, SupportsIndex, TypeVar, Union
 from os.path import normpath
@@ -177,6 +177,62 @@ def is_idrefs(value: Optional[str]) -> bool:
 ###
 # Operators
 node_position = operator.attrgetter('position')
+
+
+def node_document(node: Any) -> Any:
+    """
+    Returns the identity object of the document that owns *node*.
+
+    Nodes belonging to the same document share the same :class:`XPathNodeTree`,
+    so the tree is used as the document identity. For nodes that don't carry a
+    tree directly (e.g. attribute, text, comment and processing-instruction
+    nodes) the owning element or document node is walked up.
+    """
+    tree = getattr(node, 'tree', None)
+    if tree is not None:
+        return tree
+
+    parent = getattr(node, 'parent', None)
+    while parent is not None:
+        tree = getattr(parent, 'tree', None)
+        if tree is not None:
+            return tree
+        parent = getattr(parent, 'parent', None)
+    return None
+
+
+def merge_node_sequences(*sequences: Iterable[Any]) -> list[Any]:
+    """
+    Merges two or more node sequences into a single sequence following the
+    rules of the XPath *union* (`|`, `union`) operator.
+
+    * node deduplication is by identity: the same node hit by more than one
+      path is included only once, while distinct nodes are all kept even when
+      they have the same string value (XPath node identity, not value equality);
+    * the result is in document order. Across different documents the source
+      order convention applies: the document that first contributes a node,
+      scanning the operand sequences from left to right, comes first, and each
+      document's own nodes are then ordered by their document position.
+
+    Atomic value sequences must not be passed here: only nodes are subject to
+    node deduplication, atomic values are concatenated as-is by the caller.
+    """
+    merged: set[Any] = set()
+    doc_order: dict[Any, int] = {}
+    sort_key: dict[Any, tuple[int, int]] = {}
+
+    for sequence in sequences:
+        for node in sequence:
+            if node in merged:
+                continue
+            merged.add(node)
+
+            document = node_document(node)
+            if document not in doc_order:
+                doc_order[document] = len(doc_order)
+            sort_key[node] = (doc_order[document], node.position)
+
+    return sorted(merged, key=sort_key.__getitem__)
 
 
 def reversed_sub(a: Any, b: Any) -> Any:
