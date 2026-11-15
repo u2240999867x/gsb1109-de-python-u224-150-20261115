@@ -112,6 +112,21 @@ class Evtx(object):
                 yield record
 
     @ensure_contexted
+    def fields(self, include_containers=True):
+        """
+        Export the EventData/UserData body of every record as a long table.
+
+        Args:
+          include_containers (bool): when False, keep only leaf data fields.
+
+        Yields:
+          list[Evtx.Fields.FieldRow]: rows in record and document order.
+        """
+        import Evtx.Fields as e_fields
+
+        return e_fields.field_table(self, include_containers=include_containers)
+
+    @ensure_contexted
     def get_record(self, record_num):
         """
         Get a Record by record number.
@@ -496,6 +511,20 @@ class Record(Block):
           str: the rendered xml document.
         """
         return e_views.evtx_record_xml_view(self)
+
+    def fields(self, include_containers=True):
+        """
+        export the EventData/UserData body as a stable long table.
+
+        Args:
+          include_containers (bool): when False, keep only leaf data fields.
+
+        Returns:
+          list[Evtx.Fields.FieldRow]: rows in document order.
+        """
+        import Evtx.Fields as e_fields
+
+        return e_fields.record_fields(self, include_containers=include_containers)
 
     def lxml(self):
         """

@@ -42,6 +42,57 @@ Note the length of the `evtx_dump.py` script: its only 20 lines.  Now, review th
 Working with python-evtx is really easy!
 
 
+Event fields as a long table
+----------------------------
+`Evtx.Fields` exports the `EventData` / `UserData` body of each event as one
+row per binary-XML element.  The rows are fixed-column and stable, so the same
+EVTX file always produces the same table.  The export walks the parsed nodes
+directly, so it keeps:
+
+- the namespace and prefix of every element and attribute,
+- the document order (including repeated `Data` names), with a unique `path`
+  such as `/EventData[1]/Data[2]` and a per-parent `occurrence` counter,
+- `name=None` for items that have no `Name` attribute (never an invented name),
+- `is_null` (no value at all) separately from `is_empty` (a present empty
+  value), plus `empty_element` for self-closing elements,
+- the declared binary-XML type: `type_code`, `type_name` (for example
+  `WSTRINGARRAY`) and `value_type` (the Python node class), and
+- full attribute and `xmlns` declaration data as structured columns.
+
+A value that merely looks like XML stays text.  For example, a `WSTRINGARRAY`
+renders as `<string>...</string>` fragments, but it is exported as one value of
+type `WSTRINGARRAY`, not expanded into child elements.
+
+```python
+import Evtx.Evtx as evtx
+import Evtx.Fields as e_fields
+
+with evtx.Evtx("System.evtx") as log:
+    for record in log.records():
+        rows = record.fields()          # same as e_fields.record_fields(record)
+        for row in rows:
+            print(row["path"], row["name"], row["type_name"], repr(row["value"]))
+```
+
+Rows are dicts (also readable as attributes, e.g. `row.name`).  The table
+keeps the original text verbatim, including characters that XML 1.0 cannot
+represent.  Rebuilding XML applies the same restricted-character filter as the
+normal XML view, so comparison ignores those characters:
+
+```python
+xml = e_fields.rebuild_body_xml(rows)   # <EventData>...</EventData>
+assert e_fields.verify_roundtrip(record, rows)
+```
+
+The `evtx_dump_fields` command writes the same table as CSV, JSON, or JSON
+Lines:
+
+    evtx_dump_fields System.evtx --format csv -o system-fields.csv
+    evtx_dump_fields System.evtx --records 12050,12091 --format json
+    evtx_dump_fields System.evtx --leaves-only --verify --format jsonl
+    evtx_dump_fields System.evtx --rebuild 12091
+
+
 Installation
 ------------
 Updates to python-evtx are pushed to PyPi, so you can install the module using `pip`.  For example:
