@@ -464,6 +464,112 @@ class ListField(StructField):
         return "{0}({1!r})".format(self.__class__.__name__, self.subfield)
 
 
+class NameRecord(dict):
+    """
+    A single name resolution record.
+
+    Behaves exactly like the plain dictionaries this field has always
+    returned (and compares equal to them), but can additionally carry the
+    provenance that is only known once the record has been placed in a
+    block: the declaring block, its section, and the point in the block
+    stream at which the declaration applies.
+    """
+
+    __slots__ = [
+        "source",
+        "section",
+        "record_index",
+        "declaration_index",
+        "applies_from",
+        "applies_until",
+        "superseded_at",
+    ]
+
+    def __init__(self, *args, **kwargs):
+        super(NameRecord, self).__init__(*args, **kwargs)
+        self.source = None
+        self.section = None
+        self.record_index = None
+        self.declaration_index = None
+        self.applies_from = None
+        self.applies_until = None
+        self.superseded_at = None
+
+    # Copy/deepcopy would otherwise lose the side-channel provenance.
+    def __reduce__(self):
+        return (self.__class__, (dict(self),))
+
+    @property
+    def type(self):
+        return self.get("type")
+
+    @property
+    def address(self):
+        return self.get("address")
+
+    @property
+    def names(self):
+        return self.get("names", [])
+
+    @property
+    def raw(self):
+        return self.get("raw")
+
+    @property
+    def is_unknown(self):
+        return self.get("type") not in (NRB_RECORD_IPv4, NRB_RECORD_IPv6)
+
+    @property
+    def provenance(self):
+        return self.source
+
+    @property
+    def block(self):
+        return self.source
+
+    @property
+    def block_index(self):
+        return self.applies_from
+
+    @property
+    def applicable_from(self):
+        return self.applies_from
+
+    @property
+    def applicable_until(self):
+        declaration = self.declaration
+        if declaration is not None:
+            return declaration.applies_until
+        return self.applies_until
+
+    @property
+    def declaration(self):
+        """The :py:class:`pcapng.names.NameDeclaration` for this record."""
+        from pcapng.names import declarations_for_block
+
+        block = self.source
+        if block is None:
+            return None
+        for declaration in declarations_for_block(block):
+            if declaration.record_index == self.record_index:
+                return declaration
+        return None
+
+    @property
+    def proven(self):
+        declaration = self.declaration
+        return bool(declaration.proven) if declaration is not None else False
+
+    @property
+    def kind(self):
+        if self.declaration is None:
+            return "display_alias"
+        return self.declaration.kind
+
+    def __repr__(self):
+        return "{0}({1!r})".format(self.__class__.__name__, dict(self))
+
+
 class NameResolutionRecordField(StructField):
     """
     A name resolution record field contains an item of data used in
@@ -483,6 +589,9 @@ class NameResolutionRecordField(StructField):
 
     In both cases, the payload is composed of a valid address in the
     selected IP version, followed by null-separated/terminated domain names.
+
+    Any other record type is kept verbatim as ``{"type": ..., "raw": ...}``
+    so that it can be written back unchanged.
     """
 
     __slots__ = []
@@ -497,20 +606,28 @@ class NameResolutionRecordField(StructField):
         data = read_bytes_padded(stream, record_length)
 
         if record_type == NRB_RECORD_IPv4:
-            return {
-                "type": record_type,
-                "address": unpack_ipv4(data[:4]),
-                "names": [x.decode() for x in data[4:].split(b"\x00") if x != b""],
-            }
+            return NameRecord(
+                {
+                    "type": record_type,
+                    "address": unpack_ipv4(data[:4]),
+                    "names": [
+                        x.decode() for x in data[4:].split(b"\x00") if x != b""
+                    ],
+                }
+            )
 
         if record_type == NRB_RECORD_IPv6:
-            return {
-                "type": record_type,
-                "address": unpack_ipv6(data[:16]),
-                "names": [x.decode() for x in data[16:].split(b"\x00") if x != b""],
-            }
+            return NameRecord(
+                {
+                    "type": record_type,
+                    "address": unpack_ipv6(data[:16]),
+                    "names": [
+                        x.decode() for x in data[16:].split(b"\x00") if x != b""
+                    ],
+                }
+            )
 
-        return {"type": record_type, "raw": data}
+        return NameRecord({"type": record_type, "raw": data})
 
     def encode(self, d, stream, endianness):
         if d["type"] == NRB_RECORD_END:

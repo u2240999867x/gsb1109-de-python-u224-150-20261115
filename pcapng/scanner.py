@@ -27,18 +27,25 @@ class FileScanner(object):
                 for block in scanner:
                     pass  # do something with the block...
 
-    :param stream:
-        a file-like object from which to read the data.
-        If you need to parse data from some string you have entirely in-memory,
-        just wrap it in a :py:class:`io.BytesIO` object.
+    Sections are numbered from zero in file order; each section keeps the
+    ordered list of the blocks it contains, and every block exposes its
+    ``section`` and ``block_index``.
     """
 
-    __slots__ = ["stream", "current_section", "endianness"]
+    __slots__ = [
+        "stream",
+        "current_section",
+        "endianness",
+        "section_count",
+        "blocks",
+    ]
 
     def __init__(self, stream):
         self.stream = stream
         self.current_section = None
         self.endianness = "="
+        self.section_count = 0
+        self.blocks = []
 
     def __iter__(self):
         while True:
@@ -47,6 +54,20 @@ class FileScanner(object):
             except StreamEmpty:
                 return
 
+    def address_table(self, per_section=False):
+        """
+        Return the address dimension table built from the blocks read so far.
+
+        :param per_section: when true, return one table per section.
+        """
+        from pcapng.names import build_address_table
+
+        return build_address_table(self.blocks, per_section=per_section)
+
+    @property
+    def name_resolution_table(self):
+        return self.address_table()
+
     def _read_next_block(self):
         block_type = self._read_int(32, False)
 
@@ -54,12 +75,14 @@ class FileScanner(object):
             block = self._read_section_header()
             self.current_section = block
             self.endianness = block.endianness
+            self.blocks.append(block)
             return block
 
         if self.current_section is None:
             raise ValueError("File not starting with a proper section header")
 
         block = self._read_block(block_type)
+        self.blocks.append(block)
 
         return block
 
@@ -74,9 +97,12 @@ class FileScanner(object):
         self.endianness = section_info["endianness"]  # todo: use property?
 
         # todo: make this use the standard schema facilities as well!
-        return blocks.SectionHeader(
+        section = blocks.SectionHeader(
             raw=section_info["data"], endianness=section_info["endianness"]
         )
+        section.section_index = self.section_count
+        self.section_count += 1
+        return section
 
     def _read_block(self, block_type):
         """

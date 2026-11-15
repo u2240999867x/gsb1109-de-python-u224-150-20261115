@@ -16,8 +16,11 @@ import itertools
 from pcapng import strictness as strictness
 from pcapng.constants import link_types
 from pcapng.structs import (
+    NRB_RECORD_IPv4,
+    NRB_RECORD_IPv6,
     IntField,
     ListField,
+    NameRecord,
     NameResolutionRecordField,
     Option,
     Options,
@@ -142,11 +145,16 @@ class Block(object):
 class SectionMemberBlock(Block):
     """Block which must be a member of a section"""
 
-    __slots__ = ["section"]
+    __slots__ = ["section", "block_index"]
 
     def __init__(self, section, **kwargs):
         super(SectionMemberBlock, self).__init__(**kwargs)
         self.section = section
+        self.block_index = None
+
+    @property
+    def section_index(self):
+        return getattr(self.section, "section_index", None)
 
 
 def register_block(block):
@@ -164,6 +172,10 @@ class SectionHeader(Block):
     are logically correlated."
     - pcapng spec, section 4.1. Other quoted citations are from this section
     unless otherwise noted.
+
+    The section also keeps an ordered list of the blocks that belong to it,
+    which is what gives Name Resolution Blocks an explicit applicability
+    position: a name declared by an NRB is known from that block onwards.
     """
 
     magic_number = 0x0A0D0D0A
@@ -172,6 +184,9 @@ class SectionHeader(Block):
         "_interfaces_id",
         "interfaces",
         "interface_stats",
+        "blocks",
+        "section_index",
+        "_last_packet_index",
     ]
     schema = [
         ("version_major", IntField(16, False), 1),
@@ -195,7 +210,79 @@ class SectionHeader(Block):
         self._interfaces_id = itertools.count(0)
         self.interfaces = {}
         self.interface_stats = {}
+        self.blocks = []
+        self.section_index = None
+        self._last_packet_index = None
         super(SectionHeader, self).__init__(endianness=endianness, **kwargs)
+        self._register_block(self)
+
+    def _register_block(self, block):
+        if any(existing is block for existing in self.blocks):
+            return block
+        index = len(self.blocks)
+        self.blocks.append(block)
+        if isinstance(block, SectionMemberBlock):
+            block.block_index = index
+            block.section = self
+        if isinstance(block, BasePacketBlock):
+            self._last_packet_index = index
+        return block
+    @property
+    def last_packet_index(self):
+        """Block index of the last packet in this section, or ``-1``."""
+        if self._last_packet_index is None:
+            return -1
+        return self._last_packet_index
+
+    def block_index_for_time(self, timestamp):
+        """
+        Approximate the block index for a packet timestamp.
+
+        Name Resolution Blocks carry no timestamp of their own, so a
+        timestamp is mapped onto the last packet at or before it.  Returns
+        ``None`` when no such packet exists.
+        """
+        found = None
+        for index, block in enumerate(self.blocks):
+            if not isinstance(block, BasePacketBlock):
+                continue
+            try:
+                block_ts = block.timestamp
+            except (AttributeError, KeyError, TypeError):
+                continue
+            if block_ts <= timestamp:
+                found = index
+            else:
+                break
+        return found
+
+    def address_table(self, at=None, include_aliases=True):
+        """
+        Build the address dimension table for this section.
+
+        :param at: optional block/index/timestamp used as the reference point
+            for the proven/alias split.
+        :param include_aliases: when ``at`` is given and this is false, drop
+            declarations that are not proven at that point.
+        """
+        from pcapng.names import AddressTable
+
+        table = AddressTable(section=self)
+        if at is None:
+            return table
+        return table.at(at, include_aliases=include_aliases)
+
+    @property
+    def name_resolution_table(self):
+        return self.address_table()
+
+    @property
+    def name_resolution(self):
+        return self.address_table()
+
+    @property
+    def addresses(self):
+        return self.address_table()
 
     def _encode(self, outstream):
         write_int(0x1A2B3C4D, outstream, 32, endianness=self.endianness)
@@ -212,6 +299,9 @@ class SectionHeader(Block):
             self.register_interface(blk)
         elif isinstance(blk, InterfaceStatistics):
             self.add_interface_stats(blk)
+        self._register_block(blk)
+        if isinstance(blk, NameResolution):
+            blk._annotate_records()
         return blk
 
     def register_interface(self, interface):
@@ -603,6 +693,10 @@ class NameResolution(SectionMemberBlock):
     use at capture time."
     - pcapng spec, section 4.5. Other quoted citations are from this section
     unless otherwise noted.
+
+    NRBs carry no timestamp, so a block's position in the section is the
+    explicit applicability time for its declarations.  A block appended after
+    the packets only yields display aliases; see :py:mod:`pcapng.names`.
     """
 
     magic_number = 0x00000004
@@ -621,6 +715,71 @@ class NameResolution(SectionMemberBlock):
             None,
         ),
     ]
+
+    def _annotate_records(self):
+        """
+        Record provenance on each raw record.
+
+        The block's position and section are known only once it has been
+        registered with its section, so annotations are refreshed whenever
+        they are needed rather than only at construction time.  Plain
+        dictionaries supplied by callers are wrapped so their write/read
+        behaviour is unchanged while provenance stays available.
+        """
+        records = self.records or ()
+        for index, record in enumerate(records):
+            if not isinstance(record, NameRecord):
+                record = NameRecord(record)
+                try:
+                    records[index] = record
+                except TypeError:
+                    pass
+            record.source = self
+            record.section = self.section
+            record.record_index = index
+            record.applies_from = self.block_index
+            if self.block_index is None:
+                record.declaration_index = None
+            else:
+                record.declaration_index = index
+            record.applies_until = None
+        return records
+
+    @property
+    def declarations(self):
+        """All records of this block, with provenance annotations."""
+        from pcapng.names import declarations_for_block
+
+        return tuple(declarations_for_block(self))
+
+    @property
+    def names(self):
+        """All names declared by this block, in record order."""
+        names = []
+        for record in self.records or ():
+            for name in record.get("names", ()):
+                if name not in names:
+                    names.append(name)
+        return tuple(names)
+
+    @property
+    def addresses(self):
+        """All addresses declared by this block, in record order."""
+        addresses = []
+        for record in self.records or ():
+            address = record.get("address")
+            if address is not None and address not in addresses:
+                addresses.append(address)
+        return tuple(addresses)
+
+    @property
+    def unknown_records(self):
+        """Records with a type this library does not decode."""
+        return tuple(
+            record
+            for record in self.records or ()
+            if record.get("type") not in (NRB_RECORD_IPv4, NRB_RECORD_IPv6)
+        )
 
 
 @register_block

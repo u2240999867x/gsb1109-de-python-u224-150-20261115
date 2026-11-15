@@ -1,6 +1,15 @@
 History
 #######
 
+Unreleased
+==========
+
+- Add section- and position-aware address dimension tables for Name Resolution
+  Blocks.  Declarations keep their source block, section and applicability
+  range; names added by later blocks are distinguished from names that can be
+  proven for a captured packet, all names are retained, and unknown record
+  types round-trip unchanged.
+
 2.1.1
 =====
 
