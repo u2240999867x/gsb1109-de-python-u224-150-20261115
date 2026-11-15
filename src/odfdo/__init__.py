@@ -39,6 +39,7 @@ __all__ = [  # noqa: RUF022
     "BookmarkStart",
     "Cell",
     "ChangeInfo",
+    "ChangeVisibility",
     "Chart",
     "CircleShape",
     "Column",
@@ -201,6 +202,7 @@ __all__ = [  # noqa: RUF022
     "TextChangedRegion",
     "TextDeletion",
     "TextFormatChange",
+    "TextFragment",
     "TextInsertion",
     "TextMeta",
     "TocEntryTemplate",
@@ -245,6 +247,8 @@ __all__ = [  # noqa: RUF022
     "default_percentage_style",
     "default_time_style",
     "default_toc_level_style",
+    "get_plain_text",
+    "get_text_fragments",
     "hex2rgb",
     "hexa_color",
     "make_table_cell_border_string",
@@ -421,6 +425,12 @@ from .styles import Styles
 from .svg import SvgDescription, SvgMixin, SvgTitle
 from .tab import Tab
 from .table import Table
+from .text_fragment import (
+    ChangeVisibility,
+    TextFragment,
+    get_plain_text,
+    get_text_fragments,
+)
 from .toc import (
     TOC,
     IndexBody,

@@ -80,6 +80,7 @@ if TYPE_CHECKING:
     from .style_base import (
         StyleBase,
     )
+    from .text_fragment import TextFragment
     from .tracked_changes import (
         TextChange,
         TextChangeEnd,
@@ -1616,6 +1617,47 @@ class Element(MDBase):
 
         """
         return self.inner_text + (self.tail or "")
+
+    def get_plain_text(self, change_visibility: Any = "accepted") -> str:
+        """Return the visible text as a plain string.
+
+        Unlike :attr:`inner_text`, spacers, tabs and line breaks are expanded
+        to spaces, tabs and new lines, and the tracked change visibility rule
+        decides which change-marked text counts as current. See
+        :func:`odfdo.get_plain_text` for details.
+
+        Args:
+            change_visibility: "accepted" (default), "rejected" or "all".
+
+        Returns:
+            str: The reconstructed plain text of the element.
+
+        """
+        from .text_fragment import get_plain_text
+
+        return get_plain_text(self, change_visibility)
+
+    def get_text_fragments(
+        self, change_visibility: Any = "accepted"
+    ) -> list[TextFragment]:
+        """Return the content as ordered, source-aware text fragments.
+
+        Each fragment can be traced back to its ODF node; links separate the
+        display text from the target URL and tracked changes follow the
+        given visibility rule. See :func:`odfdo.get_text_fragments` for
+        details.
+
+        Args:
+            change_visibility: "accepted" (default), "rejected" or "all".
+
+        Returns:
+            list[TextFragment]: The structured fragments covering the
+            element text.
+
+        """
+        from .text_fragment import get_text_fragments
+
+        return get_text_fragments(self, change_visibility)
 
     @property
     def tail(self) -> str | None:
