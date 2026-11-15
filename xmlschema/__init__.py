@@ -20,7 +20,9 @@ from .dataobjects import DataElement, DataElementConverter, DataBindingConverter
 from .documents import validate, is_valid, iter_errors, iter_decode, \
     to_dict, to_json, to_etree, from_json, XmlDocument
 from .exports import download_schemas
-from .loaders import SchemaLoader, LocationSchemaLoader, SafeSchemaLoader
+from .loaders import SchemaLoader, LocationSchemaLoader, SafeSchemaLoader, \
+    PackageSchemaLoader
+from .packages import SchemaPackage, PackageIssue, SchemaReference
 from .utils.etree import etree_tostring
 from .utils.urls import normalize_url, normalize_locations
 
@@ -51,7 +53,8 @@ __all__ = [
     'DataElementConverter', 'DataBindingConverter', 'validate', 'is_valid',
     'iter_errors', 'iter_decode', 'to_dict', 'to_json', 'to_etree', 'from_json',
     'XmlDocument', 'download_schemas', 'ElementSelector', 'ElementPathSelector',
-    'SchemaLoader', 'LocationSchemaLoader', 'SafeSchemaLoader',
+    'SchemaLoader', 'LocationSchemaLoader', 'SafeSchemaLoader', 'PackageSchemaLoader',
+    'SchemaPackage', 'PackageIssue', 'SchemaReference',
     'XMLSchemaValidatorError', 'XMLSchemaParseError', 'XMLSchemaNotBuiltError',
     'XMLSchemaModelError', 'XMLSchemaModelDepthError', 'XMLSchemaValidationError',
     'XMLSchemaDecodeError', 'XMLSchemaEncodeError', 'XMLSchemaChildrenValidationError',

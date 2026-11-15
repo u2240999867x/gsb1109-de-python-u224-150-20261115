@@ -286,6 +286,7 @@ class XMLSchemaBase(XsdValidator, ElementPathMixin[Union[SchemaType, XsdElement]
                  loglevel: Optional[Union[str, int]] = None,
                  build: bool = True,
                  partial: bool = False,
+                 package: Optional[Any] = None,
                  **kwargs: Any) -> None:
 
         super().__init__(validation)
@@ -294,6 +295,13 @@ class XMLSchemaBase(XsdValidator, ElementPathMixin[Union[SchemaType, XsdElement]
         self.imported_namespaces = []
         self.includes = {}
         self.warnings = []
+
+        loader_options = {}
+        if package is not None:
+            if isinstance(global_maps, XsdGlobals):
+                msg = _("'package' argument can't be used with a 'global_maps' instance")
+                raise XMLSchemaValueError(msg)
+            loader_options['package'] = package
 
         if isinstance(global_maps, XsdGlobals):
             if kwargs:
@@ -373,9 +381,11 @@ class XMLSchemaBase(XsdValidator, ElementPathMixin[Union[SchemaType, XsdElement]
                 raise XMLSchemaValueError(msg)
             self.maps = global_maps
         elif parent is None and use_meta:
-            self.maps = XsdGlobals(self, parent=self.meta_schema, settings=settings)
+            self.maps = XsdGlobals(
+                self, parent=self.meta_schema, settings=settings, **loader_options
+            )
         else:
-            self.maps = XsdGlobals(self, parent=parent, settings=settings)
+            self.maps = XsdGlobals(self, parent=parent, settings=settings, **loader_options)
 
         # Meta-schema maps creation (MetaXMLSchema10/11 classes)
         if self.meta_schema is None:

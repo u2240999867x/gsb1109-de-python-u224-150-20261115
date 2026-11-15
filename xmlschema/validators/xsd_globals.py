@@ -155,7 +155,7 @@ class XsdGlobals(XsdValidator, Collection[SchemaType]):
             self.substitution_groups.update(ancestor.maps.substitution_groups)
             self.identities.update(ancestor.maps.identities)
 
-        self.loader = self.settings.get_loader(self)
+        self.loader = self.settings.get_loader(self, **kwargs)
         self.cache = self.settings.get_cache()
         self.validator.maps = self
 

@@ -8,15 +8,19 @@
 # @author Davide Brunato <brunato@sissa.it>
 #
 import logging
+import os
+import pathlib
 import warnings
 import functools
 from operator import attrgetter
 from types import MappingProxyType
 from typing import Any, Optional, TYPE_CHECKING, cast
+from urllib.parse import unquote, urlsplit
 
 from xmlschema.aliases import SchemaType, SourceArgType, LocationsType
 from xmlschema.exceptions import XMLSchemaTypeError, XMLSchemaValueError, \
-    XMLResourceBlocked, XMLResourceForbidden, XMLResourceError, XMLResourceParseError
+    XMLResourceBlocked, XMLResourceForbidden, XMLResourceError, XMLResourceParseError, \
+    XMLResourceOSError
 from xmlschema.translation import gettext as _
 from xmlschema.utils.urls import normalize_url
 from xmlschema.utils.etree import iter_schema_declarations
@@ -72,7 +76,18 @@ class SchemaLoader:
         if namespace in self.locations:
             locations.extend(self.locations[namespace])
 
-        if namespace in self.fallback_locations:
+        if namespace == nm.XSD_NAMESPACE:
+            # The XSD 1.0 and the XSD 1.1 meta-schemas have the same name and
+            # must never be mixed. Complete the explicit hints with the local
+            # fallback location of the current version, without adding the
+            # remote fallback locations of the other version.
+            xsd_dir = f'XSD_{self.schema_class.XSD_VERSION}/'
+            locations.extend(
+                x for x in FALLBACK_LOCATIONS.get(namespace, ())
+                if xsd_dir in x and x not in locations
+            )
+
+        elif namespace in self.fallback_locations:
             values = self.fallback_locations[namespace]
             if isinstance(values, str):
                 locations.append(values)
@@ -431,6 +446,248 @@ class SafeSchemaLoader(SchemaLoader):
             self.namespaces[namespace].pop()
             self.maps.schemas.remove(schema)
             return True
+
+
+class PackageSchemaLoader(SchemaLoader):
+    """
+    A schema loader for offline schema packages. All the schema locations are
+    resolved with the package manifest and resources that are not mapped by the
+    manifest are reported as missing, without accessing the network.
+
+    :param package: the :class:`SchemaPackage` instance to use.
+    """
+    package: Any
+    issues: list[Any]
+
+    __slots__ = ('package', '_schema_locations', '_parent_refs', 'issues')
+
+    def __init__(self, maps: 'XsdGlobals',
+                 locations: Optional[LocationsType] = None,
+                 use_fallback: bool = True,
+                 package: Optional[Any] = None) -> None:
+        from xmlschema.packages import SchemaPackage
+
+        if package is None:
+            msg = _("the 'package' argument is required by {!r}")
+            raise XMLSchemaValueError(msg.format(self.__class__))
+        elif not isinstance(package, SchemaPackage):
+            msg = _("invalid type {!r} for the 'package' argument")
+            raise XMLSchemaTypeError(msg.format(type(package)))
+
+        super().__init__(maps, locations, use_fallback)
+        self.package = package
+        self.issues = []
+        self._schema_locations: dict[str, str] = {}
+        self._parent_refs: dict[str, Any] = {}
+
+    def clear(self) -> None:
+        super().clear()
+        self.issues.clear()
+        self._schema_locations.clear()
+        self._parent_refs.clear()
+
+    def get_locations(self, namespace: str, location: Optional[str] = None) -> list[str]:
+        locations: list[str] = [] if location is None else [location]
+        if namespace in self.locations:
+            locations.extend(self.locations[namespace])
+
+        package_location = self.package.get_namespace_location(namespace)
+        if package_location is not None and package_location not in locations:
+            locations.append(package_location)
+
+        if namespace in self.fallback_locations:
+            values = self.fallback_locations[namespace]
+            if isinstance(values, str):
+                values = [values]
+            for url in values:
+                if url not in locations and url.startswith('file:'):
+                    locations.append(url)
+
+        return locations
+
+    def load_schema(self, source: SourceArgType,
+                    namespace: Optional[str] = None,
+                    base_url: Optional[str] = None,
+                    build: bool = False,
+                    partial: bool = False) -> SchemaType:
+        package_location: Optional[str] = None
+
+        if isinstance(source, (str, pathlib.Path)):
+            package_location = self.package.resolve(str(source), base_url)
+            location = package_location
+            path = self.package.get_filepath(location)
+            if path is None:
+                path = self._local_filepath(location)
+            if path is None:
+                raise XMLResourceOSError(
+                    f"schema location {location!r} is not available in the package"
+                )
+            source = path
+            self._schema_locations[pathlib.Path(path).as_uri()] = package_location
+
+        schema = super().load_schema(source, namespace, base_url, build, partial)
+        if schema.url is not None:
+            location = package_location or self.package.get_location(schema.filepath)
+            if location is not None:
+                self._schema_locations[schema.url] = location
+        return schema
+
+    @staticmethod
+    def _local_filepath(location: str) -> Optional[str]:
+        """Returns the path of a local file that is not mapped by the manifest."""
+        if location.startswith(('http://', 'https://', 'ftp://', 'ftps://')):
+            return None
+        elif location.startswith('file:'):
+            path = pathlib.Path(unquote(urlsplit(location).path))
+        else:
+            path = pathlib.Path(location)
+
+        return str(path) if path.is_file() else None
+
+    def _referrer_location(self, schema: SchemaType) -> Optional[str]:
+        location = self._schema_locations.get(schema.url or '')
+        if location is None:
+            location = self.package.get_location(schema.filepath)
+        return location
+
+    def _to_package_location(self, location: str, schema: SchemaType) -> str:
+        """
+        Maps a local location back to the package location space, using the
+        relative path between the referring file and the target file. This is
+        needed for imports processed from already normalized local URLs.
+        """
+        if location in self.package.entries or location in self.package.aliases:
+            return location
+
+        referrer_location = self._referrer_location(schema)
+        referrer_path = schema.filepath
+        if referrer_location is None or referrer_path is None:
+            return location
+
+        target_path = self._local_filepath(location)
+        if target_path is None and location.startswith('file:'):
+            target_path = unquote(urlsplit(location).path)
+        if target_path is not None:
+            if location.startswith(('http://', 'https://', 'ftp://', 'ftps://')):
+                return location
+
+            try:
+                relative = os.path.relpath(target_path, os.path.dirname(referrer_path))
+            except ValueError:
+                return location
+
+            if not relative.startswith('..'):
+                return self.package.resolve(relative, referrer_location)
+            return location
+
+        if location.startswith(('http://', 'https://', 'ftp://', 'ftps://')) \
+                and self._is_package_location(location):
+            return location
+
+        return self.package.resolve(location, referrer_location)
+
+    def _is_package_location(self, location: str) -> bool:
+        """Returns `True` if the location is in the namespace of the package root."""
+        root = self.package.get_root()
+        if not root.startswith(('http://', 'https://', 'ftp://', 'ftps://')):
+            return False
+
+        prefix = root.rsplit('/', 2)[0] + '/'
+        return location.startswith(prefix)
+
+    def include_schema(self, target_schema: SchemaType,
+                       location: str,
+                       base_url: Optional[str] = None,
+                       build: bool = False,
+                       partial: bool = False) -> SchemaType:
+        package_base = self._schema_locations.get(target_schema.url or '')
+        if package_base is None:
+            package_base = self.package.get_location(target_schema.filepath)
+        if package_base is not None:
+            base_url = package_base
+
+        resolved = self._to_package_location(location, target_schema)
+        if self.package.get_filepath(resolved) is None and \
+                self._local_filepath(resolved) is None:
+            self._record_issue(
+                resolved, 'include', None, target_schema
+            )
+            raise XMLResourceOSError(
+                f"schema location {resolved!r} is not available in the package"
+            )
+
+        schema = super().include_schema(target_schema, location, base_url, build, partial)
+        self._register(schema, resolved, target_schema, 'include', None)
+        return schema
+
+    def import_schema(self, target_schema: SchemaType,
+                      namespace: str,
+                      location: str,
+                      base_url: Optional[str] = None,
+                      build: bool = False,
+                      partial: bool = False) -> Optional[SchemaType]:
+        package_base = self._schema_locations.get(target_schema.url or '')
+        if package_base is None:
+            package_base = self.package.get_location(target_schema.filepath)
+        if package_base is not None:
+            base_url = package_base
+
+        resolved = self._to_package_location(location, target_schema)
+        if self.package.get_filepath(resolved) is None and \
+                self._local_filepath(resolved) is None:
+            self._record_issue(
+                resolved, 'import', namespace, target_schema
+            )
+            raise XMLResourceOSError(
+                f"schema location {resolved!r} is not available in the package"
+            )
+
+        schema = super().import_schema(
+            target_schema, namespace, location, base_url, build, partial
+        )
+        if schema is not None:
+            self._register(schema, resolved, target_schema, 'import', namespace)
+        return schema
+
+    def import_namespace(self, schema: SchemaType,
+                         namespace: str,
+                         location: Optional[str] = None) -> None:
+        if location is None:
+            location = self.package.get_namespace_location(namespace)
+        if location is not None:
+            super().import_namespace(schema, namespace, location)
+        else:
+            super().import_namespace(schema, namespace)
+
+    def _register(self, schema: SchemaType, location: str, referrer: SchemaType,
+                  kind: str, namespace: Optional[str]) -> None:
+        from xmlschema.packages import SchemaReference
+
+        if schema.url is not None:
+            self._schema_locations[schema.url] = location
+        self._parent_refs[location] = SchemaReference(
+            location, kind, namespace, None
+        )
+
+        referrer_location = self._schema_locations.get(referrer.url or '')
+        if referrer_location is not None:
+            self._parent_refs[location].source = referrer_location
+
+    def _record_issue(self, location: str, kind: str,
+                      namespace: Optional[str], referrer: SchemaType) -> None:
+        from xmlschema.packages import PackageIssue, SchemaReference
+
+        chain = [SchemaReference(location, kind, namespace, referrer.url)]
+        parent_location = self._schema_locations.get(referrer.url or '')
+
+        while parent_location is not None:
+            ref = self._parent_refs.get(parent_location)
+            if ref is None:
+                break
+            chain.insert(0, ref)
+            parent_location = ref.source
+
+        self.issues.append(PackageIssue(location, chain))
 
 
 class LoaderClassOption(Option[type[SchemaLoader]]):

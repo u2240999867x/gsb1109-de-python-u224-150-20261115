@@ -180,6 +180,58 @@ so can be used after as *uri_mapper* argument for building the schema instance.
     ``schemaLocation`` attributes from them.
 
 
+Validating from an offline schema package
+-----------------------------------------
+
+When the XSD sources and a manifest are provided as a locked package, use
+:class:`xmlschema.SchemaPackage` for resolving ``xs:include`` and ``xs:import``
+statements without accessing the network. The manifest maps the schema locations
+used by the XSD sources to files of the package:
+
+.. code-block:: json
+
+    {
+        "version": "v1",
+        "root": "http://example.com/pkg/xsd/main.xsd",
+        "files": {
+            "http://example.com/pkg/xsd/main.xsd": "v1/xsd/main.xsd",
+            "http://example.com/pkg/common/types.xsd": "v1/common/types.xsd"
+        }
+    }
+
+.. code-block:: py
+
+    from xmlschema import SchemaPackage
+
+    package = SchemaPackage('vendor-package/manifest.json')
+    schema = package.create_schema()
+
+Relative locations are resolved from the manifest location of the referring
+schema, not from its file name. A location that is not mapped by the manifest is
+reported as missing, and :meth:`xmlschema.SchemaPackage.iter_missing` returns the
+reference chain from the root schema to the missing resource:
+
+.. code-block:: py
+
+    for issue in package.iter_missing():
+        print(issue.message)
+        # include -> 'level1.xsd' / import 'urn:absent' -> 'absent/level2.xsd' /
+        # missing 'http://example.com/miss/xsd/absent/level2.xsd'
+
+The paths of a manifest are always relative to the package directory. This keeps
+two versions of the same package separated, so files with the same name in
+another version can't be used to fill a missing dependency. Use a distinct
+manifest for each locked version.
+
+The summary of the XSD sources actually selected by the loader is available with
+:meth:`xmlschema.SchemaPackage.summary`:
+
+.. code-block:: py
+
+    for item in package.summary(schema):
+        print(item['location'], '->', item['path'], item['namespace'])
+
+
 Validation
 ==========
 

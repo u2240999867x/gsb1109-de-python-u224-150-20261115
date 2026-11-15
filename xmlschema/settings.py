@@ -307,12 +307,13 @@ class SchemaSettings(ResourceSettings):
             msg = _("'converter' argument must be a {0!r} subclass or instance: {1!r}")
             raise XMLSchemaTypeError(msg.format(XMLSchemaConverter, converter))
 
-    def get_loader(self, maps: GlobalMapsType) -> SchemaLoader:
+    def get_loader(self, maps: GlobalMapsType, **kwargs: Any) -> SchemaLoader:
         """Returns a new :class:`SchemaLoader` instance for the given maps."""
         return self.loader_class(
             maps=maps,
             locations=self.locations,
-            use_fallback=self.use_fallback
+            use_fallback=self.use_fallback,
+            **kwargs
         )
 
     def get_cache(self) -> SchemaCache:

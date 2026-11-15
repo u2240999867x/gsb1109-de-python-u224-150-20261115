@@ -29,7 +29,9 @@ class TestLoadersAPI(XMLSchemaTestCase):
 
     def test_get_namespaces(self):
         self.assertListEqual(self.loader.get_locations('tns'), [])
-        self.assertEqual(len(self.loader.get_locations(nm.XSD_NAMESPACE)), 3)
+        locations = self.loader.get_locations(nm.XSD_NAMESPACE)
+        self.assertEqual(len(locations), 1)
+        self.assertIn(f'/XSD_{self.schema_class.XSD_VERSION}/', locations[0])
 
     def test_load_declared_schemas(self):
         with self.assertRaises(ValueError):

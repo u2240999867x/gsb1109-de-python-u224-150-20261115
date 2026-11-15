@@ -275,6 +275,20 @@ Loaders API
 .. autofunction:: xmlschema.SchemaLoader
 .. autofunction:: xmlschema.LocationSchemaLoader
 .. autofunction:: xmlschema.SafeSchemaLoader
+.. autofunction:: xmlschema.PackageSchemaLoader
+
+
+.. _packages-api:
+
+Schema packages
+===============
+
+.. autoclass:: xmlschema.SchemaPackage
+    :members: create_schema, iter_missing, summary
+.. autoclass:: xmlschema.PackageIssue
+    :members: message
+.. autoclass:: xmlschema.SchemaReference
+
 
 
 .. _translation-api:

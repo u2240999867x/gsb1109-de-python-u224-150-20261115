@@ -116,12 +116,11 @@ FALLBACK_LOCATIONS: LocationsMapType = {
     nm.XSD_NAMESPACE: [
         SCHEMAS_DIR.joinpath('XSD_1.0', 'XMLSchema.xsd').as_uri(),
         SCHEMAS_DIR.joinpath('XSD_1.1', 'XMLSchema.xsd').as_uri(),
-        SCHEMAS_DIR.joinpath('XSD_1.1', 'XMLSchema.xsd').as_uri(),
     ],
     nm.XML_NAMESPACE: SCHEMAS_DIR.joinpath('XML', 'xml.xsd').as_uri(),
     nm.XSI_NAMESPACE: SCHEMAS_DIR.joinpath('XSI', 'XMLSchema-instance.xsd').as_uri(),
     nm.HFP_NAMESPACE: SCHEMAS_DIR.joinpath('HFP', 'XMLSchema-hasFacetAndProperty.xsd').as_uri(),
-    nm.VC_NAMESPACE: SCHEMAS_DIR.joinpath('XSI', 'XMLSchema-versioning.xsd').as_uri(),
+    nm.VC_NAMESPACE: SCHEMAS_DIR.joinpath('VC', 'XMLSchema-versioning.xsd').as_uri(),
     nm.XLINK_NAMESPACE: SCHEMAS_DIR.joinpath('XLINK', 'xlink.xsd').as_uri(),
     nm.XHTML_NAMESPACE: SCHEMAS_DIR.joinpath('XHTML', 'xhtml1-strict.xsd').as_uri(),
     nm.WSDL_NAMESPACE: SCHEMAS_DIR.joinpath('WSDL', 'wsdl.xsd').as_uri(),
