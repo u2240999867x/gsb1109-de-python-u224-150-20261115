@@ -421,6 +421,408 @@ def binary_load(fp, mapper=dict, merge_duplicate_keys=True, alt_format=False, ra
 
     return stack.pop()
 
+
+# per-object reading of concatenated binary VDF streams
+class BinaryVDFRecord(tuple):
+    """
+    A single binary VDF object read from a stream.
+
+    The record unpacks as ``(data, alt_format, consumed)`` and additionally
+    exposes ``variant``, ``length`` and ``end_marker`` properties. ``offset`` is
+    the position of the object in the source stream. Fields are also readable
+    by name, e.g. ``record['consumed']``.
+    """
+    _fields = ('data', 'alt_format', 'consumed')
+
+    def __new__(cls, data, alt_format, consumed, offset=None):
+        self = tuple.__new__(cls, (data, alt_format, consumed))
+        self.offset = offset
+        return self
+
+    def __getitem__(self, item):
+        if isinstance(item, string_type):
+            if item in self._fields:
+                return tuple.__getitem__(self, self._fields.index(item))
+            if item == 'variant':
+                return self.variant
+            if item in ('length', 'size'):
+                return self[2]
+            if item in ('end_marker', 'end'):
+                return self.end_marker
+            if item == 'offset':
+                return self.offset
+            raise KeyError(item)
+        return tuple.__getitem__(self, item)
+
+    def get(self, item, default=None):
+        try:
+            return self[item]
+        except KeyError:
+            return default
+
+    def keys(self):
+        return self._fields + ('variant', 'length', 'end_marker', 'offset')
+
+    def items(self):
+        return [(key, self[key]) for key in self.keys()]
+
+    @property
+    def data(self):
+        return self[0]
+
+    @property
+    def alt_format(self):
+        return self[1]
+
+    @property
+    def consumed(self):
+        return self[2]
+
+    @property
+    def length(self):
+        return self[2]
+
+    @property
+    def variant(self):
+        return 'alt' if self[1] else 'base'
+
+    @property
+    def end_marker(self):
+        return BIN_END_ALT if self[1] else BIN_END
+
+    def __repr__(self):
+        return "BinaryVDFRecord(data=%r, alt_format=%r, consumed=%r, offset=%r)" % (
+            self[0], self[1], self[2], self.offset)
+
+
+class TruncatedBinaryVDF(SyntaxError):
+    """
+    Raised when the stream ends in the middle of a binary VDF object.
+
+    The stream is rewound to ``offset`` (the start of the incomplete object)
+    before this exception is raised, so the object remains available as an
+    unconsumed tail. ``consumed`` is the number of bytes inspected from the
+    start of the unfinished object.
+    """
+    def __init__(self, offset, consumed=0, tail=None):
+        SyntaxError.__init__(
+            self,
+            "Binary VDF object at offset %d is truncated after %d byte(s)" % (offset, consumed))
+        self.offset = offset
+        self.consumed = consumed
+        self.tail = tail
+
+
+BinaryVDFTruncated = TruncatedBinaryVDF
+TruncatedVDF = TruncatedBinaryVDF
+IncompleteBinaryVDF = TruncatedBinaryVDF
+
+
+class _BinaryVDFEOF(Exception):
+    pass
+
+
+def _binary_object_reader(fp, mapper, merge_duplicate_keys, alt_format):
+    int32 = struct.Struct('<i')
+    uint64 = struct.Struct('<Q')
+    int64 = struct.Struct('<q')
+    float32 = struct.Struct('<f')
+
+    def read_exact(size):
+        buf = b''
+
+        while len(buf) < size:
+            chunk = fp.read(size - len(buf))
+
+            if chunk == b'':
+                raise _BinaryVDFEOF()
+
+            buf += chunk
+
+        return buf
+
+    def read_type():
+        t = fp.read(1)
+
+        if t == b'':
+            raise _BinaryVDFEOF()
+
+        return t
+
+    def read_cstring(wide=False):
+        buf, end = b'', -1
+
+        while end == -1:
+            chunk = fp.read(64)
+
+            if chunk == b'':
+                raise _BinaryVDFEOF()
+
+            buf += chunk
+            end = buf.find(b'\x00\x00' if wide else b'\x00')
+
+        if wide:
+            end += end % 2
+
+        fp.seek(-(len(buf) - end) + (2 if wide else 1), 1)
+
+        result = buf[:end]
+
+        if wide:
+            return result.decode('utf-16')
+        if bytes is not str:
+            return result.decode('utf-8', 'replace')
+
+        try:
+            result.decode('ascii')
+        except:
+            return result.decode('utf-8', 'replace')
+        return result
+
+    stack = [mapper()]
+    expected_end = None if alt_format is None else (BIN_END_ALT if alt_format else BIN_END)
+
+    while True:
+        t = read_type()
+
+        if t in (BIN_END, BIN_END_ALT):
+            if len(stack) > 1:
+                stack.pop()
+                continue
+
+            if expected_end is not None and t != expected_end:
+                raise SyntaxError(
+                    "Expected binary VDF end marker %s at offset %d, got %s"
+                    % (repr(expected_end), fp.tell() - 1, repr(t)))
+
+            return stack.pop(), t == BIN_END_ALT
+
+        key = read_cstring()
+
+        if t == BIN_NONE:
+            if merge_duplicate_keys and key in stack[-1]:
+                _m = stack[-1][key]
+            else:
+                _m = mapper()
+                stack[-1][key] = _m
+            stack.append(_m)
+        elif t == BIN_STRING:
+            stack[-1][key] = read_cstring()
+        elif t == BIN_WIDESTRING:
+            stack[-1][key] = read_cstring(wide=True)
+        elif t in (BIN_INT32, BIN_POINTER, BIN_COLOR):
+            val = int32.unpack(read_exact(int32.size))[0]
+
+            if t == BIN_POINTER:
+                val = POINTER(val)
+            elif t == BIN_COLOR:
+                val = COLOR(val)
+
+            stack[-1][key] = val
+        elif t == BIN_UINT64:
+            stack[-1][key] = UINT_64(uint64.unpack(read_exact(uint64.size))[0])
+        elif t == BIN_INT64:
+            stack[-1][key] = INT_64(int64.unpack(read_exact(int64.size))[0])
+        elif t == BIN_FLOAT32:
+            stack[-1][key] = float32.unpack(read_exact(float32.size))[0]
+        else:
+            raise SyntaxError("Unknown data type at offset %d: %s" % (fp.tell() - 1, repr(t)))
+
+
+def _load_one(fp, mapper, merge_duplicate_keys, alt_format, source):
+    start = fp.tell()
+
+    if fp.read(1) == b'':
+        return None
+    fp.seek(start)
+
+    try:
+        result = _binary_object_reader(fp, mapper, merge_duplicate_keys, alt_format)
+    except _BinaryVDFEOF:
+        consumed = fp.tell() - start
+        fp.seek(start)
+        tail = None
+        if source is not None:
+            tail = source[start:]
+        raise TruncatedBinaryVDF(start, consumed, tail)
+
+    data, object_alt_format = result
+    return BinaryVDFRecord(data, object_alt_format, fp.tell() - start, start)
+
+
+def _stream_source(fp):
+    """Return ``(stream, source_bytes_or_None)`` for a bytes or file-like input."""
+    if isinstance(fp, bytes):
+        return BytesIO(fp), fp
+    if not hasattr(fp, 'read') or not hasattr(fp, 'tell') or not hasattr(fp, 'seek'):
+        raise TypeError("Expected fp to be a file-like object with tell()/seek() and read() returning bytes")
+    return fp, None
+
+
+def _check_mapper(mapper):
+    if not issubclass(mapper, Mapping):
+        raise TypeError("Expected mapper to be subclass of dict, got %s" % type(mapper))
+
+
+def binary_load_object(fp, mapper=dict, merge_duplicate_keys=True, alt_format=None, offset=0):
+    """
+    Read exactly one binary VDF object from ``fp``.
+
+    The end marker is detected per object when ``alt_format`` is ``None``, so
+    ordinary (``0x08``) and alternate (``0x0B``) objects may be concatenated
+    in one stream. End markers belonging to nested sections only close that
+    section; they never terminate the object.
+
+    Returns a :class:`BinaryVDFRecord` carrying the parsed ``data``, the
+    detected ``alt_format`` and the exact number of bytes ``consumed``. The
+    stream is left immediately after the object's own top-level end marker.
+
+    Returns ``None`` at a clean end of stream. If the stream ends inside an
+    object, :class:`TruncatedBinaryVDF` is raised and the stream is rewound to
+    the object's first byte, leaving the incomplete object unconsumed.
+
+    ``fp`` may also be ``bytes``; in that case ``offset`` selects the first
+    byte of the object and the truncated tail is available on the exception.
+    """
+    _check_mapper(mapper)
+
+    stream, source = _stream_source(fp)
+    if source is not None:
+        stream.seek(offset)
+    return _load_one(stream, mapper, merge_duplicate_keys, alt_format, source)
+
+
+def binary_load_next(fp, offset=0, mapper=dict, merge_duplicate_keys=True, alt_format=None):
+    """
+    Read the next binary VDF object from a ``bytes`` buffer or file-like object.
+
+    Alias for :func:`binary_load_object`. For ``bytes`` sources, ``offset``
+    selects the first byte of the object.
+    """
+    return binary_load_object(fp, mapper=mapper, merge_duplicate_keys=merge_duplicate_keys,
+                              alt_format=alt_format, offset=offset)
+
+
+def _binary_load_stream(stream, mapper, merge_duplicate_keys, alt_format, source, on_truncated):
+    while True:
+        start = stream.tell()
+        try:
+            record = _load_one(stream, mapper, merge_duplicate_keys, alt_format, source)
+        except TruncatedBinaryVDF:
+            if on_truncated == 'raise':
+                raise
+            stream.seek(start)
+            return
+        if record is None:
+            return
+        yield record
+
+
+def binary_load_stream(fp, mapper=dict, merge_duplicate_keys=True, alt_format=None, on_truncated='stop'):
+    """
+    Iterate over consecutive binary VDF objects in ``fp``.
+
+    Each item is a :class:`BinaryVDFRecord`. The end variant is detected
+    per object unless ``alt_format`` is given. Reading stops at a clean end of
+    stream, or when an incomplete object is found; in the latter case the
+    incomplete object's bytes are left unconsumed at the current position.
+
+    Set ``on_truncated='raise'`` to propagate :class:`TruncatedBinaryVDF`
+    instead of stopping. ``fp`` may also be ``bytes``.
+    """
+    if on_truncated not in ('stop', 'raise'):
+        raise ValueError("Expected on_truncated to be 'stop' or 'raise'")
+    _check_mapper(mapper)
+    stream, source = _stream_source(fp)
+
+    return _binary_load_stream(stream, mapper, merge_duplicate_keys, alt_format, source, on_truncated)
+
+
+def binary_load_iter(fp, mapper=dict, merge_duplicate_keys=True, alt_format=None):
+    """Alias for :func:`binary_load_stream`."""
+    return binary_load_stream(fp, mapper, merge_duplicate_keys, alt_format)
+
+
+class BinaryVDFStream(object):
+    """
+    Resumable reader for a stream of consecutive binary VDF objects.
+
+    ``BinaryVDFStream`` accepts a file-like object or a ``bytes`` buffer.
+    ``read()`` returns the next :class:`BinaryVDFRecord`, ``None`` at a clean
+    end of stream, and raises :class:`TruncatedBinaryVDF` (leaving the
+    incomplete object at the current position) when more data is required.
+
+    For ``bytes``/``BytesIO`` sources, :meth:`feed` appends additional bytes
+    without disturbing the current position. Iterating the stream stops at
+    truncation; after feeding the remaining bytes, the next iteration yields
+    only the object that was previously incomplete.
+    """
+    def __init__(self, fp, mapper=dict, merge_duplicate_keys=True, alt_format=None):
+        _check_mapper(mapper)
+        if isinstance(fp, bytes):
+            self.source = fp
+            self.fp = BytesIO(fp)
+        else:
+            if not hasattr(fp, 'read') or not hasattr(fp, 'tell') or not hasattr(fp, 'seek'):
+                raise TypeError("Expected fp to be a file-like object with tell()/seek() and read() returning bytes")
+            self.source = None
+            self.fp = fp
+        self.mapper = mapper
+        self.merge_duplicate_keys = merge_duplicate_keys
+        self.alt_format = alt_format
+
+    def read(self):
+        return binary_load_object(
+            self.fp, mapper=self.mapper, merge_duplicate_keys=self.merge_duplicate_keys,
+            alt_format=self.alt_format)
+
+    def __iter__(self):
+        while True:
+            start = self.fp.tell()
+            try:
+                record = self.read()
+            except TruncatedBinaryVDF:
+                self.fp.seek(start)
+                return
+            if record is None:
+                return
+            yield record
+
+    def __next__(self):
+        record = self.read()
+        if record is None:
+            raise StopIteration
+        return record
+
+    next = __next__
+
+    def feed(self, data):
+        """Append ``data`` to a ``bytes``/``BytesIO`` backed stream."""
+        if not isinstance(data, bytes):
+            raise TypeError("Expected data to be bytes, got %s" % type(data))
+        if not isinstance(self.fp, BytesIO):
+            raise TypeError("feed() requires a bytes or BytesIO source")
+
+        position = self.fp.tell()
+        self.fp.seek(0, 2)
+        self.fp.write(data)
+        self.fp.seek(position)
+
+    @property
+    def position(self):
+        return self.fp.tell()
+
+    @property
+    def remaining(self):
+        """Bytes after the current position (available for ``bytes`` sources)."""
+        if isinstance(self.fp, BytesIO):
+            position = self.fp.tell()
+            self.fp.seek(0, 2)
+            end = self.fp.tell()
+            self.fp.seek(position)
+            return end - position
+        return None
+
 def binary_dumps(obj, alt_format=False):
     """
     Serialize ``obj`` to a binary VDF formatted ``bytes``.

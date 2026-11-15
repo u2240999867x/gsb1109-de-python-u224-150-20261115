@@ -79,6 +79,63 @@ For binary representation
     d = vdf.vbkv_loads(vbkv_bytes)
     b = vdf.vbkv_dumps(d)
 
+Reading concatenated objects from a stream
+------------------------------------------
+
+Several binary VDF objects may be stored back to back in one file or stream,
+and the objects need not all use the same end marker (``0x08`` for ordinary
+binary VDF, ``0x0B`` for the alternative/VBKV variant). Nested sections close
+with their own end markers; those markers only close the section and do not
+choose the object's variant. The object's own top-level marker is what counts.
+
+.. code:: python
+
+    with open('archive.bin', 'rb') as fp:
+        for record in vdf.binary_load_stream(fp):
+            print(record.data, record.variant, record.consumed)
+
+    # read just the next object
+    record = vdf.binary_load_object(fp)
+    record.data          # parsed mapping
+    record.alt_format    # True when the object used the 0x0B end marker
+    record.variant       # 'base' or 'alt'
+    record.consumed      # exact bytes consumed, including the end marker
+    record.offset        # byte offset of the object in the source
+
+``binary_load_object`` returns ``None`` at a clean end of stream. The variant
+is detected per object unless ``alt_format`` is passed explicitly; a mismatched
+or mixed end marker raises ``SyntaxError``.
+
+If the input ends in the middle of an object, ``binary_load_object`` rewinds
+the stream to that object's first byte and raises ``TruncatedBinaryVDF``
+(``offset``, ``consumed`` and, for ``bytes`` input, ``tail``). The incomplete
+object therefore remains unconsumed. ``binary_load_stream`` stops at that
+point by default; pass ``on_truncated='raise'`` to surface the exception.
+Feeding the retained bytes back will produce only the object that was
+previously incomplete:
+
+.. code:: python
+
+    data = first_object + second_object[:-1]
+    buf = io.BytesIO(data)
+
+    records = list(vdf.binary_load_stream(buf))   # only first_object
+    held = buf.read()                             # second_object[:-1]
+
+    tail_records = list(vdf.binary_load_stream(held + second_object[-1:]))
+    assert len(tail_records) == 1
+
+For incremental input, ``BinaryVDFStream`` is resumable: ``read()`` returns the
+next record (or ``None``), ``position`` reports the current offset, and
+``feed(bytes)`` appends more data without moving the read position.
+
+.. code:: python
+
+    stream = vdf.BinaryVDFStream(b'')
+    stream.feed(chunk)
+    for record in stream:
+        print(record.data)
+
 Using an alternative mapper
 
 .. code:: python
