@@ -10,6 +10,7 @@ docs:
 	groff -mandoc -Thtml man/pycdlib-explorer.1 > docs/pycdlib-explorer.html
 	groff -mandoc -Thtml man/pycdlib-extract-files.1 > docs/pycdlib-extract-files.html
 	groff -mandoc -Thtml man/pycdlib-genisoimage.1 > docs/pycdlib-genisoimage.html
+	groff -mandoc -Thtml man/pycdlib-diff.1 > docs/pycdlib-diff.html
 	sphinx-build -b html -d build/doctrees docs/_sphinx docs/api
 	rm -f docs/api/.buildinfo
 

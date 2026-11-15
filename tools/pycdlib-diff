@@ -1,0 +1,82 @@
+#!/usr/bin/env python3
+
+# Copyright (C) 2026  Chris Lalancette <clalancette@gmail.com>
+
+# This library is free software; you can redistribute it and/or
+# modify it under the terms of the GNU Lesser General Public
+# License as published by the Free Software Foundation;
+# version 2.1 of the License.
+
+# This library is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
+# Lesser General Public License for more details.
+
+# You should have received a copy of the GNU Lesser General Public
+# License along with this library; if not, write to the Free Software
+# Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301  USA
+
+"""
+The main code for the pycdlib-diff tool, which compares the content of two
+ISO images by identity instead of by on-disk layout.
+"""
+
+import argparse
+import json
+import sys
+
+from pycdlib import diff as diffmod
+from pycdlib import pycdlibexception
+
+
+def parse_arguments():
+    """
+    A function to parse all of the arguments passed to the executable.
+
+    Parameters:
+     None.
+    Returns:
+     An ArgumentParser object with the parsed command-line arguments.
+    """
+    parser = argparse.ArgumentParser(
+        description='Compare two ISO images by content, path, attributes, and data-block sharing.')
+    parser.add_argument('--old', help='The old ISO image.  When omitted, the new image is inspected but no deletion is inferred', action='store', default=None)
+    parser.add_argument('--new', help='The new ISO image', action='store', required=True)
+    parser.add_argument('--namespace', help='Which namespace to compare', action='store', choices=['auto', 'rr', 'udf', 'joliet', 'iso'], default='auto')
+    parser.add_argument('--format', help='Output format', action='store', choices=['text', 'json'], default='text')
+    parser.add_argument('--output', help='Write the report to this file instead of standard output', action='store', default=None)
+    parser.add_argument('--fail-on-diff', help='Exit with status 1 when any difference is found', action='store_true', default=False)
+    return parser.parse_args()
+
+
+def main():
+    """
+    The main function for this executable that compares two ISO images given
+    the parameters specified by the user.
+    """
+    args = parse_arguments()
+
+    try:
+        result = diffmod.diff_paths(args.old, args.new, namespace=args.namespace)
+    except pycdlibexception.PyCdlibException as exc:
+        sys.stderr.write('pycdlib-diff: %s\n' % (exc))
+        return 2
+
+    if args.format == 'json':
+        rendered = json.dumps(result.to_dict(), indent=2, sort_keys=True) + '\n'
+    else:
+        rendered = diffmod.format_text(result)
+
+    if args.output is None:
+        sys.stdout.write(rendered)
+    else:
+        with open(args.output, 'w', encoding='utf-8') as outfp:
+            outfp.write(rendered)
+
+    if args.fail_on_diff and result.has_differences():
+        return 1
+    return 0
+
+
+if __name__ == '__main__':
+    sys.exit(main())

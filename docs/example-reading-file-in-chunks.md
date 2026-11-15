@@ -86,6 +86,6 @@ As is the case in other examples, we close out the PyCdlib object.
       <a href="https://clalancette.github.io/pycdlib/">Top</a>
     </div>
     <div style="width: 33%; display: table-cell; text-align: right;">
-      <a href="design.html">Design --></a>
+      <a href="example-diffing-isos.html">Example: Diffing two ISO images --></a>
     </div>
 </div>

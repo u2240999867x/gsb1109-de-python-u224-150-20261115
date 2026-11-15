@@ -10,6 +10,9 @@ The `pycdlib-explorer` tool gives the user a convenient, shell-like interface fo
 ## pycdlib-extract-files
 The `pycdlib-extract-files` tool is a convenient way to extract particular files or directories from an ISO (including the entire ISO).  Please see the man page [pycdlib-extract-files](pycdlib-extract-files.html) for more information.
 
+## pycdlib-diff
+The `pycdlib-diff` tool compares two ISO images by content and path identity instead of by on-disk layout.  It reports content updates, path migrations, attribute-only changes, and changes in which files share data blocks, and it refuses to infer deletions when the old image is missing or incomplete.  Please see the man page [pycdlib-diff](pycdlib-diff.html) and the [diffing example](example-diffing-isos.html) for more information.
+
 ---
 
 <div style="width: 100%; display: table;">

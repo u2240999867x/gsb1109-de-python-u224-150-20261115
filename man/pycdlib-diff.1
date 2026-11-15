@@ -1,0 +1,84 @@
+.TH PYCDLIB-DIFF 1 "Nov 2026" "pycdlib-diff"
+
+.SH NAME
+pycdlib-diff \- tool to compare two ISO images by content and identity
+
+.SH SYNOPSIS
+.B pycdlib-diff [OPTIONS] \-\-new <iso-file> [\-\-old <iso-file>]
+
+.SH DESCRIPTION
+pycdlib-diff compares two ISO images without assuming that either image kept
+its original on-disk layout.  It walks one namespace (Rock Ridge, UDF, Joliet,
+or ISO9660), hashes every file, and matches entries between the images using
+path evidence and content digests together.  Extents, path tables, and block
+ordering are not used to decide identity, so re-mastered images with identical
+content produce an empty report.
+
+The report keeps three kinds of logical change separate:
+
+.IP "content updates"
+An entry with the same identity whose data digest changed.
+.IP "path migrations"
+An entry whose data digest is unchanged but whose path moved.
+.IP "attribute-only changes"
+An entry whose data and path are unchanged but whose directory-record
+attributes (mode, ownership, link count, and optionally timestamps) changed.
+
+It additionally reports changes in which files share data blocks, since a
+re-master can split or create hard links without changing any file content.
+
+.SH OPTIONS
+.TP
+.BI \-\-old " <iso-file>"
+The old image.  When omitted, the new image is still inspected, but the report
+does not infer that any entry was removed, because without a complete old
+image there is nothing to compare against.
+.TP
+.BI \-\-new " <iso-file>"
+The new image.  Required.
+.TP
+.BI \-\-namespace " [auto,rr,udf,joliet,iso]"
+The namespace to compare.  The default, auto, prefers Rock Ridge, then UDF,
+then Joliet, then ISO9660, using the first namespace both images provide.
+.TP
+.BI \-\-format " [text,json]"
+The report format.  The default is text.
+.TP
+.BI \-\-output " <file>"
+Write the report to this file instead of standard output.
+.TP
+.B \-\-fail\-on\-diff
+Exit with status 1 when at least one content update, path migration,
+attribute-only change, shared-block change, addition, or removal is found.
+Ambiguous or unverified entries alone do not set this status.
+
+.SH EXIT STATUS
+.TP
+.B 0
+The images were compared successfully (with or without differences).
+.TP
+.B 1
+A difference was found and \-\-fail\-on\-diff was supplied.
+.TP
+.B 2
+An ISO could not be opened or the arguments were invalid.
+
+.SH IDENTITY RULES
+A same-path pair of entries with different digests is a content update: the
+path proves they are the same entry, and the digest proves the data changed.
+A pair at different paths with the same digest is a path migration.  A
+directory whose complete subtree signature is unchanged can be matched even
+when it was renamed, and a directory whose relative names and kinds are
+unchanged provides the evidence to pair a moved file whose contents were also
+rewritten.  When several entries share a digest and the directory evidence
+cannot choose between them, the report lists the entry as ambiguous rather
+than guessing.
+
+If the old image is missing, truncated, or otherwise incomplete, entries that
+are unmatched are reported as unverified and are never reported as removed.
+
+.SH SEE ALSO
+pycdlib-explorer(1), pycdlib-extract-files(1), pycdlib-genisoimage(1)
+
+.SH AUTHOR
+Chris Lalancette <clalancette@gmail.com>
