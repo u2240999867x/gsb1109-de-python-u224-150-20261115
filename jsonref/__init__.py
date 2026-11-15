@@ -7,6 +7,22 @@ from urllib.parse import unquote
 from urllib.request import urlopen
 
 from . import proxytypes  # noqa: F401
+from .loader import (
+    AuthorizationError,
+    AuthorizedJsonLoader,
+    DigestMismatch,
+    JsonLoader,
+    LoadRecord,
+    LoadResult,
+    Manifest,
+    ManifestEntry,
+    ManifestError,
+    ManifestLoader,
+    SecureJsonLoader,
+    canonicalize_uri,
+    load_manifest,
+    manifest_loader,
+)
 from .proxytypes import LazyProxy
 
 try:
@@ -44,7 +60,16 @@ class JsonRef(LazyProxy):
 
     """
 
-    __notproxied__ = ("__reference__",)
+    __notproxied__ = (
+        "__reference__",
+        "resolved_uri",
+        "resolved_digest",
+        "resolved_record",
+        "final_uri",
+        "source_uri",
+        "digest",
+        "load_record",
+    )
 
     @classmethod
     def replace_refs(
@@ -104,6 +129,10 @@ class JsonRef(LazyProxy):
         self.store = _store  # Use the same object to be shared with children
         if self.store is None:
             self.store = URIDict()
+        self.resolved_uri = None
+        self.resolved_digest = None
+        self.resolved_record = None
+        self._resolved_records = {}
 
     @property
     def _ref_kwargs(self):
@@ -123,9 +152,10 @@ class JsonRef(LazyProxy):
 
     def callback(self):
         uri, fragment = urlparse.urldefrag(self.full_uri)
+        store_uri = getattr(self.store, "resolve_key", lambda value: value)(uri)
 
         # If we already looked this up, return a reference to the same object
-        if uri not in self.store:
+        if store_uri not in self.store:
             # Remote ref
             try:
                 base_doc = self.loader(uri)
@@ -133,11 +163,42 @@ class JsonRef(LazyProxy):
                 raise self._error(
                     "%s: %s" % (e.__class__.__name__, str(e)), cause=e
                 ) from e
+            final_uri, _, base_doc = self._record_source(uri, base_doc)
+            if final_uri is None:
+                final_uri = uri
+            # The loader is allowed to follow a redirect and return a new
+            # final address.  Store and resolve against that address so later
+            # references are checked against the content actually read.
             base_doc = _replace_refs(
-                base_doc, **{**self._ref_kwargs, "base_uri": uri, "recursing": False}
+                base_doc,
+                **{**self._ref_kwargs, "base_uri": final_uri, "recursing": False},
             )
+            if final_uri in self.store:
+                base_doc = self.store[final_uri]
+            self._resolved_records[final_uri] = self.resolved_record
+            self._resolved_records[uri] = self.resolved_record
+            records = getattr(self.store, "records", None)
+            if records is not None:
+                records[final_uri] = self.resolved_record
+                records[uri] = self.resolved_record
+            alias = getattr(self.store, "alias", None)
+            if alias is not None:
+                alias(uri, final_uri)
         else:
-            base_doc = self.store[uri]
+            base_doc = self.store[store_uri]
+            stored_record = None
+            records = getattr(self.store, "records", None)
+            if records is not None:
+                stored_record = records.get(store_uri)
+            else:
+                resolved_records = object.__getattribute__(self, "__dict__").get(
+                    "_resolved_records", {}
+                )
+                stored_record = resolved_records.get(uri)
+            if stored_record is not None:
+                self.resolved_uri = getattr(stored_record, "final_uri", uri)
+                self.resolved_digest = getattr(stored_record, "digest", None)
+                self.resolved_record = stored_record
         result = self.resolve_pointer(base_doc, fragment)
         if result is self:
             raise self._error("Reference refers directly to itself.")
@@ -153,6 +214,100 @@ class JsonRef(LazyProxy):
                 **{k: v for k, v in self.__reference__.items() if k != "$ref"},
             }
         return result
+
+    def _record_source(self, uri, loaded):
+        """Extract and authorize the loader's final source and digest."""
+        loader = self.loader
+        final_uri = uri
+        digest = None
+        record = None
+        base_doc = loaded
+
+        if isinstance(loaded, LoadResult):
+            final_uri = loaded.final_uri or uri
+            digest = loaded.digest
+            record = loaded
+            base_doc = loaded.document
+        elif isinstance(loaded, tuple) and len(loaded) in (2, 3):
+            base_doc, final_uri = loaded[0], loaded[1]
+            digest = loaded[2] if len(loaded) == 3 else None
+            record = LoadResult(base_doc, final_uri, digest)
+        elif isinstance(loaded, Mapping) and (
+            "document" in loaded or "data" in loaded
+        ) and any(
+            key in loaded
+            for key in ("final_uri", "final_url", "uri", "url", "source")
+        ):
+            final_uri = (
+                loaded.get("final_uri")
+                or loaded.get("final_url")
+                or loaded.get("uri")
+                or loaded.get("url")
+                or loaded.get("source")
+                or uri
+            )
+            digest = (
+                loaded.get("digest")
+                or loaded.get("sha256")
+                or loaded.get("checksum")
+            )
+            base_doc = loaded.get("document", loaded.get("data"))
+            record = LoadResult(base_doc, final_uri, digest)
+        else:
+            # Only trust an explicit string attribute.  Arbitrary loader
+            # results (ints, mocks, custom objects) must stay untouched.
+            candidate = getattr(loaded, "final_uri", None)
+            if isinstance(candidate, str):
+                final_uri = candidate
+            candidate = getattr(loaded, "digest", None)
+            if isinstance(candidate, str):
+                digest = candidate
+            record = getattr(loaded, "record", None)
+            if not isinstance(record, (LoadRecord, LoadResult)):
+                record = None
+
+        # A loader that understands manifests gets the last word on redirects.
+        # Look the method up on the class so a mock or other dynamically
+        # proxying object cannot accidentally acquire redirect authority.
+        authorize_final = getattr(type(loader), "authorize_final", None)
+        if callable(authorize_final):
+            try:
+                final_uri = loader.authorize_final(uri, final_uri)
+            except Exception as e:
+                raise self._error(
+                    "%s: %s" % (e.__class__.__name__, str(e)), cause=e
+                ) from e
+        elif final_uri != uri:
+            # A redirect from a loader that cannot re-authorize it is unsafe.
+            raise self._error(
+                "loader redirected %s to unauthorized %s" % (uri, final_uri)
+            )
+
+        self.resolved_uri = final_uri
+        self.resolved_digest = digest
+        self.resolved_record = record if record is not None else LoadRecord(
+            requested_uri=uri, final_uri=final_uri, digest=digest
+        )
+        return final_uri, digest, base_doc
+
+    @property
+    def final_uri(self):
+        """The address actually read after any authorized redirect."""
+        return self.resolved_uri
+
+    @property
+    def source_uri(self):
+        return self.resolved_uri
+
+    @property
+    def digest(self):
+        """Digest of the loaded content, as authorized by the loader."""
+        return self.resolved_digest
+
+    @property
+    def load_record(self):
+        """Audit record for the most recent load of this reference."""
+        return self.resolved_record
 
     def resolve_pointer(self, document, pointer):
         """
@@ -211,7 +366,23 @@ class URIDict(MutableMapping):
 
     def __init__(self, *args, **kwargs):
         self.store = dict()
+        self.records = {}
+        self._aliases = {}
         self.store.update(*args, **kwargs)
+
+    def resolve_key(self, uri):
+        """Map a requested URI to the key where its document was stored."""
+        normalized = self.normalize(uri)
+        return self._aliases.get(normalized, normalized)
+
+    def alias(self, requested_uri, final_uri):
+        """Remember that a requested URI resolves to the final source."""
+        requested = self.normalize(requested_uri)
+        final = self.normalize(final_uri)
+        if requested in self.store:
+            self._aliases[requested] = requested
+            return
+        self._aliases[requested] = final if final in self.store else requested
 
     def __getitem__(self, uri):
         return self.store[self.normalize(uri)]
@@ -512,11 +683,29 @@ def load_uri(
 
     if loader is None:
         loader = jsonloader
+
+    loaded = loader(uri)
+    if isinstance(loaded, LoadResult):
+        document = loaded.document
+        final_uri = loaded.final_uri or uri
+        authorize_final = getattr(type(loader), "authorize_final", None)
+        if callable(authorize_final):
+            final_uri = loader.authorize_final(uri, final_uri)
+        elif final_uri != uri:
+            raise JsonRefError(
+                "loader redirected %s to unauthorized %s" % (uri, final_uri),
+                {"$ref": uri},
+                uri=uri,
+            )
+        loaded = document
+        if base_uri is None:
+            base_uri = final_uri
+
     if base_uri is None:
         base_uri = uri
 
     return replace_refs(
-        loader(uri),
+        loaded,
         base_uri=base_uri,
         loader=loader,
         jsonschema=jsonschema,

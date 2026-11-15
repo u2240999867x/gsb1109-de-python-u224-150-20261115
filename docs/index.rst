@@ -196,6 +196,60 @@ here is a complete script to load `env:XXX` URIs from environment variables::
     result = jsonref.replace_refs(json, loader=loader)
 
 
+Manifest-authorized loading
+===========================
+
+When a process must only read the JSON files named by a batch directory
+manifest, use :class:`JsonLoader` instead of :func:`jsonloader`.  The default
+:func:`jsonloader` will read any URI it is given; :class:`JsonLoader` refuses
+anything that is not explicitly listed.
+
+A manifest can be a JSON file, a mapping, or a list of names.  Local manifests
+name a directory root, and remote manifests name a ``base_uri``; the two are
+mutually exclusive so a relative entry cannot silently switch namespaces.
+Entries may declare an alias, a digest, and the redirect destinations that an
+opener is allowed to follow::
+
+    {
+      "root": "/srv/batch/data",
+      "files": {
+        "schema.json": {
+          "target": "schema.json",
+          "aliases": ["schema-v1.json"],
+          "sha256": "3f786850e387550fdab836ed7e6dc881de23001b"
+        },
+        "common.json": {
+          "target": "common.json",
+          "redirects": ["https://cdn.example/common.json"]
+        }
+      }
+    }
+
+For a remote batch, replace ``root`` with ``base_uri`` and use absolute or
+relative HTTPS entries, for example
+``{"base_uri": "https://example.test/batch/", "files": ["schema.json"]}``.
+
+.. autoclass:: JsonLoader
+
+Every call authorizes the requested name before opening anything.  If the
+opener follows a redirect, the final address is authorized again: it must be an
+explicit redirect destination for that entry or another name already present in
+the manifest.  A final address outside the manifest is rejected.  Declared
+digests are checked against the loaded bytes, using the destination entry's
+digest when a redirect lands on a different listed name.  Each decision is
+appended to :attr:`JsonLoader.records` with the requested name, the final
+source, the digest, and whether the result came from cache.
+
+Aliases share the same loaded document object, but they do not make the
+physical target readable by its own name.  Paths are normalized before lookup;
+``..`` traversal, percent-encoded separators, and symlinks that escape the
+manifest root are rejected.
+
+:class:`JsonRef` proxies resolved through this loader expose the final source
+and digest as :attr:`JsonRef.final_uri` and :attr:`JsonRef.digest`, and the
+full audit record as :attr:`JsonRef.load_record`.
+
+
 :mod:`json` module drop in replacement functions
 ================================================
 
