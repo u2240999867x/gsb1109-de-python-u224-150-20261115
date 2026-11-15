@@ -1,0 +1,125 @@
+<!DOCTYPE html PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN"
+"http://www.w3.org/TR/html4/loose.dtd">
+<html>
+<head>
+<meta name="generator" content="groff -Thtml, see www.gnu.org">
+<meta http-equiv="Content-Type" content="text/html; charset=US-ASCII">
+<meta name="Content-Style" content="text/css">
+<style type="text/css">
+       p       { margin-top: 0; margin-bottom: 0; vertical-align: top }
+       pre     { margin-top: 0; margin-bottom: 0; vertical-align: top }
+       table   { margin-top: 0; margin-bottom: 0; vertical-align: top }
+       h1      { text-align: center }
+</style>
+<title>PYCDLIB-CATALOG</title>
+
+</head>
+<body>
+
+<h1 align="center">PYCDLIB-CATALOG</h1>
+
+<a href="#NAME">NAME</a><br>
+<a href="#SYNOPSIS">SYNOPSIS</a><br>
+<a href="#DESCRIPTION">DESCRIPTION</a><br>
+<a href="#OPTIONS">OPTIONS</a><br>
+<a href="#SEE ALSO">SEE ALSO</a><br>
+<a href="#AUTHOR">AUTHOR</a><br>
+
+<hr>
+
+
+<h2>NAME
+<a name="NAME"></a>
+</h2>
+
+
+
+<p style="margin-left:9%; margin-top: 1em">pycdlib-catalog
+- generate file entity and path reference catalogs from an
+ISO using pycdlib</p>
+
+<h2>SYNOPSIS
+<a name="SYNOPSIS"></a>
+</h2>
+
+
+
+<p style="margin-left:9%; margin-top: 1em"><b>pycdlib-catalog
+[OPTIONS] &lt;iso-file&gt;</b></p>
+
+<h2>DESCRIPTION
+<a name="DESCRIPTION"></a>
+</h2>
+
+
+<p style="margin-left:9%; margin-top: 1em">This is a tool
+to catalog the entries on an existing ISO that carries one
+or more of the ISO9660, Joliet, and Rock Ridge name spaces.
+It emits three catalogs:</p>
+
+<p style="margin-left:9%; margin-top: 1em"><b>file entities</b></p>
+
+<p style="margin-left:18%;">One row per distinct on-disk
+data object. Directory records that reference the same data
+area (hard links, including across name spaces) collapse
+onto a single entity, so a shared data area is counted
+once.</p>
+
+<p style="margin-left:9%;"><b>path references</b></p>
+
+<p style="margin-left:18%;">One row per directory record in
+each name space. The name is preserved exactly as that name
+space stored it, so an ISO9660 name such as
+&quot;FOO.;1&quot;, its Rock Ridge name &quot;foo&quot;, and
+its Joliet name can all appear alongside one another.</p>
+
+<p style="margin-left:9%;"><b>shared extent conflicts</b></p>
+
+<p style="margin-left:18%;">When two or more distinct
+entities reference the same non-empty data extent, every
+directory record involved is listed here. Name spaces are
+never paired by display name; references only identify the
+same entity through the parsed data object, so a conflict
+is reported with its directory records rather than silently
+resolved by guessing.</p>
+
+<p style="margin-left:9%; margin-top: 1em">Without
+<b>&minus;output&minus;dir</b> the three catalogs are
+written to standard output as tab-separated tables with
+headings. With <b>&minus;output&minus;dir</b> they are
+written to the files entities.tsv, references.tsv, and
+conflicts.tsv in that directory.</p>
+
+<h2>OPTIONS
+<a name="OPTIONS"></a>
+</h2>
+
+
+
+<p style="margin-left:9%; margin-top: 1em"><b>&minus;output&minus;dir</b>
+<i>&lt;destpath&gt;</i></p>
+
+<p style="margin-left:18%;">The directory to write the
+three tab-separated catalog files to. The directory is
+created if it does not exist. If not specified, the
+catalogs are printed to standard output.</p>
+
+<h2>SEE ALSO
+<a name="SEE ALSO"></a>
+</h2>
+
+
+
+<p style="margin-left:9%; margin-top: 1em">pycdlib-explorer(1),
+pycdlib-extract-files(1), pycdlib-genisoimage(1)</p>
+
+<h2>AUTHOR
+<a name="AUTHOR"></a>
+</h2>
+
+
+<p style="margin-left:9%; margin-top: 1em">Chris Lalancette
+&lt;clalancette@gmail.com&gt;</p>
+<hr>
+</body>
+</html>

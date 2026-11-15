@@ -1,0 +1,113 @@
+#!/usr/bin/env python3
+
+# Copyright (C) 2026  Chris Lalancette <clalancette@gmail.com>
+
+# This library is free software; you can redistribute it and/or
+# modify it under the terms of the GNU Lesser General Public
+# License as published by the Free Software Foundation;
+# version 2.1 of the License.
+
+# This library is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
+# Lesser General Public License for more details.
+
+# You should have received a copy of the GNU Lesser General Public
+# License along with this library; if not, write to the Free Software
+# Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301  USA
+
+"""
+The main code for the pycdlib-catalog tool, which generates file entity and
+path reference catalogs from an ISO.  The catalogs keep the original
+ISO9660, Joliet, and Rock Ridge names, collapse hard links onto a single
+file entity, and list the directory records involved whenever distinct
+entities share one data extent.
+"""
+
+import argparse
+import os
+import sys
+
+import pycdlib
+from pycdlib import catalog
+
+
+def parse_arguments():
+    """
+    A function to parse all of the arguments passed to the executable.
+
+    Parameters:
+     None.
+    Returns:
+     An ArgumentParser object with the parsed command-line arguments.
+    """
+    parser = argparse.ArgumentParser()
+    parser.add_argument('-output-dir', help='Directory to write the catalog TSV files to; if not specified, the catalogs are printed to standard output', action='store')
+    parser.add_argument('iso', help='ISO to open', action='store')
+    return parser.parse_args()
+
+
+def write_catalog(output, heading, text):
+    """
+    Write one catalog to an open output stream, prefixing it with a heading
+    when several catalogs share the stream.
+
+    Parameters:
+     output - The open file object to write to.
+     heading - The human-readable heading for this catalog.
+     text - The rendered catalog text.
+    Returns:
+     Nothing.
+    """
+    output.write('# %s\n' % (heading))
+    output.write(text)
+
+
+def run_catalog(args):
+    """
+    Generate the catalogs for the given ISO and write them out.
+
+    Parameters:
+     args - The parsed command-line arguments.
+    Returns:
+     The exit code for the process.
+    """
+    iso = pycdlib.PyCdlib()
+    iso.open(args.iso)
+
+    result = catalog.build_catalog(iso)
+
+    rendered = (
+        ('file entities', catalog.format_entity_catalog(result), 'entities.tsv'),
+        ('path references', catalog.format_reference_catalog(result), 'references.tsv'),
+        ('shared extent conflicts', catalog.format_conflict_catalog(result), 'conflicts.tsv'),
+    )
+
+    if args.output_dir is None:
+        first = True
+        for heading, text, _filename in rendered:
+            if not first:
+                sys.stdout.write('\n')
+            first = False
+            write_catalog(sys.stdout, heading, text)
+    else:
+        os.makedirs(args.output_dir, exist_ok=True)
+        for _heading, text, filename in rendered:
+            with open(os.path.join(args.output_dir, filename), 'w', encoding='utf-8') as output:
+                output.write(text)
+
+    iso.close()
+    return 0
+
+
+def main():
+    """
+    The main function for this executable that generates the catalogs from an
+    ISO given the parameters specified by the user.
+    """
+    args = parse_arguments()
+    return run_catalog(args)
+
+
+if __name__ == '__main__':
+    sys.exit(main())

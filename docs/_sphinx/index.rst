@@ -10,6 +10,7 @@ an introduction and worked examples, see the `main documentation
    :maxdepth: 2
 
    pycdlib
+   catalog
    facade
    inplaceeditor
    pycdlibio

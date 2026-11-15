@@ -10,6 +10,9 @@ The `pycdlib-explorer` tool gives the user a convenient, shell-like interface fo
 ## pycdlib-extract-files
 The `pycdlib-extract-files` tool is a convenient way to extract particular files or directories from an ISO (including the entire ISO).  Please see the man page [pycdlib-extract-files](pycdlib-extract-files.html) for more information.
 
+## pycdlib-catalog
+The `pycdlib-catalog` tool generates two tab-separated catalogs from an ISO: a file entity catalog with one row per distinct on-disk data object (hard links and cross-name-space references collapse onto one entity), and a path reference catalog with one row per directory record that preserves the original ISO9660, Joliet, and Rock Ridge names.  When distinct entities share one data extent, the directory records involved are listed in a third conflict catalog instead of being matched by display name.  Please see the man page [pycdlib-catalog](pycdlib-catalog.html) for more information.
+
 ---
 
 <div style="width: 100%; display: table;">

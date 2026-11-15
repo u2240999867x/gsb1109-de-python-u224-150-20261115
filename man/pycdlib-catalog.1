@@ -1,0 +1,51 @@
+.TH PYCDLIB-CATALOG 1 "Nov 2026" "pycdlib-catalog"
+
+.SH NAME
+pycdlib-catalog - generate file entity and path reference catalogs from an ISO using pycdlib
+
+.SH SYNOPSIS
+.B pycdlib-catalog [OPTIONS] <iso-file>
+
+.SH DESCRIPTION
+This is a tool to catalog the entries on an existing ISO that carries one or
+more of the ISO9660, Joliet, and Rock Ridge name spaces.  It emits three
+catalogs:
+
+.TP
+.B file entities
+One row per distinct on-disk data object.  Directory records that reference
+the same data area (hard links, including across name spaces) collapse onto a
+single entity, so a shared data area is counted once.
+
+.TP
+.B path references
+One row per directory record in each name space.  The name is preserved
+exactly as that name space stored it, so an ISO9660 name such as
+"FOO.;1", its Rock Ridge name "foo", and its Joliet name can all appear
+alongside one another.
+
+.TP
+.B shared extent conflicts
+When two or more distinct entities reference the same non-empty data extent,
+every directory record involved is listed here.  Name spaces are never paired
+by display name; references only identify the same entity through the parsed
+data object, so a conflict is reported with its directory records rather than
+silently resolved by guessing.
+
+.PP
+Without \-output\-dir the three catalogs are written to standard output as
+tab-separated tables with headings.  With \-output\-dir they are written to
+the files entities.tsv, references.tsv, and conflicts.tsv in that directory.
+
+.SH OPTIONS
+.TP
+.BI \-output\-dir " <destpath>"
+The directory to write the three tab-separated catalog files to.  The
+directory is created if it does not exist.  If not specified, the catalogs
+are printed to standard output.
+
+.SH SEE ALSO
+pycdlib-explorer(1), pycdlib-extract-files(1), pycdlib-genisoimage(1)
+
+.SH AUTHOR
+Chris Lalancette <clalancette@gmail.com>

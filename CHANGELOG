@@ -1,5 +1,9 @@
 Changelog for PyCdlib
 
+1.23.0
+------
+* Add a new pycdlib.catalog module and pycdlib-catalog tool that emit a file entity catalog (one row per distinct data object, with hard links and cross-name-space references collapsed onto one entity) and a path reference catalog (one row per directory record preserving the original ISO9660, Joliet, and Rock Ridge names); distinct entities that share one data extent are listed with their directory records instead of being matched by display name
+
 1.22.0 (2026-10-09)
 -------------------
 * Fix a potential infinite loop in UDF File Entry parsing; pointed out by R0ck3t (zhangyan8216 on GitHub)
