@@ -613,6 +613,123 @@ def _find_dr_record_by_name(vd, path, encoding):
     raise pycdlibexception.PyCdlibInvalidInput('Could not find path')
 
 
+class UpdatePlan:
+    """
+    A deferred file-content update produced by
+    :meth:`pycdlib.pycdlib.PyCdlib.plan_update`.
+
+    An update plan makes the two possible update semantics explicit
+    before anything is mutated:
+
+    * ``mode='detach'`` breaks the reference held by the one path the
+      caller identified.  That path starts pointing at the new
+      contents; every other hard link to the same old data keeps
+      pointing at the old contents.  The old data is reclaimed only
+      when the update removes its last remaining reference.
+    * ``mode='replace'`` replaces the data for every link.  All
+      paths that refer to the same data see the new contents, and
+      the old data is reclaimed immediately.
+
+    ``affected_paths`` lists every path whose contents change, while
+    ``unchanged_paths`` lists paths that keep the old contents (only
+    non-empty for ``detach``).  Call :meth:`apply` to perform the
+    update; all disk writes remain deferred until ``write_fp``.
+    """
+
+    __slots__ = ('_iso', '_fp', '_length', '_manage_fp', 'mode',
+                 '_target_records', 'affected_paths', 'unchanged_paths',
+                 'reclaims_old_data', '_applied')
+
+    def __init__(self, iso, fp, length, manage_fp, mode, target_records,
+                 affected_paths, unchanged_paths, reclaims_old_data):
+        # type: (PyCdlib, Union[BinaryIO, str], int, bool, str, List[Any], List[str], List[str], bool) -> None
+        self._iso = iso
+        self._fp = fp
+        self._length = length
+        self._manage_fp = manage_fp
+        self.mode = mode
+        self._target_records = target_records
+        self.affected_paths = affected_paths
+        self.unchanged_paths = unchanged_paths
+        self.reclaims_old_data = reclaims_old_data
+        self._applied = False
+
+    def __str__(self):
+        # type: () -> str
+        lines = ['UpdatePlan(mode=%r, reclaims_old_data=%r)' % (self.mode, self.reclaims_old_data)]
+        lines.append('  affected paths:')
+        for path in self.affected_paths:
+            lines.append('    ' + path)
+        if self.unchanged_paths:
+            lines.append('  unchanged paths (keep the old contents):')
+            for path in self.unchanged_paths:
+                lines.append('    ' + path)
+        return '\n'.join(lines)
+
+    def apply(self):
+        # type: () -> None
+        """
+        Apply this plan to the ISO object.  Applying the same plan
+        twice is an error.
+
+        Returns:
+            Nothing.
+        """
+        if self._applied:
+            raise pycdlibexception.PyCdlibInvalidInput('This update plan has already been applied')
+        self._iso._apply_update_plan(self)  # pylint: disable=protected-access
+        self._applied = True
+
+
+class AliasCollision:
+    """
+    A description of one directory-name/alias collision found by
+    :meth:`pycdlib.pycdlib.PyCdlib.find_alias_collisions`.
+
+    A collision means two different directory entries resolve through
+    the same Rock Ridge alias, or a relocated directory had its ISO9660
+    name rewritten because the requested name collided with an existing
+    entry.  Both make some paths ambiguous, so the affected paths are
+    reported together.
+
+    Attributes:
+        kind: 'duplicate-alias' or 'renamed'.
+        alias: The colliding Rock Ridge alias (bytes) when the collision
+            is about an alias, or None for a pure ISO9660 rename.
+        entries: A list of dictionaries.  Each dictionary maps path
+            namespaces ('iso_path', 'raw_iso_path', 'rr_path',
+            'joliet_path') to the path of one affected record.
+        paths: Every affected path, flattened and sorted.
+    """
+
+    __slots__ = ('kind', 'alias', 'entries', 'paths')
+
+    def __init__(self, kind, alias, entries):
+        # type: (str, Optional[bytes], List[Dict[str, str]]) -> None
+        self.kind = kind
+        self.alias = alias
+        self.entries = entries
+        flattened = []
+        for entry in entries:
+            for namespace in ('iso_path', 'raw_iso_path', 'rr_path', 'joliet_path'):
+                if namespace in entry:
+                    flattened.append(entry[namespace])
+        self.paths = sorted(set(flattened))
+
+    def __str__(self):
+        # type: () -> str
+        if self.kind == 'renamed':
+            lines = ['directory name collision forced a rename; affected paths:']
+        else:
+            alias = self.alias.decode('utf-8', 'replace') if self.alias is not None else ''
+            lines = ["directory alias collision on %r; affected paths:" % alias]
+        for entry in self.entries:
+            for namespace in ('iso_path', 'raw_iso_path', 'rr_path', 'joliet_path'):
+                if namespace in entry:
+                    lines.append('  %s: %s' % (namespace, entry[namespace]))
+        return '\n'.join(lines)
+
+
 class PyCdlib:
     """The main class for manipulating ISOs."""
     __slots__ = ('_initialized', '_cdfp', 'pvds', 'svds', 'vdsts', 'brs', 'pvd',
@@ -626,7 +743,7 @@ class PyCdlib:
                  'udf_boots', 'udf_logical_volume_integrity_terminator',
                  'udf_root', 'udf_file_set', 'udf_file_set_terminator',
                  'logical_block_size', '_dir_alignment_blocks',
-                 '_udf_middle_anchor_blocks')
+                 '_udf_middle_anchor_blocks', '_strict_alias_collisions')
 
     def _initialize(self):
         # type: () -> None
@@ -3542,6 +3659,163 @@ class PyCdlib:
         else:
             self._needs_reshuffle = True
 
+    def _raw_iso_path(self, rec):
+        # type: (dr.DirectoryRecord) -> str
+        """
+        An internal method to render a directory record's physical ISO9660
+        path, without following Rock Ridge relocation child links.  Used
+        when reporting collisions, where the raw location matters.
+
+        Args:
+            rec: The record to render.
+        Returns:
+            The raw ISO9660 path.
+        """
+        names = []
+        node = rec  # type: Optional[dr.DirectoryRecord]
+        while node is not None:
+            if node.is_root:
+                names.insert(0, '')
+            else:
+                names.insert(0, node.file_identifier().decode('utf-8', 'replace'))
+            node = node.parent
+        return '/'.join(names) if len(names) > 1 else '/'
+
+    def _collision_entry(self, rec):
+        # type: (Any) -> Dict[str, str]
+        """
+        An internal method to describe one record participating in a
+        collision by every namespace that can refer to it.
+
+        Args:
+            rec: The record to describe.
+        Returns:
+            A mapping of namespace to path.
+        """
+        entry = {}  # type: Dict[str, str]
+        if isinstance(rec, udfmod.UDFFileEntry):
+            entry['udf_path'] = self.full_path_from_dirrecord(rec)
+            return entry
+        raw = self._raw_iso_path(rec)
+        entry['raw_iso_path'] = raw
+        if self.joliet_vd is not None and id(rec.vd) == id(self.joliet_vd):
+            entry['joliet_path'] = self.full_path_from_dirrecord(rec)
+            return entry
+        entry['iso_path'] = self.full_path_from_dirrecord(rec)
+        if self.rock_ridge and rec.rock_ridge is not None:
+            entry['rr_path'] = self.full_path_from_dirrecord(rec, rockridge=True)
+        return entry
+
+    def find_alias_collisions(self):
+        # type: () -> List[AliasCollision]
+        """
+        Find directory entries whose names resolve ambiguously.
+
+        Two kinds of collision are reported:
+
+        * 'duplicate-alias': two distinct entries in the same PVD
+          directory carry the same Rock Ridge alias.  Path lookups by
+          ``rr_path`` can only reach one of them.
+        * 'renamed': a Rock Ridge relocation had to rewrite a
+          directory's ISO9660 name because the requested name collided
+          inside ``RR_MOVED``.  The physical path is different from the
+          logical one, so both are reported.
+
+        Returns:
+            A list of :class:`AliasCollision` objects.  The list is empty
+            when no collision exists.
+        """
+        if not self._initialized:
+            raise pycdlibexception.PyCdlibInvalidInput('This object is not initialized; call either open() or new() to create an ISO')
+
+        collisions = []  # type: List[AliasCollision]
+        if not self.rock_ridge:
+            return collisions
+
+        seen_dirs = set()  # type: Set[int]
+        dirs = collections.deque([self.pvd.root_directory_record()])
+        while dirs:
+            directory = dirs.popleft()
+            if id(directory) in seen_dirs:
+                continue
+            seen_dirs.add(id(directory))
+
+            by_alias = collections.OrderedDict()
+            for child in directory.children:
+                if child.is_dot() or child.is_dotdot():
+                    continue
+                if child.rock_ridge is None:
+                    continue
+                if child.rock_ridge.child_link_record_exists():
+                    continue
+                if directory is self._rr_moved_record:
+                    # RR_MOVED holds relocated entries from unrelated
+                    # parents; equal aliases there are not a lookup
+                    # collision in any single logical directory.
+                    continue
+                by_alias.setdefault(child.rock_ridge.name(), []).append(child)
+
+            for alias, members in by_alias.items():
+                if len(members) > 1:
+                    collisions.append(AliasCollision(
+                        'duplicate-alias', alias,
+                        [self._collision_entry(member) for member in members]))
+
+            for child in directory.children:
+                if child.is_dot() or child.is_dotdot():
+                    continue
+                if child.is_dir() and child.rock_ridge is not None and \
+                        child.rock_ridge.child_link_record_exists():
+                    continue
+                if child.is_dir():
+                    dirs.append(child)
+
+        if self._rr_moved_record.initialized:
+            seen_cl = set()  # type: Set[int]
+            for child in self._rr_moved_record.children:
+                if child.is_dot() or child.is_dotdot():
+                    continue
+                if child.rock_ridge is None:
+                    continue
+                cl_record = child.rock_ridge.moved_to_cl_dr
+                if cl_record is None:
+                    continue
+                if id(cl_record) in seen_cl:
+                    continue
+                seen_cl.add(id(cl_record))
+                requested_name = cl_record.file_identifier()
+                if child.file_identifier() != requested_name:
+                    entries = [self._collision_entry(cl_record),
+                               self._collision_entry(child)]
+                    collisions.append(AliasCollision(
+                        'renamed', child.rock_ridge.name(), entries))
+
+        return collisions
+
+    def _warn_alias_collisions(self, write_kind):
+        # type: (str) -> None
+        """
+        An internal method to report alias collisions before an image is
+        written.  In strict mode the report is raised as an error;
+        otherwise it is emitted as a warning.
+
+        Args:
+            write_kind: The name of the write API being used.
+        Returns:
+            Nothing.
+        """
+        collisions = self.find_alias_collisions()
+        if not collisions:
+            return
+
+        lines = ['Directory alias collision(s) detected before ' + write_kind + ':']
+        for collision in collisions:
+            lines.append(str(collision))
+        message = '\n'.join(lines)
+        if self._strict_alias_collisions:
+            raise pycdlibexception.PyCdlibInvalidInput(message)
+        warnings.warn(message, UserWarning, stacklevel=3)
+
     def _add_hard_link_to_inode(self, data_ino, length, file_mode,
                                 boot_catalog_old, creation_time,
                                 data_extent_offset_blocks=0, **kwargs):
@@ -4287,9 +4561,26 @@ class PyCdlib:
 
     ########################### PUBLIC API #####################################
 
-    def __init__(self, always_consistent=False):
-        # type: (bool) -> None
+    def __init__(self, always_consistent=False, strict_alias_collisions=False):
+        # type: (bool, bool) -> None
+        """
+        Create a new PyCdlib object.  By default, work is deferred until it
+        is needed; the object has no ISO associated with it until ``open``,
+        ``open_fp``, ``new``, or one of the other setup methods is called.
+
+        Args:
+            always_consistent: Whether to force all metadata to be updated
+                after every operation.  This is slower but makes the object
+                consistent at all times.
+            strict_alias_collisions: Whether writing an ISO with ambiguous
+                directory aliases should raise an error instead of emitting a
+                warning.  Either way, the affected paths are listed before any
+                bytes are written.
+        Returns:
+            Nothing.
+        """
         self._always_consistent = always_consistent
+        self._strict_alias_collisions = strict_alias_collisions
         track_writes = os.getenv('PYCDLIB_TRACK_WRITES')
         self._track_writes = False
         if track_writes is not None:
@@ -4992,11 +5283,18 @@ class PyCdlib:
         self._get_and_write_fp(utils.normpath(iso_path), outfp, blocksize)
 
     def write(self, filename, blocksize=32768, progress_cb=None,
-              progress_opaque=None):
-        # type: (str, int, Optional[Callable[[int, int, Any], None]], Optional[Any]) -> None
+              progress_opaque=None, report_alias_collisions=True):
+        # type: (str, int, Optional[Callable[[int, int, Any], None]], Optional[Any], bool) -> None
         """
         Write a properly formatted ISO out to the filename passed in.  This
         also goes by the name of 'mastering'.
+
+        Before any bytes are written, directory-name/alias collisions are
+        reported (see :meth:`find_alias_collisions`).  By default they are
+        emitted as a warning that lists every affected path.  If the ISO was
+        constructed with ``strict_alias_collisions=True``, they are raised as
+        an error instead.  Pass ``report_alias_collisions=False`` to skip the
+        check.
 
         Args:
             filename: The filename to write the data to.
@@ -5006,21 +5304,33 @@ class PyCdlib:
                 def func(done, total, opaque).
             progress_opaque: User data to be passed to the progress callback; the
                 default is None.
+            report_alias_collisions: Whether to report alias collisions before
+                writing.  The default is True.
         Returns:
             Nothing.
         """
         if not self._initialized:
             raise pycdlibexception.PyCdlibInvalidInput('This object is not initialized; call either open() or new() to create an ISO')
 
+        if report_alias_collisions:
+            self._warn_alias_collisions('write()')
+
         with open(filename, 'wb') as fp:
             self._write_fp(fp, blocksize, progress_cb, progress_opaque)
 
     def write_fp(self, outfp, blocksize=32768, progress_cb=None,
-                 progress_opaque=None):
-        # type: (BinaryIO, int, Optional[Callable[[int, int, Any], None]], Optional[Any]) -> None
+                 progress_opaque=None, report_alias_collisions=True):
+        # type: (BinaryIO, int, Optional[Callable[[int, int, Any], None]], Optional[Any], bool) -> None
         """
         Write a properly formatted ISO out to the file object passed in.  This
         also goes by the name of 'mastering'.
+
+        Before any bytes are written, directory-name/alias collisions are
+        reported (see :meth:`find_alias_collisions`).  By default they are
+        emitted as a warning that lists every affected path.  If the ISO was
+        constructed with ``strict_alias_collisions=True``, they are raised as
+        an error instead.  Pass ``report_alias_collisions=False`` to skip the
+        check.
 
         Args:
             outfp: The file object to write the data to.
@@ -5030,11 +5340,16 @@ class PyCdlib:
                 def func(done, total, opaque).
             progress_opaque: User data to be passed to the progress callback; the
                 default is None.
+            report_alias_collisions: Whether to report alias collisions before
+                writing.  The default is True.
         Returns:
             Nothing.
         """
         if not self._initialized:
             raise pycdlibexception.PyCdlibInvalidInput('This object is not initialized; call either open() or new() to create an ISO')
+
+        if report_alias_collisions:
+            self._warn_alias_collisions('write_fp()')
 
         self._write_fp(outfp, blocksize, progress_cb, progress_opaque)
 
@@ -5272,16 +5587,20 @@ class PyCdlib:
             self._cdfp.seek(offset)
             self._cdfp.write(dotdot.record())
 
-    def _update_file_contents(self, fp, length, manage_fp, iso_path, rr_path,
-                              joliet_path, udf_path):
-        # type: (Union[BinaryIO, str], int, bool, Optional[str], Optional[str], Optional[str], Optional[str]) -> None
+    def _lookup_update_target(self, iso_path, rr_path, joliet_path, udf_path):
+        # type: (Optional[str], Optional[str], Optional[str], Optional[str]) -> Tuple[Any, str]
         """
-        Internal helper backing `update_file_contents_fp` and
-        `update_file_contents`.  Resolves the target file via exactly
-        one of the supplied paths, swaps the shared Inode's data
-        source, propagates the new length to every linked record, and
-        adjusts PVD/Joliet/UDF size accounting.  All disk writes are
-        deferred to the next `write_fp()` call.
+        An internal method to resolve the single path supplied to a content
+        update into the record it currently refers to.
+
+        Args:
+            iso_path: The ISO9660 path supplied, or None.
+            rr_path: The Rock Ridge path supplied, or None.
+            joliet_path: The Joliet path supplied, or None.
+            udf_path: The UDF path supplied, or None.
+        Returns:
+            A tuple of the resolved record and the canonical path supplied
+            by the caller.
         """
         if not self._initialized:
             raise pycdlibexception.PyCdlibInvalidInput('This object is not initialized; call either open() or new() to create an ISO')
@@ -5290,97 +5609,366 @@ class PyCdlib:
         if num_paths != 1:
             raise pycdlibexception.PyCdlibInvalidInput("Exactly one of 'iso_path', 'rr_path', 'joliet_path', or 'udf_path' must be provided")
 
-        # Resolve to the target's shared Inode via whichever path was given.
         if udf_path is not None:
             if self.udf_root is None:
                 raise pycdlibexception.PyCdlibInvalidInput('Cannot use udf_path on a non-UDF ISO')
             _, file_entry = self._find_udf_record(utils.normpath(udf_path))
             if file_entry is None or not file_entry.is_file():
                 raise pycdlibexception.PyCdlibInvalidInput('Cannot update the contents of a directory or empty UDF entry')
-            ino = file_entry.inode
+            record = file_entry
+            canonical = udf_path
         else:
             if iso_path is not None:
                 record = self._find_iso_record(utils.normpath(iso_path))
+                canonical = iso_path
             elif rr_path is not None:
                 if not self.rock_ridge:
                     raise pycdlibexception.PyCdlibInvalidInput('Cannot use rr_path on a non-Rock-Ridge ISO')
                 record = self._find_rr_record(utils.normpath(rr_path))
+                canonical = rr_path
             elif joliet_path is not None:
                 record = self._find_joliet_record(self._normalize_joliet_path(joliet_path))
+                canonical = joliet_path
             else:
                 raise pycdlibexception.PyCdlibInternalError('No identifying path provided for update_file_contents')
             if not record.is_file():
                 raise pycdlibexception.PyCdlibInvalidInput('Cannot update the contents of a directory')
             if record.is_symlink():
                 raise pycdlibexception.PyCdlibInvalidInput('Cannot update the contents of a symlink')
-            ino = record.inode
 
+        if record.inode is None:
+            raise pycdlibexception.PyCdlibInternalError('File found without an inode')
+
+        return record, canonical
+
+    def _path_for_record(self, record, namespace):
+        # type: (Any, str) -> Optional[str]
+        """
+        An internal method to render the path of a record in a given
+        namespace.
+
+        Args:
+            record: The DirectoryRecord or UDFFileEntry to render.
+            namespace: One of 'iso_path', 'rr_path', 'joliet_path', or
+                'udf_path'.
+        Returns:
+            The path, or None if the namespace does not apply to this record.
+        """
+        if namespace == 'udf_path':
+            if not isinstance(record, udfmod.UDFFileEntry):
+                return None
+            return self.full_path_from_dirrecord(record)
+
+        if not isinstance(record, dr.DirectoryRecord):
+            return None
+
+        if record.is_root:
+            return '/' if namespace in ('iso_path', 'rr_path') else None
+
+        if namespace == 'iso_path':
+            if self.joliet_vd is not None and id(record.vd) == id(self.joliet_vd):
+                return None
+            return self.full_path_from_dirrecord(record)
+
+        if namespace == 'joliet_path':
+            if self.joliet_vd is None or id(record.vd) != id(self.joliet_vd):
+                return None
+            return self.full_path_from_dirrecord(record)
+
+        if namespace == 'rr_path':
+            if not self.rock_ridge or record.rock_ridge is None:
+                return None
+            try:
+                return self.full_path_from_dirrecord(record, rockridge=True)
+            except pycdlibexception.PyCdlibInvalidInput:
+                return None
+
+        return None
+
+    def _linked_paths(self, record, namespaces):
+        # type: (Any, List[str]) -> Dict[str, List[str]]
+        """
+        An internal method to group all paths that refer to the same data
+        record, per namespace.
+
+        Args:
+            record: The record whose data is being described.
+            namespaces: The namespaces to render paths in.
+        Returns:
+            A mapping of namespace to the list of paths that refer to the
+            same data.
+        """
+        ino = record.inode
+        if ino is None:
+            return {}
+
+        paths = {}  # type: Dict[str, List[str]]
+        for namespace in namespaces:
+            namespace_paths = []  # type: List[str]
+            for linked, _is_pvd in ino.linked_records:
+                if not isinstance(linked, (dr.DirectoryRecord, udfmod.UDFFileEntry)):
+                    continue
+                path = self._path_for_record(linked, namespace)
+                if path is not None:
+                    namespace_paths.append(path)
+            paths[namespace] = sorted(namespace_paths)
+        return paths
+
+    def _plan_update(self, fp, length, manage_fp, mode, iso_path, rr_path,
+                     joliet_path, udf_path):
+        # type: (Union[BinaryIO, str], int, bool, str, Optional[str], Optional[str], Optional[str], Optional[str]) -> UpdatePlan
+        """
+        Internal helper backing :meth:`plan_update`,
+        :meth:`update_file_contents_fp`, and :meth:`update_file_contents`.
+        Resolves the target, validates the requested mode, and builds the
+        plan without mutating the ISO.
+
+        Args:
+            fp: New contents, or a filename when `manage_fp` is True.
+            length: The length of the new contents.
+            manage_fp: Whether pycdlib opens and closes `fp`.
+            mode: Either 'detach' or 'replace'.
+            iso_path: The ISO9660 path identifying the file.
+            rr_path: The Rock Ridge path identifying the file.
+            joliet_path: The Joliet path identifying the file.
+            udf_path: The UDF path identifying the file.
+        Returns:
+            An :class:`UpdatePlan`.
+        """
+        if not self._initialized:
+            raise pycdlibexception.PyCdlibInvalidInput('This object is not initialized; call either open() or new() to create an ISO')
+
+        if mode not in ('detach', 'replace'):
+            raise pycdlibexception.PyCdlibInvalidInput("The update mode must be either 'detach' or 'replace'")
+
+        record, canonical = self._lookup_update_target(iso_path, rr_path,
+                                                       joliet_path, udf_path)
+
+        if mode == 'detach':
+            # A multi-extent file is described by a chain of directory
+            # records that share one Inode.  Detaching only one chunk would
+            # leave the remaining chunks on the old Inode and corrupt the
+            # chain, so require the caller to replace the whole file.
+            for linked, _is_pvd in record.inode.linked_records:
+                if not isinstance(linked, dr.DirectoryRecord):
+                    continue
+                if linked.data_continuation is not None:
+                    raise pycdlibexception.PyCdlibInvalidInput(
+                        "Cannot detach a single reference to a multi-extent file; use mode='replace'")
+
+        namespaces = ['iso_path']
+        if self.rock_ridge:
+            namespaces.append('rr_path')
+        if self.joliet_vd is not None:
+            namespaces.append('joliet_path')
+        if self.udf_root is not None:
+            namespaces.append('udf_path')
+
+        ino = record.inode
         if ino is None:
             raise pycdlibexception.PyCdlibInternalError('File found without an inode')
 
+        all_paths = sorted(set(path for namespace in namespaces
+                               for path in self._linked_paths(record, [namespace]).get(namespace, [])))
+
+        if mode == 'replace':
+            affected = all_paths or [canonical]
+            unchanged = []  # type: List[str]
+            reclaims = True
+        else:
+            affected = sorted(set(p for p in (self._path_for_record(record, namespace) for namespace in namespaces) if p is not None))
+            if not affected:
+                affected = [canonical]
+            unchanged = sorted(set(all_paths) - set(affected))
+            reclaims = len(ino.linked_records) <= 1
+
+        return UpdatePlan(self, fp, length, manage_fp, mode, [record],
+                          affected, unchanged, reclaims)
+
+    def _apply_update_plan(self, plan):
+        # type: (UpdatePlan) -> None
+        """
+        Internal method to apply a previously built update plan.
+
+        Args:
+            plan: The plan to apply.
+        Returns:
+            Nothing.
+        """
+        record = plan._target_records[0]  # pylint: disable=protected-access
+        ino = record.inode
+        if ino is None:
+            raise pycdlibexception.PyCdlibInternalError('File found without an inode')
+
+        if plan.mode == 'replace':
+            old_length = ino.data_length
+            ino.update_fp(plan._fp, plan._length,  # pylint: disable=protected-access
+                          manage_fp=plan._manage_fp)  # pylint: disable=protected-access
+            for linked, _is_pvd in ino.linked_records:
+                if isinstance(linked, (dr.DirectoryRecord, udfmod.UDFFileEntry)):
+                    linked.set_data_length(plan._length)  # pylint: disable=protected-access
+            self._finish_remove(old_length, is_partition=True)
+            self._finish_add(0, plan._length)  # pylint: disable=protected-access
+            return
+
         old_length = ino.data_length
+        if len(ino.linked_records) <= 1:
+            # Detaching the only reference leaves nobody holding the old
+            # data, so this is equivalent to replacing it in place.
+            ino.update_fp(plan._fp, plan._length,  # pylint: disable=protected-access
+                          manage_fp=plan._manage_fp)  # pylint: disable=protected-access
+            record.set_data_length(plan._length)  # pylint: disable=protected-access
+            self._finish_remove(old_length, is_partition=True)
+            self._finish_add(0, plan._length)  # pylint: disable=protected-access
+            return
 
-        # Swap the inode's data source.  Every linked record reads through
-        # this inode, so they all see the new content on the next write_fp().
-        ino.update_fp(fp, length, manage_fp=manage_fp)
+        for index, (linked, _is_pvd) in enumerate(ino.linked_records):
+            if linked is record:
+                del ino.linked_records[index]
+                break
+        else:
+            raise pycdlibexception.PyCdlibInternalError('Could not find record on the Inode being detached')
 
-        # Propagate the new length to every linked DirectoryRecord and UDF
-        # File Entry so its serialized record reflects the right size when
-        # write_fp() runs.  El Torito entries don't go through set_data_length;
-        # if a file is both an El Torito boot image and a regular file, the
-        # El Torito side picks up the new size automatically via the shared
-        # Inode's data_length.
-        for record_obj, _is_pvd in ino.linked_records:
-            if isinstance(record_obj, (dr.DirectoryRecord, udfmod.UDFFileEntry)):
-                record_obj.set_data_length(length)
+        was_udf = isinstance(record, udfmod.UDFFileEntry)
+        if was_udf:
+            ino.num_udf -= 1
 
-        # Adjust PVD / Joliet / UDF size accounting via the existing helpers.
-        # These set _needs_reshuffle so the next write_fp() recomputes the
-        # layout cleanly.
-        self._finish_remove(old_length, is_partition=True)
-        self._finish_add(0, length)
+        new_ino = inode.Inode()
+        new_ino.new(plan._length, plan._fp,  # pylint: disable=protected-access
+                    plan._manage_fp, 0)  # pylint: disable=protected-access
+        new_ino.linked_records.append((record, not was_udf))
+        if was_udf:
+            new_ino.num_udf = 1
+        record.inode = new_ino
+        self.inodes.append(new_ino)
+
+        record.set_data_length(plan._length)  # pylint: disable=protected-access
+        self._finish_add(0, plan._length)  # pylint: disable=protected-access
+
+        # The old Inode now has no links: this detach removed its last
+        # reference, so reclaim the old data.  Record that on the plan so
+        # the report matches what was applied.
+        plan.reclaims_old_data = not ino.linked_records
+        if not ino.linked_records:
+            for index, tracked in enumerate(self.inodes):
+                if tracked is ino:
+                    del self.inodes[index]
+                    break
+            self._finish_remove(old_length, is_partition=True)
+
+    def plan_update(self, fp, length, mode, iso_path=None, rr_path=None,
+                    joliet_path=None, udf_path=None):
+        # type: (BinaryIO, int, str, Optional[str], Optional[str], Optional[str], Optional[str]) -> UpdatePlan
+        """
+        Build an explicit update plan for replacing the contents of a file
+        on the ISO, deferring all disk writes to the next :meth:`write_fp`
+        call.
+
+        The `mode` argument is required, and selects between the two
+        possible semantics:
+
+        * ``'detach'`` breaks only the selected path's reference.  That
+          path is rebound to the new contents while every other hard link
+          to the same data keeps reading the old contents.  The old data
+          is reclaimed only if this update removes its last reference.
+        * ``'replace'`` replaces the data in place for every link.  All
+          paths that refer to the same data see the new contents, and the
+          old data is reclaimed immediately.
+
+        Exactly one of `iso_path`, `rr_path`, `joliet_path`, or `udf_path`
+        identifies the target.  Applying the plan is done with
+        :meth:`UpdatePlan.apply`; the caller must keep `fp` open for the
+        lifetime of this PyCdlib object, the same way :meth:`add_fp`
+        requires.
+
+        Args:
+            fp: A file-like object containing the new contents.
+            length: The length of the new contents.
+            mode: Either ``'detach'`` or ``'replace'``.
+            iso_path: The ISO9660 absolute path identifying the file.
+            rr_path: The Rock Ridge absolute path identifying the file.
+            joliet_path: The Joliet absolute path identifying the file.
+            udf_path: The UDF absolute path identifying the file.
+        Returns:
+            An :class:`UpdatePlan` describing the affected paths.
+        """
+        return self._plan_update(fp, length, False, mode, iso_path, rr_path,
+                                 joliet_path, udf_path)
+
+    def plan_update_file(self, filename, mode, iso_path=None, rr_path=None,
+                         joliet_path=None, udf_path=None):
+        # type: (str, str, Optional[str], Optional[str], Optional[str], Optional[str]) -> UpdatePlan
+        """
+        Build an explicit update plan for replacing the contents of a file
+        on the ISO with the contents of `filename`, deferring all disk
+        writes to the next :meth:`write_fp` call.
+
+        This is the :meth:`plan_update` variant that opens the file itself
+        and manages its lifetime, the same way
+        :meth:`update_file_contents` does.
+
+        Args:
+            filename: The local filename whose contents replace the target's
+                contents.
+            mode: Either ``'detach'`` or ``'replace'``.
+            iso_path: The ISO9660 absolute path identifying the file.
+            rr_path: The Rock Ridge absolute path identifying the file.
+            joliet_path: The Joliet absolute path identifying the file.
+            udf_path: The UDF absolute path identifying the file.
+        Returns:
+            An :class:`UpdatePlan` describing the affected paths.
+        """
+        return self._plan_update(filename, os.stat(filename).st_size, True,
+                                 mode, iso_path, rr_path, joliet_path,
+                                 udf_path)
 
     def update_file_contents_fp(self, fp, length, iso_path=None, rr_path=None,
-                                joliet_path=None, udf_path=None):
-        # type: (BinaryIO, int, Optional[str], Optional[str], Optional[str], Optional[str]) -> None
+                                joliet_path=None, udf_path=None,
+                                mode='replace'):
+        # type: (BinaryIO, int, Optional[str], Optional[str], Optional[str], Optional[str], str) -> None
         """
         Replace the contents of an existing file on the ISO with new
         content read from `fp`, deferring all disk writes to the next
         :meth:`write_fp` call.
 
-        Exactly one of `iso_path`, `rr_path`, `joliet_path`, or
-        `udf_path` must be provided to identify the target file.  The
-        update propagates to every linked record (ISO9660 / Joliet /
-        UDF) automatically because they share the same Inode.
+        Exactly one of `iso_path`, `rr_path`, `joliet_path`, or `udf_path`
+        must be provided to identify the target file.  The `mode` argument
+        selects between the two hard-link semantics defined on
+        :meth:`plan_update`:
 
-        The caller is responsible for keeping `fp` open for the
-        lifetime of this PyCdlib object (until :meth:`close` runs), the same
-        way :meth:`add_fp` requires.
+        * ``'replace'`` (the default, and the behaviour of earlier
+          releases) replaces the data for every link.
+        * ``'detach'`` breaks only the selected path's reference, so every
+          other hard link keeps the old contents.
+
+        Use :meth:`plan_update` when the caller wants to inspect the
+        affected paths before applying the update.
+
+        The caller is responsible for keeping `fp` open for the lifetime
+        of this PyCdlib object (until :meth:`close` runs), the same way
+        :meth:`add_fp` requires.
 
         Args:
             fp: A file-like object containing the new contents.
             length: The length of the new contents.
-            iso_path: The ISO9660 absolute path to the file destination on
-                the ISO.
-            rr_path: The Rock Ridge absolute path to the file destination
-                on the ISO.
-            joliet_path: The Joliet absolute path to the file destination
-                on the ISO.
-            udf_path: The UDF absolute path to the file destination on the
-                ISO.
+            iso_path: The ISO9660 absolute path identifying the file.
+            rr_path: The Rock Ridge absolute path identifying the file.
+            joliet_path: The Joliet absolute path identifying the file.
+            udf_path: The UDF absolute path identifying the file.
+            mode: Either ``'detach'`` or ``'replace'``.
         Returns:
             Nothing.
         """
-        self._update_file_contents(fp, length, False, iso_path, rr_path,
-                                   joliet_path, udf_path)
+        self._plan_update(fp, length, False, mode, iso_path, rr_path,
+                          joliet_path, udf_path).apply()
 
     def update_file_contents(self, filename, iso_path=None, rr_path=None,
-                             joliet_path=None, udf_path=None):
-        # type: (str, Optional[str], Optional[str], Optional[str], Optional[str]) -> None
+                             joliet_path=None, udf_path=None, mode='replace'):
+        # type: (str, Optional[str], Optional[str], Optional[str], Optional[str], str) -> None
         """
         Replace the contents of an existing file on the ISO with the
-        contents of `filename` on the local filesystem, deferring all
-        disk writes to the next :meth:`write_fp` call.
+        contents of `filename` on the local filesystem, deferring all disk
+        writes to the next :meth:`write_fp` call.
 
         This method has the same semantics as :meth:`update_file_contents_fp`,
         except that pycdlib opens `filename` and manages its lifetime, the
@@ -5388,21 +5976,18 @@ class PyCdlib:
         is closed when :meth:`close` is called on the PyCdlib object.
 
         Args:
-            filename: The local filename whose contents replace the
-                target file's contents.
-            iso_path: The ISO9660 absolute path to the file destination on
-                the ISO.
-            rr_path: The Rock Ridge absolute path to the file destination
-                on the ISO.
-            joliet_path: The Joliet absolute path to the file destination
-                on the ISO.
-            udf_path: The UDF absolute path to the file destination on the
-                ISO.
+            filename: The local filename whose contents replace the target
+                file's contents.
+            iso_path: The ISO9660 absolute path identifying the file.
+            rr_path: The Rock Ridge absolute path identifying the file.
+            joliet_path: The Joliet absolute path identifying the file.
+            udf_path: The UDF absolute path identifying the file.
+            mode: Either ``'detach'`` or ``'replace'``.
         Returns:
             Nothing.
         """
-        self._update_file_contents(filename, os.stat(filename).st_size, True,
-                                   iso_path, rr_path, joliet_path, udf_path)
+        self._plan_update(filename, os.stat(filename).st_size, True, mode,
+                          iso_path, rr_path, joliet_path, udf_path).apply()
 
     def add_hard_link(self, **kwargs):
         # type: (...) -> None

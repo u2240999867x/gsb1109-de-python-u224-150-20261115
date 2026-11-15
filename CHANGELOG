@@ -1,5 +1,12 @@
 Changelog for PyCdlib
 
+1.23.0 (2026-11-15)
+-------------------
+* Add plan_update()/UpdatePlan so callers explicitly choose between breaking one hard-link reference ('detach') and replacing the data for every link ('replace')
+* update_file_contents{_fp}() now accepts mode=, defaulting to the existing 'replace' behaviour
+* Reclaim the old data only when an update removes the last reference to it
+* Add find_alias_collisions() and report every affected path before write()/write_fp() emits an image; strict_alias_collisions=True turns that report into an error
+
 1.22.0 (2026-10-09)
 -------------------
 * Fix a potential infinite loop in UDF File Entry parsing; pointed out by R0ck3t (zhangyan8216 on GitHub)

@@ -4,6 +4,7 @@ import io
 import os
 import sys
 import struct
+import warnings
 
 import pytest
 
@@ -4142,6 +4143,231 @@ def test_new_update_file_contents_composes_with_add_rm_then_write_fp():
         iso2.get_file_from_iso_fp(io.BytesIO(),
                                   iso_path='/ISOLINUX/EXTRA.TXT;1')
     iso2.close()
+
+def test_new_plan_update_detach_keeps_other_hard_link():
+    # A detach update breaks only the reference the caller identified.
+    # The other hard link must keep reading the old contents, and the
+    # plan must report both paths.
+    iso = pycdlib.PyCdlib()
+    iso.new()
+    iso.add_fp(io.BytesIO(b'old'), 3, '/FOO.;1')
+    iso.add_hard_link(iso_old_path='/FOO.;1', iso_new_path='/BAR.;1')
+
+    plan = iso.plan_update(io.BytesIO(b'new'), 3, 'detach', iso_path='/FOO.;1')
+    assert plan.mode == 'detach'
+    assert plan.affected_paths == ['/FOO.;1']
+    assert plan.unchanged_paths == ['/BAR.;1']
+    assert not plan.reclaims_old_data
+    plan.apply()
+
+    out = io.BytesIO()
+    iso.write_fp(out)
+    iso.close()
+
+    out.seek(0)
+    iso2 = pycdlib.PyCdlib()
+    iso2.open_fp(out)
+    for path, expected in (('/FOO.;1', b'new'), ('/BAR.;1', b'old')):
+        buf = io.BytesIO()
+        iso2.get_file_from_iso_fp(buf, iso_path=path)
+        assert buf.getvalue() == expected, f'{path}: {buf.getvalue()!r}'
+    iso2.close()
+
+def test_new_plan_update_detach_reclaims_last_reference():
+    # When the detach removes the last reference to the old data, the
+    # old data must be reclaimed along with the plan reporting it.
+    iso = pycdlib.PyCdlib()
+    iso.new()
+    iso.add_fp(io.BytesIO(b'old'), 3, '/FOO.;1')
+    iso.add_hard_link(iso_old_path='/FOO.;1', iso_new_path='/BAR.;1')
+    iso.rm_hard_link(iso_path='/BAR.;1')
+
+    plan = iso.plan_update(io.BytesIO(b'new'), 3, 'detach', iso_path='/FOO.;1')
+    assert plan.reclaims_old_data
+    assert plan.unchanged_paths == []
+    plan.apply()
+
+    out = io.BytesIO()
+    iso.write_fp(out)
+    iso.close()
+
+    out.seek(0)
+    iso2 = pycdlib.PyCdlib()
+    iso2.open_fp(out)
+    buf = io.BytesIO()
+    iso2.get_file_from_iso_fp(buf, iso_path='/FOO.;1')
+    assert buf.getvalue() == b'new'
+    iso2.close()
+
+def test_new_plan_update_replace_updates_every_link():
+    # Replace changes the data every link sees, and reports every path.
+    iso = pycdlib.PyCdlib()
+    iso.new()
+    iso.add_fp(io.BytesIO(b'old'), 3, '/FOO.;1')
+    iso.add_hard_link(iso_old_path='/FOO.;1', iso_new_path='/BAR.;1')
+
+    plan = iso.plan_update(io.BytesIO(b'new'), 3, 'replace', iso_path='/BAR.;1')
+    assert plan.mode == 'replace'
+    assert plan.affected_paths == ['/BAR.;1', '/FOO.;1']
+    assert plan.unchanged_paths == []
+    assert plan.reclaims_old_data
+    plan.apply()
+
+    out = io.BytesIO()
+    iso.write_fp(out)
+    iso.close()
+
+    out.seek(0)
+    iso2 = pycdlib.PyCdlib()
+    iso2.open_fp(out)
+    for path in ('/FOO.;1', '/BAR.;1'):
+        buf = io.BytesIO()
+        iso2.get_file_from_iso_fp(buf, iso_path=path)
+        assert buf.getvalue() == b'new', f'{path}: {buf.getvalue()!r}'
+    iso2.close()
+
+def test_new_update_file_contents_detach_mode():
+    # update_file_contents_fp accepts the same explicit mode and must
+    # leave the other link alone when asked to detach.
+    iso = pycdlib.PyCdlib()
+    iso.new(joliet=3)
+    iso.add_fp(io.BytesIO(b'old'), 3, '/FOO.;1', joliet_path='/foo')
+    iso.add_hard_link(iso_old_path='/FOO.;1', iso_new_path='/BAR.;1')
+
+    iso.update_file_contents_fp(io.BytesIO(b'new'), 3, iso_path='/BAR.;1',
+                                mode='detach')
+
+    out = io.BytesIO()
+    iso.write_fp(out)
+    iso.close()
+
+    out.seek(0)
+    iso2 = pycdlib.PyCdlib()
+    iso2.open_fp(out)
+    for kwargs, expected in (({'iso_path': '/BAR.;1'}, b'new'),
+                             ({'iso_path': '/FOO.;1'}, b'old'),
+                             ({'joliet_path': '/foo'}, b'old')):
+        buf = io.BytesIO()
+        iso2.get_file_from_iso_fp(buf, **kwargs)
+        assert buf.getvalue() == expected, f'{kwargs}: {buf.getvalue()!r}'
+    iso2.close()
+
+def test_new_plan_update_rejects_unknown_mode():
+    iso = pycdlib.PyCdlib()
+    iso.new()
+    iso.add_fp(io.BytesIO(b'old'), 3, '/FOO.;1')
+    with pytest.raises(pycdlib.pycdlibexception.PyCdlibInvalidInput) as excinfo:
+        iso.plan_update(io.BytesIO(b'new'), 3, 'shallow', iso_path='/FOO.;1')
+    assert "either 'detach' or 'replace'" in str(excinfo.value)
+    iso.close()
+
+def test_new_plan_update_detach_rejects_multi_extent():
+    # Detaching a single chunk of a multi-extent file would corrupt the
+    # chain, so it is rejected in favor of replace.
+    iso = pycdlib.PyCdlib()
+    iso.new(interchange_level=3)
+    size = 0xfffff800 + 4096
+    iso.add_fp(io.BytesIO(b'A' * size), size, '/BIG.;1')
+    with pytest.raises(pycdlib.pycdlibexception.PyCdlibInvalidInput) as excinfo:
+        iso.plan_update(io.BytesIO(b'tiny'), 4, 'detach', iso_path='/BIG.;1')
+    assert "multi-extent" in str(excinfo.value)
+    iso.close()
+
+def test_new_plan_update_cannot_apply_twice():
+    iso = pycdlib.PyCdlib()
+    iso.new()
+    iso.add_fp(io.BytesIO(b'old'), 3, '/FOO.;1')
+    plan = iso.plan_update(io.BytesIO(b'new'), 3, 'replace', iso_path='/FOO.;1')
+    plan.apply()
+    with pytest.raises(pycdlib.pycdlibexception.PyCdlibInvalidInput) as excinfo:
+        plan.apply()
+    assert 'already been applied' in str(excinfo.value)
+    iso.close()
+
+def test_new_find_alias_collisions_duplicate_directory_alias():
+    # Two different directories carrying the same Rock Ridge alias are
+    # ambiguous by rr_path; the report must list every affected path.
+    iso = pycdlib.PyCdlib()
+    iso.new(rock_ridge='1.09')
+    iso.add_directory('/D1', rr_name='shared')
+    iso.add_directory('/D2', rr_name='shared')
+
+    collisions = iso.find_alias_collisions()
+    assert len(collisions) == 1
+    collision = collisions[0]
+    assert collision.kind == 'duplicate-alias'
+    assert collision.alias == b'shared'
+    assert collision.paths == ['/D1', '/D2', '/shared']
+    assert {('/D1', '/shared'), ('/D2', '/shared')} == {
+        (entry['iso_path'], entry['rr_path']) for entry in collision.entries}
+    iso.close()
+
+def test_new_write_fp_warns_about_alias_collisions():
+    iso = pycdlib.PyCdlib()
+    iso.new(rock_ridge='1.09')
+    iso.add_directory('/D1', rr_name='shared')
+    iso.add_directory('/D2', rr_name='shared')
+
+    with pytest.warns(UserWarning, match='affected paths'):
+        iso.write_fp(io.BytesIO())
+    iso.close()
+
+def test_new_write_fp_can_skip_alias_collision_report():
+    iso = pycdlib.PyCdlib()
+    iso.new(rock_ridge='1.09')
+    iso.add_directory('/D1', rr_name='shared')
+    iso.add_directory('/D2', rr_name='shared')
+
+    with warnings.catch_warnings():
+        warnings.simplefilter('error')
+        iso.write_fp(io.BytesIO(), report_alias_collisions=False)
+    iso.close()
+
+def test_new_strict_alias_collisions_raises_before_write():
+    iso = pycdlib.PyCdlib(strict_alias_collisions=True)
+    iso.new(rock_ridge='1.09')
+    iso.add_directory('/D1', rr_name='shared')
+    iso.add_directory('/D2', rr_name='shared')
+
+    out = io.BytesIO()
+    with pytest.raises(pycdlib.pycdlibexception.PyCdlibInvalidInput) as excinfo:
+        iso.write_fp(out)
+    assert '/D1' in str(excinfo.value)
+    assert '/D2' in str(excinfo.value)
+    assert out.getvalue() == b''
+    iso.close()
+
+def test_new_find_alias_collisions_reports_relocated_rename():
+    # A relocated directory whose name collided inside RR_MOVED gets a
+    # numeric suffix.  The physical and logical paths must both be
+    # reported.
+    iso = pycdlib.PyCdlib()
+    iso.new(rock_ridge='1.09')
+    path = ''
+    for name in ('A', 'B', 'C', 'D', 'E', 'F', 'G'):
+        path += '/' + name
+        iso.add_directory(path, rr_name=name.lower())
+    iso.add_directory(path + '/1', rr_name='one')
+
+    other = '/A/B/C/D/E/F/H'
+    iso.add_directory(other, rr_name='h')
+    iso.add_directory(other + '/1', rr_name='one')
+
+    collisions = iso.find_alias_collisions()
+    assert len(collisions) == 1
+    collision = collisions[0]
+    assert collision.kind == 'renamed'
+    assert '/RR_MOVED/1000' in collision.paths
+    assert '/a/b/c/d/e/f/h/one' in collision.paths
+    iso.close()
+
+def test_new_find_alias_collisions_none_for_clean_iso():
+    iso = pycdlib.PyCdlib()
+    iso.new(rock_ridge='1.09')
+    iso.add_directory('/D1', rr_name='one')
+    iso.add_directory('/D2', rr_name='two')
+    assert iso.find_alias_collisions() == []
+    iso.close()
 
 def test_new_udf_boot_descriptor_parsed():
     # Coverage for the UDF BOOT2 (Boot Descriptor) dispatch in

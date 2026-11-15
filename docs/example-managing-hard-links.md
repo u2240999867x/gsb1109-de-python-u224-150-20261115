@@ -96,3 +96,32 @@ Since we are done with the ISO object, close it out.
       <a href="example-forcing-consistency.html">Example: Forcing consistency --></a>
     </div>
 </div>
+
+## Choosing what a content update does to hard-links
+Replacing a file's contents is ambiguous when the data has more than one path: either one path is rebound to the new contents, or every path is.  PyCdlib makes that choice explicit rather than guessing.
+
+```python
+iso.update_file_contents_fp(io.BytesIO(b'bar\n'), 4, iso_path='/BAR.;1', mode='detach')
+```
+
+With `mode='detach'`, only `/BAR.;1` starts pointing at `bar\n`; the `/FOO.;1` link keeps `foo\n`.  With `mode='replace'` (the default used by earlier releases), every link sees the new contents.
+
+To inspect the consequences first, build a plan instead of applying the update directly.  The plan lists the paths that change, the paths that keep the old contents, and whether the old data is reclaimed because its last reference is going away:
+
+```python
+plan = iso.plan_update(io.BytesIO(b'bar\n'), 4, mode='detach', iso_path='/BAR.;1')
+print(plan)
+plan.apply()
+```
+
+Data is reclaimed only when an update removes its last reference.  A `detach` that leaves other links behind therefore keeps the old data alive until those links are removed in turn.
+
+## Reporting alias collisions before writing
+Rock Ridge aliases (`rr_path`) and ISO9660 names share a directory entry, and deep-directory relocation can rewrite an ISO9660 name when the requested name collides inside `RR_MOVED`.  Both cases make some paths ambiguous, so PyCdlib reports them *before* any image bytes are written:
+
+```python
+for collision in iso.find_alias_collisions():
+    print(collision)
+```
+
+`write()` and `write_fp()` perform the same scan automatically and emit a `UserWarning` that lists every affected path (ISO9660, physical ISO9660, Rock Ridge, and Joliet as applicable).  Construct the object with `PyCdlib(strict_alias_collisions=True)` to make that report an exception instead, or pass `report_alias_collisions=False` to skip it.
