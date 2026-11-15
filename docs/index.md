@@ -12,6 +12,7 @@ pip install dpkt
 - [Print Packets](print_packets.md)
 - [Print ICMP](print_icmp.md)
 - [Print HTTP](print_http_requests.md)
+- [Fragment Reassembly](defrag.md)
 
 ### Documentation
 - [DPKT Key Concepts for Creating Parsers](creating_parsers.md)

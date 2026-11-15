@@ -18,6 +18,7 @@ from . import arp
 from . import asn1
 from . import bgp
 from . import cdp
+from . import defrag
 from . import dhcp
 from . import diameter
 from . import dns

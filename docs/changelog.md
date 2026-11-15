@@ -1,5 +1,12 @@
 # Changelog
 
+## Unreleased
+- Added `dpkt.defrag`, offline IPv4/IPv6 fragment reassembly across multiple
+  capture files. Datagrams are separated by capture domain (file + pcapng
+  interface), direction and protocol; overlapping bytes that disagree isolate
+  the datagram; duplicates add no effective length; a missing tail fragment
+  leaves the total length unknown; every datagram reports its source records.
+
 ## 1.9.8
 **[2022-08-17]**
 - Fixed endianness issues in PCAPNG, Loopback
