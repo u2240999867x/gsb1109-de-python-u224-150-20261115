@@ -2351,6 +2351,24 @@ from ._inputlatexfile import read_latex_file
 ### ENDPATCH_LATEX2TEXT_READ_LATEX_FILE
 
 
+# Table extraction works on the node tree and does not need any of the parsing
+# machinery, so it is kept in a module of its own.  That module is Python-only:
+# the JavaScript build has no use for it and the guard keeps it out of the
+# transcribed sources.  The entry points are module-level functions for the same
+# reason; a class method would have to be guarded inside the class body, which
+# the preprocessor does not support.
+
+### BEGIN_LATEX2TEXT_TABLE_EXTRACTION
+from ._table_extract import (
+    TableCell,
+    TableRow,
+    ExtractedTable,
+    extract_table,
+    extract_tables,
+    extract_tables_from_nodelist,
+)
+### END_LATEX2TEXT_TABLE_EXTRACTION
+
 
 
 class LatexNodes2Text(object):

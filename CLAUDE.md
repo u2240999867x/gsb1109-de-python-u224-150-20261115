@@ -130,8 +130,8 @@ full range of code points and the third honors its default value.
 
 Guards in use: `PYLATEXENC1_LEGACY_SUPPORT_CODE`,
 `PYLATEXENC2_LEGACY_SUPPORT_CODE`, `PYLATEXENC_GET_DEFAULT_SPECS_FN`,
-`LATEXWALKER_HELPERS`, and — in test sources — `DEBUG_SET_EQ_ATTRIBUTE` and
-`TEST_PYLATEXENC_SKIP`;
+`LATEXWALKER_HELPERS`, `LATEX2TEXT_TABLE_EXTRACTION`, and — in test sources —
+`DEBUG_SET_EQ_ATTRIBUTE` and `TEST_PYLATEXENC_SKIP`;
 
 `PYLATEXENC_GET_DEFAULT_SPECS_FN` is off in the JavaScript build, so
 `latexwalker.get_default_latex_context_db()` and

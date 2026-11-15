@@ -134,6 +134,41 @@ superscript/subscript characters.
 
 
 
+Extracting tables
+~~~~~~~~~~~~~~~~~
+
+The following functions read a tabular-like environment as a rectangular grid
+of cells, with each cell's text, the number of columns it spans, and the region
+of the source it came from.  They work on the parsed node tree, so a column
+separator is only the ``&`` that sits directly in the table body: an ``&``
+inside a macro argument, a nested environment, a braced group, a comment or the
+escape ``\&`` is content and not a separator.  See
+:py:class:`~pylatexenc.latex2text.ExtractedTable` for the result.
+
+The entry points are module-level functions and not methods of
+:py:class:`LatexNodes2Text`, because the extraction is Python-only and the
+JavaScript build carries no part of it.  The cell text is converted with the
+default rules; pass `l2tobj` to :py:func:`extract_tables_from_nodelist` to
+convert it with the options of a particular :py:class:`LatexNodes2Text` object
+instead.
+
+.. autofunction:: pylatexenc.latex2text.extract_table
+
+.. autofunction:: pylatexenc.latex2text.extract_tables
+
+.. autofunction:: pylatexenc.latex2text.extract_tables_from_nodelist
+
+.. autoclass:: pylatexenc.latex2text.ExtractedTable
+   :members:
+
+.. autoclass:: pylatexenc.latex2text.TableRow
+   :members:
+
+.. autoclass:: pylatexenc.latex2text.TableCell
+   :members:
+
+
+
 Obsolete members
 ~~~~~~~~~~~~~~~~
 

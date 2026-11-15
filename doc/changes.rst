@@ -11,6 +11,15 @@ pylatexenc 3.0
 
    new-in-pylatexenc-3
 
+- `latex2text` can read a tabular-like table as a grid of cells, see
+  :py:func:`pylatexenc.latex2text.extract_table` and
+  :py:class:`pylatexenc.latex2text.ExtractedTable`.  Each cell reports its text,
+  the number of rows and columns it spans, and its position in the source.  The
+  extraction works on the node tree, so a separator inside a macro argument, a
+  nested environment or a braced group does not split a cell, and a cell that
+  holds only whitespace is reported apart from a cell that was not written at
+  all.  A table whose end is missing keeps the rows that could be established.
+
 - see the :ref:`list of changes that might affect existing code
   <new-in-pylatexenc-3-possible-pitfall-changes>` and :ref:`Details that v3
   might get different <new-in-pylatexenc-3-details-v3-might-get-different>`,
