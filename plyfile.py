@@ -46,7 +46,7 @@ class PlyData(object):
     """
 
     def __init__(self, elements=[], text=False, byte_order='=',
-                 comments=[], obj_info=[]):
+                 comments=[], obj_info=[], nan_policy='preserve'):
         """
         Parameters
         ----------
@@ -62,9 +62,15 @@ class PlyData(object):
         obj_info : iterable of str, optional
             like comments, but will be placed in the header with
             "obj_info ..." instead of "comment ...".
+        nan_policy : {'preserve', 'error'}, optional
+            How to treat NaN values when writing.  `'preserve'` writes
+            them as NaNs when the property type is a floating-point
+            type.  `'error'` rejects them.  NaNs are never converted to
+            an integer (or to zero); an attempt to do so is an error.
         """
         self.byte_order = byte_order
         self.text = text
+        self.nan_policy = nan_policy
 
         self.comments = comments
         self.obj_info = obj_info
@@ -116,6 +122,14 @@ class PlyData(object):
 
     obj_info = property(_get_obj_info, _set_obj_info)
 
+    def _get_nan_policy(self):
+        return self._nan_policy
+
+    def _set_nan_policy(self, nan_policy):
+        self._nan_policy = _normalize_nan_policy(nan_policy)
+
+    nan_policy = property(_get_nan_policy, _set_nan_policy)
+
     @staticmethod
     def _parse_header(stream):
         parser = _PlyHeaderParser(_PlyHeaderLines(stream))
@@ -128,7 +142,7 @@ class PlyData(object):
         )
 
     @staticmethod
-    def read(stream, mmap='c', known_list_len={}):
+    def read(stream, mmap='c', known_list_len={}, nan_policy='preserve'):
         """
         Read PLY data from a readable file-like object or filename.
 
@@ -145,6 +159,11 @@ class PlyData(object):
             necessary to enable memory mapping of elements that contain
             list properties. (Note that elements with variable-length
             list properties cannot be memory-mapped.)
+        nan_policy : {'preserve', 'error'}, optional
+            Policy for NaN values.  `'preserve'` reads NaNs as NaNs;
+            `'error'` raises `PlyElementParseError` as soon as a NaN is
+            found in the data.  The policy is also attached to the
+            returned `PlyData` instance for later writes.
 
         Raises
         ------
@@ -154,9 +173,11 @@ class PlyData(object):
             If `stream` is open in text mode but the PLY header
             indicates binary encoding.
         """
+        nan_policy = _normalize_nan_policy(nan_policy)
         (must_close, stream) = _open_stream(stream, 'read')
         try:
             data = PlyData._parse_header(stream)
+            data.nan_policy = nan_policy
             if isinstance(stream.read(0), str):
                 if data.text:
                     data_stream = stream
@@ -171,26 +192,38 @@ class PlyData(object):
             for elt in data:
                 elt._read(data_stream, data.text, data.byte_order, mmap,
                           known_list_len=known_list_len.get(elt.name, {}))
+                if nan_policy == 'error':
+                    _check_element_nan(elt)
         finally:
             if must_close:
                 stream.close()
 
         return data
 
-    def write(self, stream):
+    def write(self, stream, nan_policy=None):
         """
         Write PLY data to a writeable file-like object or filename.
 
         Parameters
         ----------
         stream : str or writeable open file
+        nan_policy : {'preserve', 'error'}, optional
+            Overrides the instance's `nan_policy` for this write.
 
         Raises
         ------
         ValueError
             If `stream` is open in text mode and the file to be written
             is binary-format.
+        PlyElementWriteError
+            If a value cannot be represented by its property type
+            without loss.
         """
+        if nan_policy is None:
+            nan_policy = self.nan_policy
+        else:
+            nan_policy = _normalize_nan_policy(nan_policy)
+
         (must_close, stream) = _open_stream(stream, 'write')
         try:
             try:
@@ -208,7 +241,8 @@ class PlyData(object):
                 stream.write(self.header)
                 stream.write('\n')
             for elt in self:
-                elt._write(stream, self.text, self.byte_order)
+                elt._write(stream, self.text, self.byte_order,
+                           nan_policy)
         finally:
             if must_close:
                 stream.close()
@@ -281,9 +315,9 @@ class PlyData(object):
 
     def __repr__(self):
         return ('PlyData(%r, text=%r, byte_order=%r, '
-                'comments=%r, obj_info=%r)' %
+                'comments=%r, obj_info=%r, nan_policy=%r)' %
                 (self.elements, self.text, self.byte_order,
-                 self.comments, self.obj_info))
+                 self.comments, self.obj_info, self.nan_policy))
 
 
 class PlyElement(object):
@@ -527,7 +561,7 @@ class PlyElement(object):
 
         self._check_sanity()
 
-    def _write(self, stream, text, byte_order):
+    def _write(self, stream, text, byte_order, nan_policy='preserve'):
         """
         Write the data to a PLY file.
 
@@ -536,19 +570,20 @@ class PlyElement(object):
         stream : writeable open file
         text : bool
         byte_order : {'<', '>', '='}
+        nan_policy : {'preserve', 'error'}
         """
         if text:
-            self._write_txt(stream)
+            self._write_txt(stream, nan_policy)
         else:
             if self._have_list:
                 # There are list properties, so serialization is
                 # slightly complicated.
-                self._write_bin(stream, byte_order)
+                self._write_bin(stream, byte_order, nan_policy)
             else:
                 # no list properties, so serialization is
                 # straightforward.
-                stream.write(self.data.astype(self.dtype(byte_order),
-                                              copy=False).data)
+                stream.write(self._checked_data(byte_order,
+                                               nan_policy).data)
 
     def _read_mmap(self, stream, byte_order, mmap_mode, known_list_len):
         """
@@ -634,7 +669,7 @@ class PlyElement(object):
             del self._data
             raise PlyElementParseError("early end-of-file", self, k)
 
-    def _write_txt(self, stream):
+    def _write_txt(self, stream, nan_policy='preserve'):
         """
         Save a PLY element to an ASCII-format PLY file.  The element may
         contain list properties.
@@ -642,13 +677,47 @@ class PlyElement(object):
         Parameters
         ----------
         stream : writeable open file
+        nan_policy : {'preserve', 'error'}
         """
-        for rec in self.data:
+        scalar_fields = {}
+        for prop in self.properties:
+            if not isinstance(prop, PlyListProperty):
+                scalar_fields[prop.name] = _checked_array_cast(
+                    self.data[prop.name], prop.dtype(), self, None, prop,
+                    nan_policy)
+
+        for k, rec in enumerate(self.data):
             fields = []
             for prop in self.properties:
-                fields.extend(prop._to_fields(rec[prop.name]))
+                if isinstance(prop, PlyListProperty):
+                    fields.extend(prop._to_fields(rec[prop.name], self, k,
+                                                  nan_policy))
+                else:
+                    fields.append(_format_value(scalar_fields[prop.name][k]))
 
-            _np.savetxt(stream, [fields], '%.18g', newline='\n')
+            _np.savetxt(stream, [fields], '%s', newline='\n')
+
+    def _checked_data(self, byte_order, nan_policy):
+        """
+        Return the element's data cast to its on-disk representation,
+        checking that every value is represented exactly.
+
+        Parameters
+        ----------
+        byte_order : {'<', '>', '='}
+        nan_policy : {'preserve', 'error'}
+
+        Returns
+        -------
+        numpy.ndarray
+        """
+        dtype = self.dtype(byte_order)
+        data = _np.empty(self.count, dtype=dtype)
+        for prop in self.properties:
+            data[prop.name] = _checked_array_cast(
+                self.data[prop.name], prop.dtype(byte_order), self,
+                None, prop, nan_policy)
+        return data
 
     def _read_bin(self, stream, byte_order):
         """
@@ -671,7 +740,7 @@ class PlyElement(object):
                     raise PlyElementParseError("early end-of-file",
                                                self, k, prop)
 
-    def _write_bin(self, stream, byte_order):
+    def _write_bin(self, stream, byte_order, nan_policy='preserve'):
         """
         Save a PLY element to a binary PLY file.  The element may
         contain list properties.
@@ -680,10 +749,12 @@ class PlyElement(object):
         ----------
         stream : writeable open file
         byte_order : {'<', '>', '='}
+        nan_policy : {'preserve', 'error'}
         """
-        for rec in self.data:
+        for k, rec in enumerate(self.data):
             for prop in self.properties:
-                prop._write_bin(rec[prop.name], stream, byte_order)
+                prop._write_bin(rec[prop.name], stream, byte_order,
+                                self, k, nan_policy)
 
     @property
     def header(self):
@@ -800,21 +871,26 @@ class PlyProperty(object):
         StopIteration
             if the property's data could not be read.
         """
-        return _np.dtype(self.dtype()).type(next(fields))
+        return _parse_scalar(next(fields), self.dtype())
 
-    def _to_fields(self, data):
+    def _to_fields(self, data, element=None, row=None,
+                   nan_policy='preserve'):
         """
         Parameters
         ----------
         data
             Property data to encode.
+        element : PlyElement, optional
+        row : int, optional
+        nan_policy : {'preserve', 'error'}, optional
 
         Yields
         ------
         encoded_data
             Data with type consistent with `self.val_dtype`.
         """
-        yield _np.dtype(self.dtype()).type(data)
+        yield _format_scalar(data, self.dtype(), element, row, self,
+                             nan_policy)
 
     def _read_bin(self, stream, byte_order):
         """
@@ -835,7 +911,8 @@ class PlyProperty(object):
         except IndexError:
             raise StopIteration
 
-    def _write_bin(self, data, stream, byte_order):
+    def _write_bin(self, data, stream, byte_order, element=None,
+                   row=None, nan_policy='preserve'):
         """
         Write data to a binary stream.
 
@@ -845,8 +922,12 @@ class PlyProperty(object):
             Property data to encode.
         stream : writeable open binary file
         byte_order : {'<', '>', '='}
+        element : PlyElement, optional
+        row : int, optional
+        nan_policy : {'preserve', 'error'}, optional
         """
-        _write_array(stream, _np.dtype(self.dtype(byte_order)).type(data))
+        _write_array(stream, _checked_scalar_cast(
+            data, self.dtype(byte_order), element, row, self, nan_policy))
 
     def __str__(self):
         val_str = _data_type_reverse[self.val_dtype]
@@ -943,15 +1024,22 @@ class PlyListProperty(PlyProperty):
         """
         (len_t, val_t) = self.list_dtype()
 
-        n = int(_np.dtype(len_t).type(next(fields)))
+        n = int(_parse_scalar(next(fields), len_t))
+        if n < 0:
+            raise ValueError("negative list length")
 
-        data = _np.loadtxt(list(_islice(fields, n)), val_t, ndmin=1)
+        tokens = list(_islice(fields, n))
+        if n == 0:
+            return _np.empty(0, dtype=val_t)
+
+        data = _np.loadtxt(tokens, val_t, ndmin=1)
         if len(data) < n:
             raise StopIteration
 
         return data
 
-    def _to_fields(self, data):
+    def _to_fields(self, data, element=None, row=None,
+                   nan_policy='preserve'):
         """
         Return generator over the (numerical) PLY representation of the
         list data (length followed by actual data).
@@ -960,6 +1048,9 @@ class PlyListProperty(PlyProperty):
         ----------
         data : numpy.ndarray
             Property data to encode.
+        element : PlyElement, optional
+        row : int, optional
+        nan_policy : {'preserve', 'error'}, optional
 
         Yields
         ------
@@ -967,11 +1058,13 @@ class PlyListProperty(PlyProperty):
         """
         (len_t, val_t) = self.list_dtype()
 
-        data = _np.asarray(data, dtype=val_t).ravel()
+        values = _checked_array_cast(data, val_t, element, row, self,
+                                     nan_policy).ravel()
 
-        yield _np.dtype(len_t).type(data.size)
-        for x in data:
-            yield x
+        yield _format_scalar(values.size, len_t, element, row, self,
+                             nan_policy)
+        for x in values:
+            yield _format_value(x)
 
     def _read_bin(self, stream, byte_order):
         """
@@ -1004,7 +1097,8 @@ class PlyListProperty(PlyProperty):
 
         return data
 
-    def _write_bin(self, data, stream, byte_order):
+    def _write_bin(self, data, stream, byte_order, element=None,
+                   row=None, nan_policy='preserve'):
         """
         Write data to a binary stream.
 
@@ -1014,13 +1108,19 @@ class PlyListProperty(PlyProperty):
             Data to encode.
         stream : writeable open binary file
         byte_order : {'<', '>', '='}
+        element : PlyElement, optional
+        row : int, optional
+        nan_policy : {'preserve', 'error'}, optional
         """
         (len_t, val_t) = self.list_dtype(byte_order)
 
-        data = _np.asarray(data, dtype=val_t).ravel()
+        values = _checked_array_cast(data, val_t, element, row, self,
+                                     nan_policy).ravel()
+        length = _checked_scalar_cast(values.size, len_t, element, row,
+                                      self, nan_policy)
 
-        _write_array(stream, _np.array(data.size, dtype=len_t))
-        _write_array(stream, data)
+        _write_array(stream, _np.asarray([length], dtype=len_t))
+        _write_array(stream, values)
 
     def __str__(self):
         len_str = _data_type_reverse[self.len_dtype]
@@ -1075,6 +1175,39 @@ class PlyElementParseError(PlyParseError):
         return ('%s(%r, element=%r, row=%r, prop=%r)' %
                 (self.__class__.__name__,
                  self.message, self.element, self.row, self.prop))
+
+
+class PlyElementWriteError(PlyElementParseError, ValueError):
+    """
+    Raised when a PLY element cannot be written without losing data.
+
+    Attributes
+    ----------
+    message : str
+    element : PlyElement
+    row : int
+    prop : PlyProperty
+    value
+        The value that could not be represented, if available.
+    """
+
+    def __init__(self, message, element=None, row=None, prop=None,
+                 value=None):
+        self.value = value
+        PlyElementParseError.__init__(self, message, element, row, prop)
+
+    @property
+    def record(self):
+        """
+        Alias for `row`.
+        """
+        return self.row
+
+    def __repr__(self):
+        return ('%s(%r, element=%r, row=%r, prop=%r, value=%r)' %
+                (self.__class__.__name__,
+                 self.message, self.element, self.row, self.prop,
+                 self.value))
 
 
 class PlyHeaderParseError(PlyParseError):
@@ -1398,6 +1531,295 @@ def _check_comments(comments):
                 raise ValueError("non-ASCII character in comment")
             if char == '\n':
                 raise ValueError("embedded newline in comment")
+
+
+def _check_element_nan(elt):
+    """
+    Raise `PlyElementParseError` if `elt` contains a NaN value.
+    """
+    for prop in elt.properties:
+        values = elt.data[prop.name]
+        if isinstance(prop, PlyListProperty):
+            for row, value in enumerate(values):
+                if _np.isnan(_np.asarray(value, dtype='f8')).any():
+                    raise PlyElementParseError(
+                        "NaN is not allowed by the NaN policy",
+                        elt, row, prop)
+        elif _np.issubdtype(values.dtype, _np.floating):
+            nan_mask = _np.isnan(values)
+            if nan_mask.any():
+                row = int(_np.flatnonzero(nan_mask)[0])
+                raise PlyElementParseError(
+                    "NaN is not allowed by the NaN policy",
+                    elt, row, prop)
+
+
+def _normalize_nan_policy(nan_policy):
+    """
+    Validate and normalize a NaN policy name.
+
+    Parameters
+    ----------
+    nan_policy : str
+
+    Returns
+    -------
+    str
+    """
+    aliases = {'raise': 'error', 'propagate': 'preserve'}
+    if not isinstance(nan_policy, str):
+        raise ValueError("nan policy must be 'preserve' or 'error'")
+    nan_policy = aliases.get(nan_policy, nan_policy)
+    if nan_policy not in ('preserve', 'error'):
+        raise ValueError("nan policy must be 'preserve' or 'error'")
+    return nan_policy
+
+
+def _write_error(message, element, row, prop, value=None):
+    return PlyElementWriteError(message, element, row, prop, value)
+
+
+def _describe_value(value):
+    try:
+        return repr(value.item())
+    except AttributeError:
+        return repr(value)
+
+
+def _checked_object_cast(flat, target, element, row, prop,
+                         nan_policy):
+    """
+    Checked cast for object arrays, whose elements may be Python ints
+    too large for any numpy integer type (or arbitrary other objects).
+    """
+    info = _np.iinfo(target) if target.kind in 'iu' else None
+    out = []
+
+    def fail(message, index, value):
+        bad_row = index if row is None else row
+        raise _write_error(message, element, bad_row, prop, value)
+
+    for index, value in enumerate(flat):
+        if isinstance(value, (bool, _np.bool_)):
+            out.append(int(value))
+            continue
+        if isinstance(value, (int, _np.integer)):
+            if target.kind == 'f':
+                try:
+                    converted = float(value)
+                except OverflowError:
+                    fail("value %s is out of range for float type %s" %
+                         (_describe_value(value), target), index, value)
+                out.append(converted)
+                continue
+            if value < info.min or value > info.max:
+                fail("value %s is out of range for integer type %s" %
+                     (_describe_value(value), target), index, value)
+            out.append(int(value))
+        elif isinstance(value, (float, _np.floating)):
+            if _np.isnan(value):
+                if nan_policy == 'error':
+                    fail("NaN is not allowed by the NaN policy", index,
+                         value)
+                out.append(value)
+                continue
+            if target.kind != 'f' and not _np.isfinite(value):
+                fail("value %s cannot be written to integer type %s" %
+                     (_describe_value(value), target), index, value)
+            if target.kind != 'f' and value != _np.trunc(value):
+                fail("value %s is not an integer and cannot be written "
+                     "to integer type %s" % (_describe_value(value),
+                                             target), index, value)
+            if target.kind != 'f' and not info.min <= value <= info.max:
+                fail("value %s is out of range for integer type %s" %
+                     (_describe_value(value), target), index, value)
+            out.append(value)
+        else:
+            fail("cannot represent %s as %s" %
+                 (_describe_value(value), target), index, value)
+    with _np.errstate(over='ignore', invalid='ignore'):
+        result = _np.asarray(out, dtype=target)
+    if target.kind == 'f':
+        source = _np.asarray(out, dtype='f8')
+        overflow = _np.isfinite(source) & ~_np.isfinite(result)
+        if overflow.any():
+            bad = int(_np.flatnonzero(overflow)[0])
+            fail("value %s is out of range for float type %s" %
+                 (_describe_value(flat[bad]), target), bad, flat[bad])
+    return result
+
+
+def _checked_scalar_cast(value, dtype, element, row, prop,
+                         nan_policy):
+    """
+    Cast one value to `dtype`, rejecting anything that would change it.
+
+    Parameters
+    ----------
+    value
+        Value to cast.
+    dtype : numpy dtype description
+    element : PlyElement
+    row : int
+    prop : PlyProperty
+    nan_policy : {'preserve', 'error'}
+
+    Returns
+    -------
+    numpy scalar
+    """
+    try:
+        if isinstance(value, (bool, int, float, _np.generic)):
+            arr = _np.asarray([value], dtype=object)
+        else:
+            arr = _np.asarray([value])
+    except Exception:
+        raise _write_error("cannot represent %s as %s" %
+                           (_describe_value(value), _np.dtype(dtype)),
+                           element, row, prop, value)
+    return _checked_array_cast(arr, dtype, element, row, prop,
+                               nan_policy)[0]
+
+
+def _checked_array_cast(values, dtype, element, row, prop,
+                        nan_policy):
+    """
+    Cast an array to `dtype`, rejecting values that would be changed.
+
+    For floating-point target types, NaNs are written as NaNs or
+    rejected according to `nan_policy`.  NaN is never converted to an
+    integer.  Integer target types must represent every value exactly;
+    otherwise `PlyElementWriteError` identifies the record and property.
+
+    Parameters
+    ----------
+    values : array-like
+    dtype : numpy dtype description
+    element : PlyElement
+    row : int or None
+        Record index, or None if `values` contains one entry per record.
+    prop : PlyProperty
+    nan_policy : {'preserve', 'error'}
+
+    Returns
+    -------
+    numpy.ndarray
+    """
+    target = _np.dtype(dtype)
+    arr = _np.asarray(values) if not isinstance(values, (list, tuple)) \
+        else _np.asarray(values, dtype=object)
+    flat = arr.reshape(-1)
+
+    def fail(message, bad_index=0, bad_value=None):
+        bad_row = bad_index if row is None else row
+        if bad_value is None and flat.size:
+            bad_value = flat[min(bad_index, flat.size - 1)]
+        raise _write_error(message, element, bad_row, prop, bad_value)
+
+    if arr.dtype.kind == 'O':
+        return _checked_object_cast(flat, target, element, row, prop,
+                                    nan_policy)
+
+    if arr.dtype.kind not in 'iubf':
+        fail("cannot represent %s as %s" %
+             (_describe_value(flat[0]) if flat.size else 'value',
+              target))
+
+    if target.kind == 'f':
+        if arr.dtype.kind == 'f' and nan_policy == 'error':
+            nan_mask = _np.isnan(arr)
+            if nan_mask.any():
+                bad = int(_np.flatnonzero(nan_mask)[0])
+                fail("NaN is not allowed by the NaN policy", bad,
+                     flat[bad])
+        with _np.errstate(over='ignore', invalid='ignore'):
+            out = arr.astype(target)
+        if arr.dtype.kind == 'f':
+            overflow = _np.isfinite(flat) & ~_np.isfinite(out)
+            if overflow.any():
+                bad = int(_np.flatnonzero(overflow)[0])
+                fail("value %s is out of range for float type %s" %
+                     (_describe_value(flat[bad]), target), bad,
+                     flat[bad])
+            underflow = (flat != 0) & (out == 0)
+            if underflow.any():
+                bad = int(_np.flatnonzero(underflow)[0])
+                fail("value %s underflows float type %s" %
+                     (_describe_value(flat[bad]), target), bad,
+                     flat[bad])
+        return out
+
+    if target.kind != 'i' and target.kind != 'u':
+        fail("unsupported target type %s" % target)
+
+    if arr.dtype.kind == 'f':
+        nan_mask = _np.isnan(flat)
+        if nan_mask.any():
+            bad = int(_np.flatnonzero(nan_mask)[0])
+            fail("NaN cannot be written to integer type %s" % target,
+                 bad, flat[bad])
+        inf_mask = _np.isinf(flat)
+        if inf_mask.any():
+            bad = int(_np.flatnonzero(inf_mask)[0])
+            fail("value %s cannot be written to integer type %s" %
+                 (_describe_value(flat[bad]), target), bad, flat[bad])
+        nonintegral = flat != _np.trunc(flat)
+        if nonintegral.any():
+            bad = int(_np.flatnonzero(nonintegral)[0])
+            fail("value %s is not an integer and cannot be written "
+                 "to integer type %s" %
+                 (_describe_value(flat[bad]), target), bad, flat[bad])
+
+    info = _np.iinfo(target)
+    too_large = flat > info.max
+    if arr.dtype.kind == 'u' or arr.dtype.kind == 'b':
+        too_small = _np.zeros(flat.shape, dtype=bool)
+    else:
+        too_small = flat < info.min
+    if too_large.any() or too_small.any():
+        bad = int(_np.flatnonzero(too_large | too_small)[0])
+        fail("value %s is out of range for integer type %s" %
+             (_describe_value(flat[bad]), target), bad, flat[bad])
+
+    with _np.errstate(over='ignore', invalid='ignore'):
+        return arr.astype(target)
+
+
+def _format_value(value):
+    """
+    Render a numpy scalar for ASCII output.
+
+    Floating-point values use the shortest decimal string that reads
+    back to the same value of that dtype.  NaNs and infinities are
+    rendered as `nan`, `inf`, and `-inf`.
+    """
+    text = str(value)
+    if text.endswith('.0'):
+        text = text[:-2]
+    return text
+
+
+def _format_scalar(value, dtype, element, row, prop, nan_policy):
+    """
+    Convert one value to an ASCII-format PLY field.
+
+    The result is the shortest decimal representation that reads back
+    to the same floating-point value.  Integer values are emitted
+    exactly, and values that do not fit are rejected.
+    """
+    cast = _checked_scalar_cast(value, dtype, element, row, prop,
+                                nan_policy)
+    return _format_value(cast)
+
+
+def _parse_scalar(text, dtype):
+    """
+    Parse one ASCII-format PLY field.
+    """
+    try:
+        return _np.dtype(dtype).type(text)
+    except OverflowError as error:
+        raise ValueError(str(error))
 
 
 def _read_array(stream, dtype, n):

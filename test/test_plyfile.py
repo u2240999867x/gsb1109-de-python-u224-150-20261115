@@ -11,7 +11,7 @@ import numpy
 import plyfile
 from plyfile import (
     PlyData, PlyElement, PlyProperty,
-    PlyHeaderParseError, PlyElementParseError,
+    PlyHeaderParseError, PlyElementParseError, PlyElementWriteError,
 )
 
 
@@ -1016,3 +1016,255 @@ def test_text_io_bad_read(tet_ply_txt):
     with Raises(ValueError) as e:
         PlyData.read(stream1)
     assert str(e) == "can't read binary-format PLY from text stream"
+
+
+def _text_roundtrip(data, dtype, text=True):
+    elt = PlyElement.describe(data, 'test')
+    for prop in elt.properties:
+        if prop.name in dtype:
+            prop.val_dtype = dtype[prop.name]
+    ply0 = PlyData([elt], text=text)
+    stream = StringIO() if text else BytesIO()
+    ply0.write(stream)
+    raw = stream.getvalue()
+    if text:
+        raw = raw.encode('ascii')
+    return PlyData.read(BytesIO(raw))['test']
+
+
+@pytest.mark.parametrize('np_type', ['f4', 'f8'])
+def test_text_float_roundtrip(np_type):
+    dtype = numpy.dtype(np_type)
+    infos = [dtype.type(0), dtype.type(-0.0), dtype.type(1),
+             dtype.type(0.1), dtype.type(1) / dtype.type(3),
+             dtype.type('inf'), dtype.type('-inf')]
+    if np_type == 'f4':
+        infos += [dtype.type(1e-40), dtype.type(1e38),
+                  dtype.type(1.1754944e-38)]
+    else:
+        infos += [dtype.type(5e-324), dtype.type(1e300),
+                  dtype.type(1.7976931348623157e308)]
+    a = numpy.array(infos, dtype=[('x', np_type)])
+
+    b = _text_roundtrip(a, {'x': np_type})['x']
+    assert (a['x'].view('u4' if np_type == 'f4' else 'u8') ==
+            b.view('u4' if np_type == 'f4' else 'u8')).all()
+
+    # Shortest representation: no unnecessary digits and no '.0' tails.
+    stream = StringIO()
+    PlyData([PlyElement.describe(a, 'test')], text=True).write(stream)
+    lines = stream.getvalue().split('end_header\n')[1].splitlines()
+    assert lines[3] == '0.1'
+    assert lines[4] == str(dtype.type(1) / dtype.type(3))
+
+
+def test_text_float32_exact_values():
+    a = numpy.array([(0.1,), (1 / 3,), (1e-40,), (1e38,)],
+                    dtype=[('x', 'f4')])
+    elt = PlyElement.describe(a, 'test')
+    stream = StringIO()
+    PlyData([elt], text=True).write(stream)
+    lines = stream.getvalue().split('end_header\n')[1].splitlines()
+    assert lines == ['0.1', '0.33333334', '1e-40', '1e+38']
+
+    ply1 = PlyData.read(BytesIO(stream.getvalue().encode('ascii')))
+    assert (ply1['test']['x'].view('u4') == a['x'].view('u4')).all()
+
+
+@pytest.mark.parametrize('np_type',
+                         ['i1', 'u1', 'i2', 'u2', 'i4', 'u4'])
+def test_text_integer_roundtrip(np_type):
+    info = numpy.iinfo(np_type)
+    values = [info.min, 0, info.max]
+    if info.min < 0 < info.max:
+        values += [-1, 1]
+    a = numpy.array([(v,) for v in values], dtype=[('x', np_type)])
+    b = _text_roundtrip(a, {'x': np_type})['x']
+    assert (a['x'] == b).all()
+
+
+@pytest.mark.parametrize('text', [True, False])
+def test_nan_preserved(text):
+    a = numpy.array([(1,), (numpy.nan,), (3,)], dtype=[('x', 'f4')])
+    ply0 = PlyData([PlyElement.describe(a, 'test')], text=text)
+    stream = StringIO() if text else BytesIO()
+    ply0.write(stream)
+    raw = stream.getvalue()
+    if text:
+        raw = raw.encode('ascii')
+    ply1 = PlyData.read(BytesIO(raw))
+    b = ply1['test']['x']
+    assert b[0] == 1 and b[2] == 3
+    assert numpy.isnan(b[1])
+    assert not (b[1] == 0)
+
+
+def test_nan_policy_error():
+    a = numpy.array([(1,), (numpy.nan,)], dtype=[('x', 'f8')])
+    ply0 = PlyData([PlyElement.describe(a, 'test')], text=True)
+    with Raises(PlyElementWriteError) as e:
+        ply0.write(StringIO(), nan_policy='error')
+    assert e.exc_val.row == 1
+    assert e.exc_val.record == 1
+    assert e.exc_val.element.name == 'test'
+    assert e.exc_val.prop.name == 'x'
+    assert numpy.isnan(e.exc_val.value)
+
+    with Raises(ValueError):
+        ply0.write(StringIO(), nan_policy='replace')
+
+
+def test_nan_policy_persisted():
+    a = numpy.array([(numpy.nan,)], dtype=[('x', 'f4')])
+    ply0 = PlyData([PlyElement.describe(a, 'test')], text=True,
+                   nan_policy='error')
+    assert ply0.nan_policy == 'error'
+
+    stream = StringIO()
+    with Raises(PlyElementWriteError):
+        ply0.write(stream)
+
+    data = b'ply\nformat ascii 1.0\nelement test 0\n' \
+           b'property float x\nend_header\n'
+    ply1 = PlyData.read(BytesIO(data), nan_policy='error')
+    assert ply1.nan_policy == 'error'
+
+
+def test_nan_to_integer_rejected():
+    a = numpy.array([(1.0,), (numpy.nan,)], dtype=[('x', 'f8')])
+    elt = PlyElement.describe(a, 'test')
+    elt.properties[0].val_dtype = 'i4'
+    ply0 = PlyData([elt], text=True)
+    for text in (True, False):
+        ply0.text = text
+        stream = StringIO() if text else BytesIO()
+        with Raises(PlyElementWriteError) as e:
+            ply0.write(stream)
+        assert e.exc_val.row == 1
+        assert e.exc_val.prop.name == 'x'
+        assert numpy.isnan(e.exc_val.value)
+        assert e.exc_val.message.startswith('NaN cannot be written')
+
+
+def test_nan_list_property():
+    a = numpy.empty(1, dtype=[('x', object)])
+    a['x'] = [numpy.array([1.0, numpy.nan], dtype='f8')]
+    ply0 = PlyData([PlyElement.describe(
+        a, 'test', val_types={'x': 'f8'})], text=True)
+    stream = StringIO()
+    ply0.write(stream)
+    assert stream.getvalue().split('end_header\n')[1] == '2 1 nan\n'
+
+    with Raises(PlyElementWriteError) as e:
+        ply0.write(StringIO(), nan_policy='error')
+    assert e.exc_val.row == 0
+    assert e.exc_val.prop.name == 'x'
+
+
+@pytest.mark.parametrize('text', [True, False])
+def test_integer_overflow_reports_record_and_property(text):
+    data = numpy.empty(3, dtype=[('x', 'i4'), ('y', 'u4')])
+    data['x'] = [1, 2, 3]
+    data['y'] = [10, 2 ** 31, 30]
+    elt = PlyElement.describe(data, 'test')
+    elt.properties[1].val_dtype = 'i2'
+    ply0 = PlyData([elt], text=text)
+    stream = StringIO() if text else BytesIO()
+    with Raises(PlyElementWriteError) as e:
+        ply0.write(stream)
+    assert e.exc_val.element.name == 'test'
+    assert e.exc_val.row == 1
+    assert e.exc_val.record == 1
+    assert e.exc_val.prop.name == 'y'
+    assert e.exc_val.value == 2 ** 31
+    assert 'out of range' in e.exc_val.message
+
+
+def test_integer_negative_overflow_unsigned():
+    data = numpy.array([(1,), (-1,)], dtype=[('x', 'i4')])
+    elt = PlyElement.describe(data, 'test')
+    elt.properties[0].val_dtype = 'u1'
+    with Raises(PlyElementWriteError) as e:
+        PlyData([elt], text=True).write(StringIO())
+    assert e.exc_val.row == 1
+    assert e.exc_val.prop.name == 'x'
+    assert 'out of range' in e.exc_val.message
+
+
+@pytest.mark.parametrize('text', [True, False])
+def test_list_value_overflow(text):
+    data = numpy.empty(2, dtype=[('x', object)])
+    data['x'] = [numpy.array([1, 2], dtype='i8'),
+                 numpy.array([1, 2 ** 30], dtype='i8')]
+    ply0 = PlyData([PlyElement.describe(
+        data, 'test', val_types={'x': 'i2'})], text=text)
+    stream = StringIO() if text else BytesIO()
+    with Raises(PlyElementWriteError) as e:
+        ply0.write(stream)
+    assert e.exc_val.row == 1
+    assert e.exc_val.prop.name == 'x'
+    assert e.exc_val.value == 2 ** 30
+
+
+def test_list_length_overflow():
+    data = numpy.empty(1, dtype=[('x', object)])
+    data['x'] = [numpy.arange(300)]
+    ply0 = PlyData([PlyElement.describe(
+        data, 'test', len_types={'x': 'u1'},
+        val_types={'x': 'i4'})], text=True)
+    with Raises(PlyElementWriteError) as e:
+        ply0.write(StringIO())
+    assert e.exc_val.row == 0
+    assert e.exc_val.prop.name == 'x'
+    assert e.exc_val.value == 300
+
+
+def test_fractional_float_to_integer_rejected():
+    data = numpy.array([(1.0,), (1.5,)], dtype=[('x', 'f8')])
+    elt = PlyElement.describe(data, 'test')
+    elt.properties[0].val_dtype = 'i2'
+    with Raises(PlyElementWriteError) as e:
+        PlyData([elt], text=True).write(StringIO())
+    assert e.exc_val.row == 1
+    assert e.exc_val.value == 1.5
+
+
+def test_write_error_repr():
+    elt = PlyElement.describe(numpy.zeros(1, dtype=[('x', 'i4')]), 'test')
+    prop = elt.properties[0]
+    e = PlyElementWriteError('text', elt, 0, prop, 1)
+    assert 'PlyElementWriteError' in repr(e)
+    assert isinstance(e, ValueError)
+
+
+def test_float_overflow_rejected():
+    data = numpy.array([(1e300,)], dtype=[('x', 'f8')])
+    elt = PlyElement.describe(data, 'test')
+    elt.properties[0].val_dtype = 'f4'
+    with Raises(PlyElementWriteError) as e:
+        PlyData([elt], text=True).write(StringIO())
+    assert e.exc_val.row == 0
+    assert e.exc_val.prop.name == 'x'
+    assert 'out of range' in e.exc_val.message
+
+
+def test_nan_policy_error_on_read():
+    raw = (b'ply\nformat ascii 1.0\nelement test 2\n'
+           b'property float x\nend_header\n1\nnan\n')
+    with Raises(PlyElementParseError) as e:
+        PlyData.read(BytesIO(raw), nan_policy='error')
+    assert e.exc_val.row == 1
+    assert e.exc_val.prop.name == 'x'
+    assert 'NaN' in e.exc_val.message
+
+    ply0 = PlyData.read(BytesIO(raw))
+    assert numpy.isnan(ply0['test']['x'][1])
+
+
+def test_nan_policy_error_on_read_list():
+    raw = (b'ply\nformat ascii 1.0\nelement test 1\n'
+           b'property list uchar float x\nend_header\n2 1 nan\n')
+    with Raises(PlyElementParseError) as e:
+        PlyData.read(BytesIO(raw), nan_policy='error')
+    assert e.exc_val.row == 0
+    assert e.exc_val.prop.name == 'x'

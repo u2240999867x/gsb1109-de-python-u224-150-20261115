@@ -3,6 +3,21 @@
 All notable changes to this project will be documented here.
 
 ## [Unreleased]
+### Added
+- `nan_policy` option on `PlyData` and `PlyData.read`/`PlyData.write`,
+  with `'preserve'` (default) and `'error'` policies.  NaN is never
+  converted to an integer or to zero.
+- `PlyElementWriteError`, raised when a value cannot be represented by
+  its declared property type.  It identifies the element, record, and
+  property instead of silently truncating or wrapping the value.
+
+### Changed
+- ASCII output now uses the shortest decimal representation that
+  round-trips to the same value of the property's type.  Previously
+  `float32` values were printed with `float64`-style excess digits, and
+  integral values gained a trailing `.0`.
+- Writes to integer properties are checked for range, fractional
+  values, and NaN in both ASCII and binary formats.
 
 ## [1.1.5] - 2026-07-25
 ### Fixed

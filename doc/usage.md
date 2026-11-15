@@ -413,7 +413,9 @@ partially supported. The following in-place mutations are possible:
   different types.
 - Changing a `PlyProperty` or `PlyListProperty` instance's `val_dtype`
   or a `PlyListProperty` instance's `len_dtype`, which will perform
-  casting when writing.
+  casting when writing.  The cast is checked: if a value does not fit
+  the target type exactly, writing fails with `PlyElementWriteError`
+  rather than silently truncating or wrapping.
 
 Modifying the `name` of a `PlyElement`, `PlyProperty`, or
 `PlyListProperty` instance is not supported and will raise an error.  To
@@ -458,6 +460,55 @@ new instances and modifying in place).  For example, a single
 `PlyElement` instance can be contained by multiple `PlyData` instances,
 but modifying that instance will then affect all of those containing
 `PlyData` instances.
+
+### Text-format precision and lossless round trips
+
+ASCII-format output uses the shortest decimal representation that
+reads back to the same value of the property's type.  In particular,
+`float32` properties are not printed with meaningless extra digits
+from their `float64` promotion, and integer properties are printed
+exactly.  Reading such a file back with `plyfile` reproduces every
+value bit-for-bit (NaNs excepted, since NaN payloads are not part of
+the PLY text format).
+
+Binary and ASCII output are checked the same way: a value that cannot
+be represented by the declared property type raises
+`PlyElementWriteError`, which identifies the element, record (`row`,
+also available as `record`), and property:
+
+```Python Console
+>>> import numpy
+>>> from plyfile import PlyData, PlyElement, PlyElementWriteError
+>>> data = numpy.array([(1,), (70000,)], dtype=[('count', 'i4')])
+>>> elt = PlyElement.describe(data, 'item')
+>>> elt.properties[0].val_dtype = 'u2'
+>>> try:
+...     PlyData([elt], text=True).write('items.ply')
+... except PlyElementWriteError as e:
+...     print(e.element.name, e.row, e.prop.name)
+item 1 count
+>>>
+```
+
+Floating-point values that overflow the target type are likewise
+rejected rather than converted to infinity.
+
+### NaN handling
+
+NaN is never treated as zero.  When writing, `nan_policy` selects the
+behavior for NaN values in floating-point properties:
+
+- `'preserve'` (the default) writes NaN as `nan` in ASCII output and as
+  a NaN bit pattern in binary output.
+- `'error'` raises `PlyElementWriteError` identifying the record and
+  property.
+
+The policy can be set on the `PlyData` instance (`nan_policy=...`), on
+`PlyData.read`, or per call with `PlyData.write(..., nan_policy=...)`.
+With `PlyData.read(..., nan_policy='error')`, reading fails as soon as
+a NaN occurs in the data.  Independently of the policy, a NaN can
+never be written to an integer property; that is always an error.  Use
+`nan_policy='error'` if the audit format must contain no NaNs at all.
 
 ### Text-mode streams
 
