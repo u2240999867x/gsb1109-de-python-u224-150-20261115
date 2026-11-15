@@ -9,7 +9,7 @@
 #
 from abc import ABCMeta
 from itertools import count
-from collections.abc import Iterator, MutableMapping, MutableSequence
+from collections.abc import Iterable, Iterator, MutableMapping, MutableSequence
 from typing import TYPE_CHECKING, cast, overload, Any, Optional, Union
 
 from elementpath import XPathContext, XPath2Parser, build_node_tree
@@ -24,6 +24,7 @@ from xmlschema.resources import XMLResource
 from xmlschema.utils.qnames import get_namespace, get_prefixed_qname, \
     local_name, update_namespaces, get_namespace_map
 from xmlschema.utils.decoding import raw_encode_value
+from xmlschema import names as nm
 from xmlschema import validators
 
 if TYPE_CHECKING:
@@ -41,18 +42,37 @@ class DataElement(MutableSequence['DataElement']):
     :param xsd_element: an optional XSD element association.
     :param xsd_type: an optional XSD type association. Can be provided \
     also if the instance is not bound with an XSD element.
+    :param nilled: set to `True` if the element is nilled, that is it has \
+    no value and no content because it has been explicitly emptied with \
+    the attribute `xsi:nil="true"`. A nilled data element is encoded back \
+    with the `xsi:nil="true"` attribute and no default value is applied to it.
+    :param origin: the provenance of the element value. It can be `None` \
+    (no value), 'source' (value from the XML source) or 'default' (value \
+    filled from the XSD default/fixed value constraint). If not provided \
+    it's set to 'source' when a value is given. Values with 'default' origin \
+    are not encoded as explicit data: their materialization is left to the \
+    *use_defaults* policy of the encoding process.
+    :param default_attributes: an optional iterable with the names of the \
+    attributes that have been filled from XSD default/fixed value constraints, \
+    using the same names format of the *attrib* map. Those attributes are not \
+    encoded as explicit data: their materialization is left to the \
+    *use_defaults* policy of the encoding process.
     """
     _children: list['DataElement']
     tag: str
     attrib: dict[str, Any]
     nsmap: dict[str, str]
 
-    value: Optional[Any] = None
+    _value: Optional[Any] = None
     tail: Optional[str] = None
     xmlns: Optional[list[tuple[str, str]]] = None
     xsd_element: Optional['XsdElement'] = None
     xsd_type: Optional[BaseXsdType] = None
     _encoder: Optional['XsdElement'] = None
+
+    nilled: bool = False
+    origin: Optional[str] = None
+    default_attributes: set[str]
 
     def __init__(self, tag: str,
                  value: Optional[Any] = None,
@@ -60,16 +80,24 @@ class DataElement(MutableSequence['DataElement']):
                  nsmap: Optional[MutableMapping[str, str]] = None,
                  xmlns: Optional[list[tuple[str, str]]] = None,
                  xsd_element: Optional['XsdElement'] = None,
-                 xsd_type: Optional[BaseXsdType] = None) -> None:
+                 xsd_type: Optional[BaseXsdType] = None,
+                 nilled: bool = False,
+                 origin: Optional[str] = None,
+                 default_attributes: Optional[Iterable[str]] = None) -> None:
 
         super().__init__()
         self._children = []
         self.tag = tag
         self.attrib = {}
         self.nsmap = {}
+        self.nilled = nilled
+        self.origin = origin
+        self.default_attributes = set(default_attributes or ())
 
         if value is not None:
-            self.value = value
+            self._value = value
+            if self.origin is None:
+                self.origin = 'source'
         if attrib is not None:
             self.attrib.update(attrib)
         if nsmap is not None:
@@ -84,6 +112,20 @@ class DataElement(MutableSequence['DataElement']):
             self.xsd_type = xsd_type
         elif self.xsd_element is not None:
             self._encoder = self.xsd_element
+
+    @property
+    def value(self) -> Optional[Any]:
+        """The simple typed value of the element."""
+        return self._value
+
+    @value.setter
+    def value(self, value: Optional[Any]) -> None:
+        self._value = value
+        if value is not None:
+            # An explicitly set value becomes sourced from data
+            self.origin = 'source'
+        elif self.origin == 'source':
+            self.origin = None
 
     @overload
     def __getitem__(self, i: int) -> 'DataElement': ...  # pragma: no cover
@@ -170,6 +212,7 @@ class DataElement(MutableSequence['DataElement']):
     def set(self, key: str, value: Any) -> None:
         """Sets a data element attribute."""
         self.attrib[key] = value
+        self.default_attributes.discard(key)
 
     @property
     def xsd_version(self) -> str:
@@ -311,7 +354,10 @@ class DataElement(MutableSequence['DataElement']):
 
         :param validation: the validation mode. Can be 'lax', 'strict' or 'skip.
         :param kwargs: optional keyword arguments for the method :func:`iter_encode` \
-        of :class:`XsdElement`.
+        of :class:`XsdElement`. Values and attributes that keep a 'default' origin \
+        are not encoded as explicit data: provide ``use_defaults=True`` (the default) \
+        to materialize them from the schema value constraints, ``use_defaults=False`` \
+        to omit them from the encoded XML.
         :return: An ElementTree's Element. If *validation* argument is 'lax' a \
         2-items tuple is returned, where the first item is the encoded object and \
         the second item is a list with validation errors.
@@ -337,7 +383,8 @@ class DataElement(MutableSequence['DataElement']):
     def tostring(self, namespaces: Optional[MutableMapping[str, str]] = None,
                  indent: str = '', max_lines: Optional[int] = None,
                  spaces_for_tab: int = 4, xml_declaration: bool = False,
-                 encoding: str = 'unicode', method: str = 'xml') -> str:
+                 encoding: str = 'unicode', method: str = 'xml',
+                 use_defaults: bool = True) -> str:
         """
         Serializes the data element tree to an XML source string.
 
@@ -353,9 +400,12 @@ class DataElement(MutableSequence['DataElement']):
         :param encoding: if "unicode" (the default) the output is a string, \
         otherwise it’s binary.
         :param method: is either "xml" (the default), "html" or "text".
+        :param use_defaults: whether to materialize the values and the attributes \
+        that keep a 'default' origin from the schema value constraints. With \
+        ``use_defaults=False`` they are omitted from the serialized XML.
         :return: a Unicode string.
         """
-        root, _ = self.encode(validation='lax')  # type: ignore[misc]
+        root, _ = self.encode(validation='lax', use_defaults=use_defaults)  # type: ignore[misc]
         if root is None:
             return ''
         if not hasattr(root, 'nsmap'):
@@ -535,10 +585,19 @@ class DataElementConverter(XMLSchemaConverter):
     def element_decode(self, data: ElementData, xsd_element: 'XsdElement',
                        xsd_type: Optional[BaseXsdType] = None, level: int = 0) -> 'DataElement':
         data_element = self.get_data_element(data, xsd_element, xsd_type, level)
+        data_element.nilled = data.nilled
+        data_element.origin = data.value_origin
+
         if self.map_attribute_names:
             data_element.attrib.update(self.map_attributes(data.attributes))
+            if data.default_attributes:
+                data_element.default_attributes.update(
+                    self.map_qname(k) for k in data.default_attributes
+                )
         elif data.attributes:
             data_element.attrib.update(data.attributes)
+            if data.default_attributes:
+                data_element.default_attributes.update(data.default_attributes)
 
         if (xsd_type or xsd_element.type).model_group is not None:
             for name, value, _ in self.map_content(data.content):
@@ -558,17 +617,29 @@ class DataElementConverter(XMLSchemaConverter):
         if not xsd_element.is_matching(data_element.tag):
             raise XMLSchemaValueError("Unmatched tag")
 
-        attributes = {self.unmap_qname(k, xsd_element.attributes): v
-                      for k, v in data_element.attrib.items()}
+        attributes = {
+            self.unmap_qname(k, xsd_element.attributes): v
+            for k, v in data_element.attrib.items()
+            if k not in data_element.default_attributes
+        }
+        if data_element.nilled and nm.XSI_NIL not in attributes:
+            # Keep the nilled state explicit, so that no default value is applied
+            attributes[nm.XSI_NIL] = 'true'
+
+        value = data_element.value
+        if value is not None and data_element.origin == 'default':
+            # Not an explicit value: leave the filling to the *use_defaults*
+            # policy of the encoding process.
+            value = None
 
         data_len = len(data_element)
         if not data_len:
-            return ElementData(data_element.tag, data_element.value, None, attributes, xmlns)
+            return ElementData(data_element.tag, value, None, attributes, xmlns)
 
         content: list[tuple[Union[str, int], Any]] = []
         cdata_num = count(1)
-        if data_element.value is not None:
-            content.append((next(cdata_num), data_element.value))
+        if value is not None:
+            content.append((next(cdata_num), value))
 
         for e in data_element:
             content.append((e.tag, e))

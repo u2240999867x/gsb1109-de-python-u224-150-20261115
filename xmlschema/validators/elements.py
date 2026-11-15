@@ -561,6 +561,8 @@ class XsdElement(XsdComponent, ParticleMixin,
         """Returns the decoded data value of the provided element as XPath fn:data()."""
         text = elem.text
         if text is None:
+            if elem.attrib.get(nm.XSI_NIL, '').strip() in ('true', '1'):
+                return None  # a nilled element has no data value
             text = self.fixed if self.fixed is not None else self.default
             if text is None:
                 return '' if self.type.text_is_valid('') else None
@@ -650,6 +652,8 @@ class XsdElement(XsdComponent, ParticleMixin,
         inherited = context.inherited
         value = content = None
         nilled = False
+        value_origin: Optional[str] = None
+        default_attributes: Optional[list[str]] = None
 
         if not self.alternatives:
             xsd_type = self.type
@@ -700,6 +704,13 @@ class XsdElement(XsdComponent, ParticleMixin,
         attributes = attribute_group.raw_decode(obj.attrib, validation, context)
         context.level -= 1
 
+        if isinstance(context, DecodeContext):
+            # Track the attributes filled from XSD default/fixed value constraints
+            default_attributes = [
+                k for k, _v in attribute_group.iter_value_constraints(context.use_defaults)
+                if k not in obj.attrib
+            ]
+
         if self.inheritable and any(name in self.inheritable for name in obj.attrib):
             if inherited:
                 inherited = inherited.copy()
@@ -746,6 +757,7 @@ class XsdElement(XsdComponent, ParticleMixin,
 
             if content and len(content) == 1 and content[0][0] == 1:
                 value, content = content[0][1], None
+                value_origin = 'source'
 
             if self.fixed is not None and \
                     (len(obj) > 0 or value is not None and self.fixed != value):
@@ -758,9 +770,12 @@ class XsdElement(XsdComponent, ParticleMixin,
                 context.validation_error(validation, self, reason, obj)
 
             text = obj.text
+            if text:
+                value_origin = 'source'
             if self.fixed is not None:
                 if not text:
                     text = self.fixed
+                    value_origin = 'default'
                 elif text == self.fixed:
                     pass
                 elif not strictly_equal(xsd_type.text_decode(text, context=context),
@@ -770,6 +785,7 @@ class XsdElement(XsdComponent, ParticleMixin,
 
             elif not text and self.default is not None and context.use_defaults:
                 text = self.default
+                value_origin = 'default'
 
             if not isinstance(xsd_type, XsdSimpleType):
                 for assertion in xsd_type.assertions:
@@ -797,6 +813,8 @@ class XsdElement(XsdComponent, ParticleMixin,
                     value = context.filler(self)
                 elif text or context.keep_empty:
                     value = result
+                    if value_origin is None:
+                        value_origin = 'source'  # explicit empty value from source
 
                 if context.value_hook is not None:
                     value = context.value_hook(value, xsd_type)
@@ -817,7 +835,8 @@ class XsdElement(XsdComponent, ParticleMixin,
         xmlns = context.converter.set_xmlns_context(obj, context.level)  # Purge sub-contexts
 
         if isinstance(context, DecodeContext):
-            element_data = ElementData(obj.tag, value, content, attributes, xmlns)
+            element_data = ElementData(obj.tag, value, content, attributes, xmlns,
+                                       nilled, value_origin, default_attributes)
             if context.element_hook is not None:
                 element_data = context.element_hook(element_data, self, xsd_type)
 
@@ -955,7 +974,7 @@ class XsdElement(XsdComponent, ParticleMixin,
         if context.max_depth is not None and context.max_depth == 0 and not context.level:
             return None
 
-        tag, text, content, attributes, xmlns = element_data
+        tag, text, content, attributes, xmlns = element_data[:5]
         context.elem = elem = context.create_element(tag)
 
         if self.abstract:

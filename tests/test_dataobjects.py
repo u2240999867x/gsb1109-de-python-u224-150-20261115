@@ -78,6 +78,44 @@ class TestDataElementInterface(unittest.TestCase):
         self.assertEqual(DataElement('foo', value=False).text, 'false')
         self.assertEqual(DataElement('foo', value=10.0).text, '10.0')
 
+    def test_value_origin(self):
+        data_element = DataElement('foo')
+        self.assertIsNone(data_element.value)
+        self.assertIsNone(data_element.origin)
+        self.assertFalse(data_element.nilled)
+        self.assertEqual(data_element.default_attributes, set())
+
+        data_element = DataElement('foo', 10)
+        self.assertEqual(data_element.value, 10)
+        self.assertEqual(data_element.origin, 'source')
+
+        data_element = DataElement('foo', 10, origin='default')
+        self.assertEqual(data_element.origin, 'default')
+
+        # An explicitly set value becomes sourced from data
+        data_element.value = 20
+        self.assertEqual(data_element.origin, 'source')
+
+        data_element.value = None
+        self.assertIsNone(data_element.origin)
+
+    def test_nilled(self):
+        data_element = DataElement('foo')
+        self.assertFalse(data_element.nilled)
+        data_element = DataElement('foo', nilled=True)
+        self.assertTrue(data_element.nilled)
+        self.assertIsNone(data_element.value)
+
+    def test_default_attributes(self):
+        data_element = DataElement('foo', attrib={'a': 1},
+                                   default_attributes=('a',))
+        self.assertEqual(data_element.default_attributes, {'a'})
+
+        # An explicitly set attribute becomes sourced from data
+        data_element.set('a', 2)
+        self.assertEqual(data_element.default_attributes, set())
+        self.assertEqual(data_element.attrib, {'a': 2})
+
 
 class TestDataObjects(unittest.TestCase):
 
@@ -557,6 +595,161 @@ class TestDataObjects(unittest.TestCase):
         self.assertIsInstance(xsd_attribute, XsdAttribute)
         self.assertIsInstance(xsd_attribute.type, XsdType)
         self.assertIsNone(col_data[0].xsd_element.find('@unknown'))
+
+    provenance_xsd = """<?xml version="1.0" encoding="UTF-8"?>
+    <xs:schema xmlns:xs="http://www.w3.org/2001/XMLSchema">
+      <xs:element name="root" type="rootType"/>
+      <xs:element name="note" type="xs:string" nillable="true" default="none"/>
+      <xs:complexType name="rootType">
+        <xs:sequence>
+          <xs:element name="name" type="xs:string"/>
+          <xs:element name="code" type="xs:string" default="c0" minOccurs="0"/>
+          <xs:element name="flag" type="xs:boolean" fixed="true" minOccurs="0"/>
+          <xs:element name="note" type="xs:string" nillable="true"
+                      default="none" minOccurs="0"/>
+        </xs:sequence>
+        <xs:attribute name="id" type="xs:int"/>
+        <xs:attribute name="status" type="xs:string" default="active"/>
+      </xs:complexType>
+    </xs:schema>"""
+
+    provenance_xml = """<?xml version="1.0" encoding="UTF-8"?>
+    <root id="1" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
+      <name>alpha</name>
+      <code/>
+      <flag/>
+      <note xsi:nil="true"/>
+    </root>"""
+
+    def test_decode_value_origin(self):
+        schema = self.schema_class(self.provenance_xsd)
+        data = schema.decode(self.provenance_xml, converter=self.converter)
+
+        self.assertIsInstance(data, DataElement)
+        self.assertIsNone(data.origin)  # element-only content, no value
+        self.assertFalse(data.nilled)
+
+        name, code, flag, note = data[:]
+        self.assertEqual(name.value, 'alpha')
+        self.assertEqual(name.origin, 'source')
+        self.assertFalse(name.nilled)
+
+        # Value filled from the XSD default keeps its origin
+        self.assertEqual(code.value, 'c0')
+        self.assertEqual(code.origin, 'default')
+
+        # Also a fixed value is tracked as a schema-provided value
+        self.assertEqual(flag.value, True)
+        self.assertEqual(flag.origin, 'default')
+
+        # A nilled element has no value and no default is applied to it
+        self.assertIsNone(note.value)
+        self.assertIsNone(note.origin)
+        self.assertTrue(note.nilled)
+        self.assertEqual(note.attrib, {'xsi:nil': 'true'})
+
+    def test_decode_default_attributes(self):
+        schema = self.schema_class(self.provenance_xsd)
+        data = schema.decode(self.provenance_xml, converter=self.converter)
+
+        self.assertEqual(data.attrib, {'id': 1, 'status': 'active'})
+        self.assertEqual(data.default_attributes, {'status'})
+
+        data = schema.decode(self.provenance_xml, converter=self.converter,
+                             use_defaults=False)
+        self.assertEqual(data.attrib, {'id': 1})
+        self.assertEqual(data.default_attributes, set())
+
+        code = data[1]
+        self.assertIsNone(code.value)
+        self.assertIsNone(code.origin)
+
+        # Fixed values are applied also with use_defaults=False
+        flag = data[2]
+        self.assertEqual(flag.value, True)
+        self.assertEqual(flag.origin, 'default')
+
+    def test_decode_explicit_empty(self):
+        schema = self.schema_class(self.provenance_xsd)
+        xml_text = '<root><name/></root>'
+
+        data = schema.decode(xml_text, converter=self.converter)
+        self.assertIsNone(data[0].value)
+        self.assertIsNone(data[0].origin)
+
+        data = schema.decode(xml_text, converter=self.converter, keep_empty=True)
+        self.assertEqual(data[0].value, '')
+        self.assertEqual(data[0].origin, 'source')
+
+    def test_encode_defaults_policy(self):
+        schema = self.schema_class(self.provenance_xsd)
+        data = schema.decode(self.provenance_xml, converter=self.converter)
+
+        # Default policy: default values are materialized from the schema
+        root = data.encode()
+        self.assertEqual(root.find('code').text, 'c0')
+        self.assertEqual(root.find('flag').text, 'true')
+        self.assertEqual(root.attrib['status'], 'active')
+
+        # With use_defaults=False the default-filled data is omitted
+        root = data.encode(use_defaults=False)
+        self.assertIsNone(root.find('code').text)
+        self.assertNotIn('status', root.attrib)
+        self.assertEqual(root.find('flag').text, 'true')  # fixed is always applied
+
+    def test_correction_does_not_commit_defaults(self):
+        schema = self.schema_class(self.provenance_xsd)
+        data = schema.decode(self.provenance_xml, converter=self.converter)
+
+        # Correcting a value makes it explicit, other defaults are untouched
+        data[0].value = 'beta'
+        self.assertEqual(data[0].origin, 'source')
+        self.assertEqual(data[1].origin, 'default')
+
+        root = data.encode(use_defaults=False)
+        self.assertEqual(root.find('name').text, 'beta')
+        self.assertIsNone(root.find('code').text)
+        self.assertNotIn('status', root.attrib)
+
+        # Correcting an attribute makes it explicit too
+        data.set('status', 'archived')
+        self.assertNotIn('status', data.default_attributes)
+        root = data.encode(use_defaults=False)
+        self.assertEqual(root.attrib['status'], 'archived')
+        self.assertIsNone(root.find('code').text)
+
+    def test_nilled_element_round_trip(self):
+        schema = self.schema_class(self.provenance_xsd)
+        data = schema.decode(self.provenance_xml, converter=self.converter)
+        note = data[3]
+        self.assertTrue(note.nilled)
+
+        # No default value is applied to a nilled element on encoding
+        root = data.encode()
+        note_elem = root.find('note')
+        self.assertEqual(note_elem.get('{http://www.w3.org/2001/XMLSchema-instance}nil'),
+                         'true')
+        self.assertIsNone(note_elem.text)
+
+        # The nilled state is kept explicit also if the attribute is removed
+        del note.attrib['xsi:nil']
+        root = data.encode()
+        note_elem = root.find('note')
+        self.assertEqual(note_elem.get('{http://www.w3.org/2001/XMLSchema-instance}nil'),
+                         'true')
+        self.assertIsNone(note_elem.text)
+
+    def test_nilled_element_data_value(self):
+        schema = self.schema_class(self.provenance_xsd)
+        xsd_element = schema.elements['note']
+
+        elem = ElementTree.XML('<note xmlns:xsi="%s" xsi:nil="true"/>'
+                               % 'http://www.w3.org/2001/XMLSchema-instance')
+        self.assertIsNone(xsd_element.data_value(elem))
+
+        # The default is applied to an empty element that is not nilled
+        elem = ElementTree.XML('<note/>')
+        self.assertEqual(xsd_element.data_value(elem), 'none')
 
 
 class TestDataBindings(TestDataObjects):

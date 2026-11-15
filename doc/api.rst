@@ -211,6 +211,11 @@ Data objects API
 ================
 
 .. autoclass:: xmlschema.DataElement
+
+    .. autoattribute:: nilled
+    .. autoattribute:: origin
+    .. autoattribute:: default_attributes
+
 .. autoclass:: xmlschema.DataElementConverter
 .. autoclass:: xmlschema.DataBindingConverter
 

@@ -26,8 +26,9 @@ if TYPE_CHECKING:
 
 
 ElementData = namedtuple('ElementData',
-                         ['tag', 'text', 'content', 'attributes', 'xmlns'],
-                         defaults=(None, None, None, None))
+                         ['tag', 'text', 'content', 'attributes', 'xmlns',
+                          'nilled', 'value_origin', 'default_attributes'],
+                         defaults=(None, None, None, None, False, None, None))
 """
 Namedtuple for Element data interchange between decoders and converters.
 The field *tag* is a string containing the Element's tag, *text* can be `None`
@@ -36,7 +37,13 @@ containing the Element's children or a dictionary containing element name to
 list of element contents for the Element's children (used for unordered input
 data), *attributes* can be `None` or a dictionary containing the Element's
 attributes, *xmlns* can be `None` or a list of couples containing namespace
-declarations.
+declarations. The field *nilled* is `True` if the element has been decoded
+from an XML source where it was explicitly nilled with `xsi:nil="true"`.
+The field *value_origin* keeps the provenance of the decoded text value: it
+can be `None` (no value), 'source' (value from the XML source) or 'default'
+(value filled from the XSD default/fixed value constraint). The field
+*default_attributes* can be `None` or a sequence with the extended names of
+the attributes filled from XSD default/fixed value constraints.
 """
 
 T = TypeVar('T')
