@@ -37,6 +37,7 @@ from .archive import *
 from .backend import *
 from .bits import *
 from .cli import *
+from .collector import *
 from .config import *
 from .crypto import *
 from .errors import *
@@ -45,6 +46,7 @@ from .info import *
 from .stream import *
 from .utils import *
 
-__all__ = ("get_rar_version", "is_rarfile", "is_rarfile_sfx", "RarInfo", "RarFile", "RarExtFile")
+__all__ = ("get_rar_version", "is_rarfile", "is_rarfile_sfx", "RarInfo", "RarFile", "RarExtFile",
+           "collect", "collect_files", "CollectedFile", "CollectReport", "CollectSkip")
 
 __version__ = "5.0.dev1"

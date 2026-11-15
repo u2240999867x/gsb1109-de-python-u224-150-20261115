@@ -16,6 +16,11 @@ RarFile class
    :members:
    :special-members: __enter__, __exit__, __iter__
 
+The :meth:`RarFile.collect` method is the per-archive entry point for the
+bounded collector described below.
+
+.. _collector:
+
 RarInfo class
 -------------
 
@@ -37,6 +42,21 @@ RarExtFile class
    :members:
    :inherited-members:
    :exclude-members: truncate, flush
+
+Collector
+---------
+
+Bounded access that returns only leading bytes of archive entries while
+tracking a separate, cumulative decode budget.
+
+.. autofunction:: collect
+.. autofunction:: collect_files
+.. autoclass:: CollectReport()
+   :members:
+.. autoclass:: CollectedFile()
+   :members:
+.. autoclass:: CollectSkip()
+   :members:
 
 nsdatetime class
 ----------------

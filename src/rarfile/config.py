@@ -51,9 +51,18 @@ BSIZE = 512 * 1024 if WIN32 else 64 * 1024
 #: Max size to scan for RAR signature
 SFX_MAX_SIZE = 2 * 1024 * 1024
 
+#: Default number of leading bytes returned per file by the preview collector
+COLLECT_HEAD_LIMIT = 64 * 1024
+
+#: Default amount of decoded data the preview collector may consume per run.
+#: Solid archives also charge the preceding members needed to reach a file.
+COLLECT_DECODE_LIMIT = 8 * 1024 * 1024
+
 __all__ = (
     "BSDTAR_TOOL",
     "BSIZE",
+    "COLLECT_DECODE_LIMIT",
+    "COLLECT_HEAD_LIMIT",
     "DEFAULT_CHARSET",
     "FORCE_TOOL",
     "HACK_SIZE_LIMIT",

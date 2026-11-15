@@ -16,6 +16,12 @@ Breaking changes:
 
 Features:
 
+* Add bounded collector: :func:`rarfile.collect` returns only leading bytes
+  from selected entries, with a per-file ``head_limit`` and a cumulative
+  ``decode_limit``.  Solid-prefix bytes are charged to the decode budget
+  separately from the returned data, and :class:`rarfile.CollectReport`
+  records the file that could not be reached.
+
 * Move to multi-file module.
   [`#137 <https://github.com/markokr/rarfile/pull/137>`_]
 

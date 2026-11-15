@@ -302,6 +302,27 @@ class RarFile:
         with self.open(name, "r", pwd) as f:
             return f.read()
 
+    def collect(self,
+                members: Iterable[str | Path | RarInfo] | None = None,
+                *,
+                head_limit: int | None = None,
+                decode_limit: int | None = None,
+                pwd: str | None = None) -> "CollectReport":
+        """Collect leading bytes from selected entries under fixed limits.
+
+        Reads at most ``head_limit`` bytes per file and charges all
+        decoded bytes, including solid-archive prefixes, against
+        ``decode_limit``.  Stops before the first entry whose cost does
+        not fit and reports its name.
+
+        See :func:`rarfile.collect_files` for details.
+
+        .. versionadded:: 5.0
+        """
+        from .collector import collect_files
+        return collect_files(self, members, head_limit=head_limit,
+                             decode_limit=decode_limit, pwd=pwd)
+
     def close(self) -> None:
         """Release open resources."""
 
