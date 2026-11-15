@@ -1,0 +1,3649 @@
+{
+ "ctime0.rar": {
+  "archive": "ctime0.rar",
+  "opened_as": "ctime0.rar",
+  "format": "Rar3Info",
+  "needs_password": false,
+  "entries": [
+   {
+    "idx": 0,
+    "name": "afile.txt",
+    "is_dir": false,
+    "is_symlink": false,
+    "file_size": 0,
+    "compress_size": 0,
+    "crc32": 0,
+    "blake2sp": null,
+    "host_os": 2,
+    "mode": "0o40",
+    "mtime": "2011-05-10T21:28:47.899345100",
+    "ctime": null,
+    "atime": null,
+    "compress_type": 48,
+    "needs_password": true,
+    "encrypted": true,
+    "redir": null,
+    "volume": 0,
+    "content": {
+     "status": "READ",
+     "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+     "nbytes": 0,
+     "detail": ""
+    }
+   }
+  ],
+  "parse_error": null
+ },
+ "ctime1.rar": {
+  "archive": "ctime1.rar",
+  "opened_as": "ctime1.rar",
+  "format": "Rar3Info",
+  "needs_password": false,
+  "entries": [
+   {
+    "idx": 0,
+    "name": "afile.txt",
+    "is_dir": false,
+    "is_symlink": false,
+    "file_size": 0,
+    "compress_size": 0,
+    "crc32": 0,
+    "blake2sp": null,
+    "host_os": 2,
+    "mode": "0o40",
+    "mtime": "2011-05-10T21:28:47.899345100",
+    "ctime": "2011-05-10T21:28:47",
+    "atime": null,
+    "compress_type": 48,
+    "needs_password": true,
+    "encrypted": true,
+    "redir": null,
+    "volume": 0,
+    "content": {
+     "status": "READ",
+     "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+     "nbytes": 0,
+     "detail": ""
+    }
+   }
+  ],
+  "parse_error": null
+ },
+ "ctime2.rar": {
+  "archive": "ctime2.rar",
+  "opened_as": "ctime2.rar",
+  "format": "Rar3Info",
+  "needs_password": false,
+  "entries": [
+   {
+    "idx": 0,
+    "name": "afile.txt",
+    "is_dir": false,
+    "is_symlink": false,
+    "file_size": 0,
+    "compress_size": 0,
+    "crc32": 0,
+    "blake2sp": null,
+    "host_os": 2,
+    "mode": "0o40",
+    "mtime": "2011-05-10T21:28:47.899345100",
+    "ctime": "2011-05-10T21:28:47.897843200",
+    "atime": null,
+    "compress_type": 48,
+    "needs_password": true,
+    "encrypted": true,
+    "redir": null,
+    "volume": 0,
+    "content": {
+     "status": "READ",
+     "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+     "nbytes": 0,
+     "detail": ""
+    }
+   }
+  ],
+  "parse_error": null
+ },
+ "ctime3.rar": {
+  "archive": "ctime3.rar",
+  "opened_as": "ctime3.rar",
+  "format": "Rar3Info",
+  "needs_password": false,
+  "entries": [
+   {
+    "idx": 0,
+    "name": "afile.txt",
+    "is_dir": false,
+    "is_symlink": false,
+    "file_size": 0,
+    "compress_size": 0,
+    "crc32": 0,
+    "blake2sp": null,
+    "host_os": 2,
+    "mode": "0o40",
+    "mtime": "2011-05-10T21:28:47.899345100",
+    "ctime": "2011-05-10T21:28:47.899328",
+    "atime": null,
+    "compress_type": 48,
+    "needs_password": true,
+    "encrypted": true,
+    "redir": null,
+    "volume": 0,
+    "content": {
+     "status": "READ",
+     "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+     "nbytes": 0,
+     "detail": ""
+    }
+   }
+  ],
+  "parse_error": null
+ },
+ "ctime4.rar": {
+  "archive": "ctime4.rar",
+  "opened_as": "ctime4.rar",
+  "format": "Rar3Info",
+  "needs_password": false,
+  "entries": [
+   {
+    "idx": 0,
+    "name": "afile.txt",
+    "is_dir": false,
+    "is_symlink": false,
+    "file_size": 0,
+    "compress_size": 0,
+    "crc32": 0,
+    "blake2sp": null,
+    "host_os": 2,
+    "mode": "0o40",
+    "mtime": "2011-05-10T21:28:47.899345100",
+    "ctime": "2011-05-10T21:28:47.899345100",
+    "atime": null,
+    "compress_type": 48,
+    "needs_password": true,
+    "encrypted": true,
+    "redir": null,
+    "volume": 0,
+    "content": {
+     "status": "READ",
+     "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+     "nbytes": 0,
+     "detail": ""
+    }
+   }
+  ],
+  "parse_error": null
+ },
+ "ctime5.rar": {
+  "archive": "ctime5.rar",
+  "opened_as": "ctime5.rar",
+  "format": "Rar5FileInfo",
+  "needs_password": false,
+  "entries": [
+   {
+    "idx": 0,
+    "name": "timed.txt",
+    "is_dir": false,
+    "is_symlink": false,
+    "file_size": 2,
+    "compress_size": 2,
+    "crc32": "0xea5f4713",
+    "blake2sp": null,
+    "host_os": 3,
+    "mode": "0o100644",
+    "mtime": "2020-07-30T20:26:59.677675904+00:00",
+    "ctime": "2020-07-30T20:28:19.398867888+00:00",
+    "atime": "2020-07-30T20:27:10.121196721+00:00",
+    "compress_type": 48,
+    "needs_password": true,
+    "encrypted": true,
+    "redir": null,
+    "volume": 0,
+    "content": {
+     "status": "READ",
+     "sha256": "fe8edeeb98cc6d3b93cf2d57000254b84bd9eba34b4df7ce4b87db8b937b7703",
+     "nbytes": 2,
+     "detail": ""
+    }
+   }
+  ],
+  "parse_error": null
+ },
+ "rar15-comment-lock.rar": {
+  "archive": "rar15-comment-lock.rar",
+  "opened_as": "rar15-comment-lock.rar",
+  "format": "Rar3Info",
+  "needs_password": false,
+  "entries": [
+   {
+    "idx": 0,
+    "name": "FILE1.TXT",
+    "is_dir": false,
+    "is_symlink": false,
+    "file_size": 7,
+    "compress_size": 7,
+    "crc32": "0xe27f07a9",
+    "blake2sp": null,
+    "host_os": 0,
+    "mode": "0o40",
+    "mtime": null,
+    "ctime": null,
+    "atime": null,
+    "compress_type": 51,
+    "needs_password": true,
+    "encrypted": true,
+    "redir": null,
+    "volume": 0,
+    "content": {
+     "status": "UNREAD",
+     "sha256": null,
+     "nbytes": 0,
+     "detail": "bsdtar: Header CRC error\nbsdtar: FILE1.TXT: Not found in archive\nbsdtar: Error exit delayed from previous errors."
+    }
+   },
+   {
+    "idx": 1,
+    "name": "FILE2.TXT",
+    "is_dir": false,
+    "is_symlink": false,
+    "file_size": 8,
+    "compress_size": 8,
+    "crc32": "0x3c4306f7",
+    "blake2sp": null,
+    "host_os": 0,
+    "mode": "0o40",
+    "mtime": null,
+    "ctime": null,
+    "atime": null,
+    "compress_type": 48,
+    "needs_password": true,
+    "encrypted": true,
+    "redir": null,
+    "volume": 0,
+    "content": {
+     "status": "UNREAD",
+     "sha256": null,
+     "nbytes": 0,
+     "detail": "bsdtar: Header CRC error\nbsdtar: FILE2.TXT: Not found in archive\nbsdtar: Error exit delayed from previous errors."
+    }
+   }
+  ],
+  "parse_error": null
+ },
+ "rar15-comment.rar": {
+  "archive": "rar15-comment.rar",
+  "opened_as": "rar15-comment.rar",
+  "format": "Rar3Info",
+  "needs_password": false,
+  "entries": [
+   {
+    "idx": 0,
+    "name": "FILE1.TXT",
+    "is_dir": false,
+    "is_symlink": false,
+    "file_size": 7,
+    "compress_size": 7,
+    "crc32": "0xe27f07a9",
+    "blake2sp": null,
+    "host_os": 0,
+    "mode": "0o40",
+    "mtime": null,
+    "ctime": null,
+    "atime": null,
+    "compress_type": 51,
+    "needs_password": true,
+    "encrypted": true,
+    "redir": null,
+    "volume": 0,
+    "content": {
+     "status": "UNREAD",
+     "sha256": null,
+     "nbytes": 0,
+     "detail": "bsdtar: Header CRC error\nbsdtar: FILE1.TXT: Not found in archive\nbsdtar: Error exit delayed from previous errors."
+    }
+   },
+   {
+    "idx": 1,
+    "name": "FILE2.TXT",
+    "is_dir": false,
+    "is_symlink": false,
+    "file_size": 8,
+    "compress_size": 8,
+    "crc32": "0x3c4306f7",
+    "blake2sp": null,
+    "host_os": 0,
+    "mode": "0o40",
+    "mtime": null,
+    "ctime": null,
+    "atime": null,
+    "compress_type": 48,
+    "needs_password": true,
+    "encrypted": true,
+    "redir": null,
+    "volume": 0,
+    "content": {
+     "status": "UNREAD",
+     "sha256": null,
+     "nbytes": 0,
+     "detail": "bsdtar: Header CRC error\nbsdtar: FILE2.TXT: Not found in archive\nbsdtar: Error exit delayed from previous errors."
+    }
+   }
+  ],
+  "parse_error": null
+ },
+ "rar2-unix-owner.rar": {
+  "archive": "rar2-unix-owner.rar",
+  "opened_as": "rar2-unix-owner.rar",
+  "format": "Rar3Info",
+  "needs_password": false,
+  "entries": [
+   {
+    "idx": 0,
+    "name": "file.txt",
+    "is_dir": false,
+    "is_symlink": false,
+    "file_size": 4,
+    "compress_size": 17,
+    "crc32": "0x7e3265a8",
+    "blake2sp": null,
+    "host_os": 3,
+    "mode": "0o100664",
+    "mtime": null,
+    "ctime": null,
+    "atime": null,
+    "compress_type": 51,
+    "needs_password": true,
+    "encrypted": true,
+    "redir": null,
+    "volume": 0,
+    "content": {
+     "status": "UNREAD",
+     "sha256": null,
+     "nbytes": 0,
+     "detail": "file.txt: Prefix found: Inappropriate file type or format\nbsdtar: Error exit delayed from previous errors."
+    }
+   }
+  ],
+  "parse_error": null
+ },
+ "rar202-comment-nopsw.rar": {
+  "archive": "rar202-comment-nopsw.rar",
+  "opened_as": "rar202-comment-nopsw.rar",
+  "format": "Rar3Info",
+  "needs_password": false,
+  "entries": [
+   {
+    "idx": 0,
+    "name": "FILE1.TXT",
+    "is_dir": false,
+    "is_symlink": false,
+    "file_size": 7,
+    "compress_size": 7,
+    "crc32": "0x7a197dba",
+    "blake2sp": null,
+    "host_os": 0,
+    "mode": "0o40",
+    "mtime": null,
+    "ctime": null,
+    "atime": null,
+    "compress_type": 48,
+    "needs_password": true,
+    "encrypted": true,
+    "redir": null,
+    "volume": 0,
+    "content": {
+     "status": "UNREAD",
+     "sha256": null,
+     "nbytes": 0,
+     "detail": "bsdtar: Header CRC error\nbsdtar: FILE1.TXT: Not found in archive\nbsdtar: Error exit delayed from previous errors."
+    }
+   },
+   {
+    "idx": 1,
+    "name": "FILE2.TXT",
+    "is_dir": false,
+    "is_symlink": false,
+    "file_size": 7,
+    "compress_size": 7,
+    "crc32": "0x785fc3e3",
+    "blake2sp": null,
+    "host_os": 0,
+    "mode": "0o40",
+    "mtime": null,
+    "ctime": null,
+    "atime": null,
+    "compress_type": 48,
+    "needs_password": true,
+    "encrypted": true,
+    "redir": null,
+    "volume": 0,
+    "content": {
+     "status": "UNREAD",
+     "sha256": null,
+     "nbytes": 0,
+     "detail": "bsdtar: Header CRC error\nbsdtar: FILE2.TXT: Not found in archive\nbsdtar: Error exit delayed from previous errors."
+    }
+   }
+  ],
+  "parse_error": null
+ },
+ "rar202-comment-psw.rar": {
+  "archive": "rar202-comment-psw.rar",
+  "opened_as": "rar202-comment-psw.rar",
+  "format": "Rar3Info",
+  "needs_password": true,
+  "entries": [
+   {
+    "idx": 0,
+    "name": "FILE1.TXT",
+    "is_dir": false,
+    "is_symlink": false,
+    "file_size": 7,
+    "compress_size": 32,
+    "crc32": "0x7a197dba",
+    "blake2sp": null,
+    "host_os": 0,
+    "mode": "0o40",
+    "mtime": null,
+    "ctime": null,
+    "atime": null,
+    "compress_type": 51,
+    "needs_password": true,
+    "encrypted": true,
+    "redir": null,
+    "volume": 0,
+    "content": {
+     "status": "UNREAD",
+     "sha256": null,
+     "nbytes": 0,
+     "detail": "bsdtar: Header CRC error\nbsdtar: FILE1.TXT: Not found in archive\nbsdtar: Error exit delayed from previous errors."
+    }
+   },
+   {
+    "idx": 1,
+    "name": "FILE2.TXT",
+    "is_dir": false,
+    "is_symlink": false,
+    "file_size": 7,
+    "compress_size": 32,
+    "crc32": "0x785fc3e3",
+    "blake2sp": null,
+    "host_os": 0,
+    "mode": "0o40",
+    "mtime": null,
+    "ctime": null,
+    "atime": null,
+    "compress_type": 51,
+    "needs_password": true,
+    "encrypted": true,
+    "redir": null,
+    "volume": 0,
+    "content": {
+     "status": "UNREAD",
+     "sha256": null,
+     "nbytes": 0,
+     "detail": "bsdtar: Header CRC error\nbsdtar: FILE2.TXT: Not found in archive\nbsdtar: Error exit delayed from previous errors."
+    }
+   }
+  ],
+  "parse_error": null
+ },
+ "rar3-comment-hpsw.rar": {
+  "archive": "rar3-comment-hpsw.rar",
+  "opened_as": "rar3-comment-hpsw.rar",
+  "format": "RarFile",
+  "needs_password": true,
+  "entries": [],
+  "parse_error": null
+ },
+ "rar3-comment-plain.rar": {
+  "archive": "rar3-comment-plain.rar",
+  "opened_as": "rar3-comment-plain.rar",
+  "format": "Rar3Info",
+  "needs_password": false,
+  "entries": [
+   {
+    "idx": 0,
+    "name": "file1.txt",
+    "is_dir": false,
+    "is_symlink": false,
+    "file_size": 0,
+    "compress_size": 8,
+    "crc32": 0,
+    "blake2sp": null,
+    "host_os": 3,
+    "mode": "0o100644",
+    "mtime": "2010-11-02T10:03:25",
+    "ctime": null,
+    "atime": null,
+    "compress_type": 51,
+    "needs_password": true,
+    "encrypted": true,
+    "redir": null,
+    "volume": 0,
+    "content": {
+     "status": "UNREAD",
+     "sha256": null,
+     "nbytes": 0,
+     "detail": "bsdtar: RAR solid archive support unavailable.\nbsdtar: Error exit delayed from previous errors."
+    }
+   },
+   {
+    "idx": 1,
+    "name": "file2.txt",
+    "is_dir": false,
+    "is_symlink": false,
+    "file_size": 0,
+    "compress_size": 8,
+    "crc32": 0,
+    "blake2sp": null,
+    "host_os": 3,
+    "mode": "0o100644",
+    "mtime": "2010-11-02T10:03:25",
+    "ctime": null,
+    "atime": null,
+    "compress_type": 51,
+    "needs_password": true,
+    "encrypted": true,
+    "redir": null,
+    "volume": 0,
+    "content": {
+     "status": "UNREAD",
+     "sha256": null,
+     "nbytes": 0,
+     "detail": "bsdtar: RAR solid archive support unavailable.\nbsdtar: file2.txt: Not found in archive\nbsdtar: Error exit delayed from previous errors."
+    }
+   }
+  ],
+  "parse_error": null
+ },
+ "rar3-comment-psw.rar": {
+  "archive": "rar3-comment-psw.rar",
+  "opened_as": "rar3-comment-psw.rar",
+  "format": "Rar3Info",
+  "needs_password": true,
+  "entries": [
+   {
+    "idx": 0,
+    "name": "file1.txt",
+    "is_dir": false,
+    "is_symlink": false,
+    "file_size": 0,
+    "compress_size": 16,
+    "crc32": 0,
+    "blake2sp": null,
+    "host_os": 3,
+    "mode": "0o100644",
+    "mtime": "2010-11-02T10:03:25",
+    "ctime": null,
+    "atime": null,
+    "compress_type": 51,
+    "needs_password": true,
+    "encrypted": true,
+    "redir": null,
+    "volume": 0,
+    "content": {
+     "status": "UNREAD",
+     "sha256": null,
+     "nbytes": 0,
+     "detail": "bsdtar: RAR solid archive support unavailable.\nbsdtar: Error exit delayed from previous errors."
+    }
+   },
+   {
+    "idx": 1,
+    "name": "file2.txt",
+    "is_dir": false,
+    "is_symlink": false,
+    "file_size": 0,
+    "compress_size": 16,
+    "crc32": 0,
+    "blake2sp": null,
+    "host_os": 3,
+    "mode": "0o100644",
+    "mtime": "2010-11-02T10:03:25",
+    "ctime": null,
+    "atime": null,
+    "compress_type": 51,
+    "needs_password": true,
+    "encrypted": true,
+    "redir": null,
+    "volume": 0,
+    "content": {
+     "status": "UNREAD",
+     "sha256": null,
+     "nbytes": 0,
+     "detail": "bsdtar: RAR solid archive support unavailable.\nbsdtar: file2.txt: Not found in archive\nbsdtar: Error exit delayed from previous errors."
+    }
+   }
+  ],
+  "parse_error": null
+ },
+ "rar3-old.r00": {
+  "archive": "rar3-old.r00",
+  "opened_as": "rar3-old.rar",
+  "format": "Rar3Info",
+  "needs_password": false,
+  "entries": [],
+  "parse_error": null
+ },
+ "rar3-old.r01": {
+  "archive": "rar3-old.r01",
+  "opened_as": "rar3-old.rar",
+  "format": "Rar3Info",
+  "needs_password": false,
+  "entries": [
+   {
+    "idx": 1,
+    "name": "vols/smallfile.txt",
+    "is_dir": false,
+    "is_symlink": false,
+    "file_size": 2050,
+    "compress_size": 2050,
+    "crc32": "0xd08a1f86",
+    "blake2sp": null,
+    "host_os": 3,
+    "mode": "0o100664",
+    "mtime": "2016-05-24T11:42:43",
+    "ctime": null,
+    "atime": null,
+    "compress_type": 48,
+    "needs_password": true,
+    "encrypted": true,
+    "redir": null,
+    "volume": 2,
+    "content": {
+     "status": "UNREAD",
+     "sha256": null,
+     "nbytes": 0,
+     "detail": "bsdtar: vols/smallfile.txt: Not found in archive\nbsdtar: Error exit delayed from previous errors."
+    }
+   }
+  ],
+  "parse_error": null
+ },
+ "rar3-old.rar": {
+  "archive": "rar3-old.rar",
+  "opened_as": "rar3-old.rar",
+  "format": "Rar3Info",
+  "needs_password": false,
+  "entries": [
+   {
+    "idx": 0,
+    "name": "vols/bigfile.txt",
+    "is_dir": false,
+    "is_symlink": false,
+    "file_size": 205000,
+    "compress_size": 205000,
+    "crc32": "0x509ad74c",
+    "blake2sp": null,
+    "host_os": 3,
+    "mode": "0o100664",
+    "mtime": "2016-05-24T11:42:37",
+    "ctime": null,
+    "atime": null,
+    "compress_type": 48,
+    "needs_password": true,
+    "encrypted": true,
+    "redir": null,
+    "volume": 0,
+    "content": {
+     "status": "UNREAD",
+     "sha256": null,
+     "nbytes": 0,
+     "detail": "vols/bigfile.txt: Truncated RAR file data: Inappropriate file type or format\nbsdtar: Error exit delayed from previous errors."
+    }
+   },
+   {
+    "idx": 1,
+    "name": "vols/smallfile.txt",
+    "is_dir": false,
+    "is_symlink": false,
+    "file_size": 2050,
+    "compress_size": 2050,
+    "crc32": "0xd08a1f86",
+    "blake2sp": null,
+    "host_os": 3,
+    "mode": "0o100664",
+    "mtime": "2016-05-24T11:42:43",
+    "ctime": null,
+    "atime": null,
+    "compress_type": 48,
+    "needs_password": true,
+    "encrypted": true,
+    "redir": null,
+    "volume": 2,
+    "content": {
+     "status": "UNREAD",
+     "sha256": null,
+     "nbytes": 0,
+     "detail": "bsdtar: vols/smallfile.txt: Not found in archive\nbsdtar: Error exit delayed from previous errors."
+    }
+   }
+  ],
+  "parse_error": null
+ },
+ "rar3-owner.rar": {
+  "archive": "rar3-owner.rar",
+  "opened_as": "rar3-owner.rar",
+  "format": "Rar3Info",
+  "needs_password": false,
+  "entries": [
+   {
+    "idx": 0,
+    "name": "owner1.txt",
+    "is_dir": false,
+    "is_symlink": false,
+    "file_size": 2,
+    "compress_size": 2,
+    "crc32": "0x6751fc53",
+    "blake2sp": null,
+    "host_os": 3,
+    "mode": "0o100644",
+    "mtime": "2020-07-30T22:48:11.364898100",
+    "ctime": null,
+    "atime": null,
+    "compress_type": 48,
+    "needs_password": true,
+    "encrypted": true,
+    "redir": null,
+    "volume": 0,
+    "content": {
+     "status": "UNREAD",
+     "sha256": null,
+     "nbytes": 0,
+     "detail": "bsdtar: RAR solid archive support unavailable.\nbsdtar: Error exit delayed from previous errors."
+    }
+   },
+   {
+    "idx": 1,
+    "name": "owner2.txt",
+    "is_dir": false,
+    "is_symlink": false,
+    "file_size": 2,
+    "compress_size": 2,
+    "crc32": "0x4c7caf90",
+    "blake2sp": null,
+    "host_os": 3,
+    "mode": "0o100644",
+    "mtime": "2020-07-30T22:48:16.347603",
+    "ctime": null,
+    "atime": null,
+    "compress_type": 48,
+    "needs_password": true,
+    "encrypted": true,
+    "redir": null,
+    "volume": 0,
+    "content": {
+     "status": "UNREAD",
+     "sha256": null,
+     "nbytes": 0,
+     "detail": "bsdtar: RAR solid archive support unavailable.\nbsdtar: owner2.txt: Not found in archive\nbsdtar: Error exit delayed from previous errors."
+    }
+   }
+  ],
+  "parse_error": null
+ },
+ "rar3-readonly-unix.rar": {
+  "archive": "rar3-readonly-unix.rar",
+  "opened_as": "rar3-readonly-unix.rar",
+  "format": "Rar3Info",
+  "needs_password": false,
+  "entries": [
+   {
+    "idx": 0,
+    "name": "ro_dir/ro_file.txt",
+    "is_dir": false,
+    "is_symlink": false,
+    "file_size": 9,
+    "compress_size": 9,
+    "crc32": "0x818d2276",
+    "blake2sp": null,
+    "host_os": 3,
+    "mode": "0o100444",
+    "mtime": "2020-07-26T22:11:42.312616300",
+    "ctime": null,
+    "atime": null,
+    "compress_type": 48,
+    "needs_password": true,
+    "encrypted": true,
+    "redir": null,
+    "volume": 0,
+    "content": {
+     "status": "READ",
+     "sha256": "e8556b2a4c237957175ab9e9f63a67b39feb54b8d33b2b27f7e3c9af0d323900",
+     "nbytes": 9,
+     "detail": ""
+    }
+   },
+   {
+    "idx": 1,
+    "name": "ro_dir/",
+    "is_dir": true,
+    "is_symlink": false,
+    "file_size": 0,
+    "compress_size": 0,
+    "crc32": 0,
+    "blake2sp": null,
+    "host_os": 3,
+    "mode": "0o40555",
+    "mtime": "2020-07-26T22:11:42.328617",
+    "ctime": null,
+    "atime": null,
+    "compress_type": 48,
+    "needs_password": true,
+    "encrypted": true,
+    "redir": null,
+    "volume": 0,
+    "content": {
+     "status": "DIR",
+     "reason": "directory, no bytes"
+    }
+   }
+  ],
+  "parse_error": null
+ },
+ "rar3-readonly-win.rar": {
+  "archive": "rar3-readonly-win.rar",
+  "opened_as": "rar3-readonly-win.rar",
+  "format": "Rar3Info",
+  "needs_password": false,
+  "entries": [
+   {
+    "idx": 0,
+    "name": "ro_dir/ro_file.txt",
+    "is_dir": false,
+    "is_symlink": false,
+    "file_size": 9,
+    "compress_size": 9,
+    "crc32": "0x818d2276",
+    "blake2sp": null,
+    "host_os": 2,
+    "mode": "0o41",
+    "mtime": "2020-07-26T22:11:42.312616300",
+    "ctime": null,
+    "atime": null,
+    "compress_type": 48,
+    "needs_password": true,
+    "encrypted": true,
+    "redir": null,
+    "volume": 0,
+    "content": {
+     "status": "READ",
+     "sha256": "e8556b2a4c237957175ab9e9f63a67b39feb54b8d33b2b27f7e3c9af0d323900",
+     "nbytes": 9,
+     "detail": ""
+    }
+   },
+   {
+    "idx": 1,
+    "name": "ro_dir/",
+    "is_dir": true,
+    "is_symlink": false,
+    "file_size": 0,
+    "compress_size": 0,
+    "crc32": 0,
+    "blake2sp": null,
+    "host_os": 2,
+    "mode": "0o21",
+    "mtime": "2020-07-26T22:11:42.328617",
+    "ctime": null,
+    "atime": null,
+    "compress_type": 48,
+    "needs_password": true,
+    "encrypted": true,
+    "redir": null,
+    "volume": 0,
+    "content": {
+     "status": "DIR",
+     "reason": "directory, no bytes"
+    }
+   }
+  ],
+  "parse_error": null
+ },
+ "rar3-seektest.sfx": {
+  "archive": "rar3-seektest.sfx",
+  "opened_as": "rar3-seektest.sfx",
+  "format": "Rar3Info",
+  "needs_password": false,
+  "entries": [
+   {
+    "idx": 0,
+    "name": "stest1.txt",
+    "is_dir": false,
+    "is_symlink": false,
+    "file_size": 2048,
+    "compress_size": 90,
+    "crc32": "0xc5b7e6a2",
+    "blake2sp": null,
+    "host_os": 3,
+    "mode": "0o100644",
+    "mtime": "2011-06-12T12:53:33",
+    "ctime": null,
+    "atime": null,
+    "compress_type": 53,
+    "needs_password": true,
+    "encrypted": true,
+    "redir": null,
+    "volume": 0,
+    "content": {
+     "status": "UNREAD",
+     "sha256": null,
+     "nbytes": 0,
+     "detail": "bsdtar: stest1.txt: Not found in archive\nbsdtar: Error exit delayed from previous errors."
+    }
+   },
+   {
+    "idx": 1,
+    "name": "stest2.txt",
+    "is_dir": false,
+    "is_symlink": false,
+    "file_size": 2048,
+    "compress_size": 2048,
+    "crc32": "0xc5b7e6a2",
+    "blake2sp": null,
+    "host_os": 3,
+    "mode": "0o100644",
+    "mtime": "2011-06-12T12:53:33",
+    "ctime": null,
+    "atime": null,
+    "compress_type": 48,
+    "needs_password": true,
+    "encrypted": true,
+    "redir": null,
+    "volume": 0,
+    "content": {
+     "status": "UNREAD",
+     "sha256": null,
+     "nbytes": 0,
+     "detail": "bsdtar: stest2.txt: Not found in archive\nbsdtar: Error exit delayed from previous errors."
+    }
+   }
+  ],
+  "parse_error": null
+ },
+ "rar3-solid.rar": {
+  "archive": "rar3-solid.rar",
+  "opened_as": "rar3-solid.rar",
+  "format": "Rar3Info",
+  "needs_password": false,
+  "entries": [
+   {
+    "idx": 0,
+    "name": "stest1.txt",
+    "is_dir": false,
+    "is_symlink": false,
+    "file_size": 2048,
+    "compress_size": 92,
+    "crc32": "0xc5b7e6a2",
+    "blake2sp": null,
+    "host_os": 3,
+    "mode": "0o100644",
+    "mtime": "2011-06-12T12:53:33",
+    "ctime": null,
+    "atime": null,
+    "compress_type": 51,
+    "needs_password": true,
+    "encrypted": true,
+    "redir": null,
+    "volume": 0,
+    "content": {
+     "status": "UNREAD",
+     "sha256": null,
+     "nbytes": 0,
+     "detail": "bsdtar: RAR solid archive support unavailable.\nbsdtar: Error exit delayed from previous errors."
+    }
+   },
+   {
+    "idx": 1,
+    "name": "stest2.txt",
+    "is_dir": false,
+    "is_symlink": false,
+    "file_size": 2048,
+    "compress_size": 14,
+    "crc32": "0xc5b7e6a2",
+    "blake2sp": null,
+    "host_os": 3,
+    "mode": "0o100644",
+    "mtime": "2011-06-12T12:53:33",
+    "ctime": null,
+    "atime": null,
+    "compress_type": 51,
+    "needs_password": true,
+    "encrypted": true,
+    "redir": null,
+    "volume": 0,
+    "content": {
+     "status": "UNREAD",
+     "sha256": null,
+     "nbytes": 0,
+     "detail": "bsdtar: RAR solid archive support unavailable.\nbsdtar: stest2.txt: Not found in archive\nbsdtar: Error exit delayed from previous errors."
+    }
+   }
+  ],
+  "parse_error": null
+ },
+ "rar3-subdirs.rar": {
+  "archive": "rar3-subdirs.rar",
+  "opened_as": "rar3-subdirs.rar",
+  "format": "Rar3Info",
+  "needs_password": false,
+  "entries": [
+   {
+    "idx": 0,
+    "name": "sub/dir2/file2.txt",
+    "is_dir": false,
+    "is_symlink": false,
+    "file_size": 6,
+    "compress_size": 6,
+    "crc32": "0xc904a4c7",
+    "blake2sp": null,
+    "host_os": 3,
+    "mode": "0o100644",
+    "mtime": "2020-07-20T21:01:44.319218800",
+    "ctime": null,
+    "atime": null,
+    "compress_type": 48,
+    "needs_password": true,
+    "encrypted": true,
+    "redir": null,
+    "volume": 0,
+    "content": {
+     "status": "READ",
+     "sha256": "67ee5478eaadb034ba59944eb977797b49ca6aa8d3574587f36ebcbeeb65f70e",
+     "nbytes": 6,
+     "detail": ""
+    }
+   },
+   {
+    "idx": 1,
+    "name": "sub/with space/long fn.txt",
+    "is_dir": false,
+    "is_symlink": false,
+    "file_size": 8,
+    "compress_size": 8,
+    "crc32": "0x71b7247d",
+    "blake2sp": null,
+    "host_os": 3,
+    "mode": "0o100644",
+    "mtime": "2020-07-20T21:02:17.499892",
+    "ctime": null,
+    "atime": null,
+    "compress_type": 48,
+    "needs_password": true,
+    "encrypted": true,
+    "redir": null,
+    "volume": 0,
+    "content": {
+     "status": "READ",
+     "sha256": "e708f3c52269d19a8ac86b5934ff9cf2a80c696cb04a66a435e96f9ca44f7c18",
+     "nbytes": 8,
+     "detail": ""
+    }
+   },
+   {
+    "idx": 2,
+    "name": "sub/üȵĩöḋè/file.txt",
+    "is_dir": false,
+    "is_symlink": false,
+    "file_size": 5,
+    "compress_size": 5,
+    "crc32": "0x2fec89c1",
+    "blake2sp": null,
+    "host_os": 3,
+    "mode": "0o100644",
+    "mtime": "2020-07-20T21:07:00.141758600",
+    "ctime": null,
+    "atime": null,
+    "compress_type": 48,
+    "needs_password": true,
+    "encrypted": true,
+    "redir": null,
+    "volume": 0,
+    "content": {
+     "status": "UNREAD",
+     "sha256": null,
+     "nbytes": 0,
+     "detail": "bsdtar: sub/üȵĩöḋè/file.txt: Not found in archive\nbsdtar: Error exit delayed from previous errors."
+    }
+   },
+   {
+    "idx": 3,
+    "name": "sub/dir1/file1.txt",
+    "is_dir": false,
+    "is_symlink": false,
+    "file_size": 6,
+    "compress_size": 6,
+    "crc32": "0xe229f704",
+    "blake2sp": null,
+    "host_os": 3,
+    "mode": "0o100644",
+    "mtime": "2020-07-20T21:01:33.875008200",
+    "ctime": null,
+    "atime": null,
+    "compress_type": 48,
+    "needs_password": true,
+    "encrypted": true,
+    "redir": null,
+    "volume": 0,
+    "content": {
+     "status": "READ",
+     "sha256": "ecdc5536f73bdae8816f0ea40726ef5e9b810d914493075903bb90623d97b1d8",
+     "nbytes": 6,
+     "detail": ""
+    }
+   },
+   {
+    "idx": 4,
+    "name": "sub/dir2/",
+    "is_dir": true,
+    "is_symlink": false,
+    "file_size": 0,
+    "compress_size": 0,
+    "crc32": 0,
+    "blake2sp": null,
+    "host_os": 3,
+    "mode": "0o40755",
+    "mtime": "2020-07-20T21:01:44.335219100",
+    "ctime": null,
+    "atime": null,
+    "compress_type": 48,
+    "needs_password": true,
+    "encrypted": true,
+    "redir": null,
+    "volume": 0,
+    "content": {
+     "status": "DIR",
+     "reason": "directory, no bytes"
+    }
+   },
+   {
+    "idx": 5,
+    "name": "sub/with space/",
+    "is_dir": true,
+    "is_symlink": false,
+    "file_size": 0,
+    "compress_size": 0,
+    "crc32": 0,
+    "blake2sp": null,
+    "host_os": 3,
+    "mode": "0o40755",
+    "mtime": "2020-07-20T21:02:17.511892300",
+    "ctime": null,
+    "atime": null,
+    "compress_type": 48,
+    "needs_password": true,
+    "encrypted": true,
+    "redir": null,
+    "volume": 0,
+    "content": {
+     "status": "DIR",
+     "reason": "directory, no bytes"
+    }
+   },
+   {
+    "idx": 6,
+    "name": "sub/empty/",
+    "is_dir": true,
+    "is_symlink": false,
+    "file_size": 0,
+    "compress_size": 0,
+    "crc32": 0,
+    "blake2sp": null,
+    "host_os": 3,
+    "mode": "0o40755",
+    "mtime": "2020-07-20T21:01:09.182513600",
+    "ctime": null,
+    "atime": null,
+    "compress_type": 48,
+    "needs_password": true,
+    "encrypted": true,
+    "redir": null,
+    "volume": 0,
+    "content": {
+     "status": "DIR",
+     "reason": "directory, no bytes"
+    }
+   },
+   {
+    "idx": 7,
+    "name": "sub/üȵĩöḋè/",
+    "is_dir": true,
+    "is_symlink": false,
+    "file_size": 0,
+    "compress_size": 0,
+    "crc32": 0,
+    "blake2sp": null,
+    "host_os": 3,
+    "mode": "0o40755",
+    "mtime": "2020-07-20T21:07:00.153758800",
+    "ctime": null,
+    "atime": null,
+    "compress_type": 48,
+    "needs_password": true,
+    "encrypted": true,
+    "redir": null,
+    "volume": 0,
+    "content": {
+     "status": "DIR",
+     "reason": "directory, no bytes"
+    }
+   },
+   {
+    "idx": 8,
+    "name": "sub/dir1/",
+    "is_dir": true,
+    "is_symlink": false,
+    "file_size": 0,
+    "compress_size": 0,
+    "crc32": 0,
+    "blake2sp": null,
+    "host_os": 3,
+    "mode": "0o40755",
+    "mtime": "2020-07-20T21:01:33.887008500",
+    "ctime": null,
+    "atime": null,
+    "compress_type": 48,
+    "needs_password": true,
+    "encrypted": true,
+    "redir": null,
+    "volume": 0,
+    "content": {
+     "status": "DIR",
+     "reason": "directory, no bytes"
+    }
+   },
+   {
+    "idx": 9,
+    "name": "sub/",
+    "is_dir": true,
+    "is_symlink": false,
+    "file_size": 0,
+    "compress_size": 0,
+    "crc32": 0,
+    "blake2sp": null,
+    "host_os": 3,
+    "mode": "0o40755",
+    "mtime": "2020-07-20T21:06:42.241383800",
+    "ctime": null,
+    "atime": null,
+    "compress_type": 48,
+    "needs_password": true,
+    "encrypted": true,
+    "redir": null,
+    "volume": 0,
+    "content": {
+     "status": "DIR",
+     "reason": "directory, no bytes"
+    }
+   }
+  ],
+  "parse_error": null
+ },
+ "rar3-symlink-unix.rar": {
+  "archive": "rar3-symlink-unix.rar",
+  "opened_as": "rar3-symlink-unix.rar",
+  "format": "Rar3Info",
+  "needs_password": false,
+  "entries": [
+   {
+    "idx": 0,
+    "name": "data_link",
+    "is_dir": false,
+    "is_symlink": true,
+    "file_size": 8,
+    "compress_size": 8,
+    "crc32": "0x8b387909",
+    "blake2sp": null,
+    "host_os": 3,
+    "mode": "0o120777",
+    "mtime": "2020-07-26T23:13:58.125453100",
+    "ctime": null,
+    "atime": null,
+    "compress_type": 48,
+    "needs_password": true,
+    "encrypted": true,
+    "redir": null,
+    "volume": 0,
+    "content": {
+     "status": "READ",
+     "sha256": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+     "nbytes": 8,
+     "detail": ""
+    }
+   },
+   {
+    "idx": 1,
+    "name": "data.txt",
+    "is_dir": false,
+    "is_symlink": false,
+    "file_size": 5,
+    "compress_size": 5,
+    "crc32": "0xe6c1c582",
+    "blake2sp": null,
+    "host_os": 3,
+    "mode": "0o100664",
+    "mtime": "2020-07-26T23:13:33.568312800",
+    "ctime": null,
+    "atime": null,
+    "compress_type": 48,
+    "needs_password": true,
+    "encrypted": true,
+    "redir": null,
+    "volume": 0,
+    "content": {
+     "status": "READ",
+     "sha256": "6667b2d1aab6a00caa5aee5af8ad9f1465e567abf1c209d15727d57b3e8f6e5f",
+     "nbytes": 5,
+     "detail": ""
+    }
+   },
+   {
+    "idx": 2,
+    "name": "random_link",
+    "is_dir": false,
+    "is_symlink": true,
+    "file_size": 12,
+    "compress_size": 12,
+    "crc32": "0xcfb67605",
+    "blake2sp": null,
+    "host_os": 3,
+    "mode": "0o120777",
+    "mtime": "2020-07-26T23:32:08.896575800",
+    "ctime": null,
+    "atime": null,
+    "compress_type": 48,
+    "needs_password": true,
+    "encrypted": true,
+    "redir": null,
+    "volume": 0,
+    "content": {
+     "status": "READ",
+     "sha256": "15ec7bf0b50732b49f8228e07d24365338f9e3ab994b00af08e5a3bffe55fd8b",
+     "nbytes": 12,
+     "detail": ""
+    }
+   }
+  ],
+  "parse_error": null
+ },
+ "rar3-versions.rar": {
+  "archive": "rar3-versions.rar",
+  "opened_as": "rar3-versions.rar",
+  "format": "Rar3Info",
+  "needs_password": false,
+  "entries": [
+   {
+    "idx": 0,
+    "name": "versioned.txt",
+    "is_dir": false,
+    "is_symlink": false,
+    "file_size": 2,
+    "compress_size": 2,
+    "crc32": "0x55679ed1",
+    "blake2sp": null,
+    "host_os": 3,
+    "mode": "0o100644",
+    "mtime": "2020-07-30T22:52:46.436647500",
+    "ctime": null,
+    "atime": null,
+    "compress_type": 48,
+    "needs_password": true,
+    "encrypted": true,
+    "redir": null,
+    "volume": 0,
+    "content": {
+     "status": "READ",
+     "sha256": "1121cfccd5913f0a63fec40a6ffd44ea64f9dc135c66634ba001d10bcf4302a2",
+     "nbytes": 2,
+     "detail": ""
+    }
+   }
+  ],
+  "parse_error": null
+ },
+ "rar3-vols.part1.rar": {
+  "archive": "rar3-vols.part1.rar",
+  "opened_as": "rar3-vols.part1.rar",
+  "format": "Rar3Info",
+  "needs_password": false,
+  "entries": [
+   {
+    "idx": 0,
+    "name": "vols/bigfile.txt",
+    "is_dir": false,
+    "is_symlink": false,
+    "file_size": 205000,
+    "compress_size": 205000,
+    "crc32": "0x509ad74c",
+    "blake2sp": null,
+    "host_os": 3,
+    "mode": "0o100664",
+    "mtime": "2016-05-24T11:42:37",
+    "ctime": null,
+    "atime": null,
+    "compress_type": 48,
+    "needs_password": true,
+    "encrypted": true,
+    "redir": null,
+    "volume": 0,
+    "content": {
+     "status": "UNREAD",
+     "sha256": null,
+     "nbytes": 0,
+     "detail": "vols/bigfile.txt: Truncated RAR file data: Inappropriate file type or format\nbsdtar: Error exit delayed from previous errors."
+    }
+   },
+   {
+    "idx": 1,
+    "name": "vols/smallfile.txt",
+    "is_dir": false,
+    "is_symlink": false,
+    "file_size": 2050,
+    "compress_size": 2050,
+    "crc32": "0xd08a1f86",
+    "blake2sp": null,
+    "host_os": 3,
+    "mode": "0o100664",
+    "mtime": "2016-05-24T11:42:43",
+    "ctime": null,
+    "atime": null,
+    "compress_type": 48,
+    "needs_password": true,
+    "encrypted": true,
+    "redir": null,
+    "volume": 2,
+    "content": {
+     "status": "UNREAD",
+     "sha256": null,
+     "nbytes": 0,
+     "detail": "bsdtar: vols/smallfile.txt: Not found in archive\nbsdtar: Error exit delayed from previous errors."
+    }
+   }
+  ],
+  "parse_error": null
+ },
+ "rar3-vols.part2.rar": {
+  "archive": "rar3-vols.part2.rar",
+  "opened_as": "rar3-vols.part1.rar",
+  "format": "Rar3Info",
+  "needs_password": false,
+  "entries": [],
+  "parse_error": null
+ },
+ "rar3-vols.part3.rar": {
+  "archive": "rar3-vols.part3.rar",
+  "opened_as": "rar3-vols.part1.rar",
+  "format": "Rar3Info",
+  "needs_password": false,
+  "entries": [
+   {
+    "idx": 1,
+    "name": "vols/smallfile.txt",
+    "is_dir": false,
+    "is_symlink": false,
+    "file_size": 2050,
+    "compress_size": 2050,
+    "crc32": "0xd08a1f86",
+    "blake2sp": null,
+    "host_os": 3,
+    "mode": "0o100664",
+    "mtime": "2016-05-24T11:42:43",
+    "ctime": null,
+    "atime": null,
+    "compress_type": 48,
+    "needs_password": true,
+    "encrypted": true,
+    "redir": null,
+    "volume": 2,
+    "content": {
+     "status": "UNREAD",
+     "sha256": null,
+     "nbytes": 0,
+     "detail": "bsdtar: vols/smallfile.txt: Not found in archive\nbsdtar: Error exit delayed from previous errors."
+    }
+   }
+  ],
+  "parse_error": null
+ },
+ "rar5-blake.rar": {
+  "archive": "rar5-blake.rar",
+  "opened_as": "rar5-blake.rar",
+  "format": "Rar5FileInfo",
+  "needs_password": false,
+  "entries": [
+   {
+    "idx": 0,
+    "name": "stest1.txt",
+    "is_dir": false,
+    "is_symlink": false,
+    "file_size": 2048,
+    "compress_size": 55,
+    "crc32": 0,
+    "blake2sp": "7cd5c1ac31f0cf58844a57fb9072c44768dbea1456e37c21e491f4853982ede0",
+    "host_os": 3,
+    "mode": "0o100644",
+    "mtime": "2011-06-12T09:53:33+00:00",
+    "ctime": null,
+    "atime": null,
+    "compress_type": 51,
+    "needs_password": true,
+    "encrypted": true,
+    "redir": null,
+    "volume": 0,
+    "content": {
+     "status": "READ",
+     "sha256": "2eaebb4c18cdef7f20089f8a2fa3475bc59c2a193f66e2f1513609a4bef13e22",
+     "nbytes": 2048,
+     "detail": ""
+    }
+   },
+   {
+    "idx": 1,
+    "name": "stest2.txt",
+    "is_dir": false,
+    "is_symlink": false,
+    "file_size": 2048,
+    "compress_size": 2048,
+    "crc32": 0,
+    "blake2sp": "7cd5c1ac31f0cf58844a57fb9072c44768dbea1456e37c21e491f4853982ede0",
+    "host_os": 3,
+    "mode": "0o100644",
+    "mtime": "2011-06-12T09:53:33+00:00",
+    "ctime": "2016-05-22T09:12:33+00:00",
+    "atime": "2016-05-22T09:12:37+00:00",
+    "compress_type": 48,
+    "needs_password": true,
+    "encrypted": true,
+    "redir": null,
+    "volume": 0,
+    "content": {
+     "status": "READ",
+     "sha256": "2eaebb4c18cdef7f20089f8a2fa3475bc59c2a193f66e2f1513609a4bef13e22",
+     "nbytes": 2048,
+     "detail": ""
+    }
+   }
+  ],
+  "parse_error": null
+ },
+ "rar5-crc.rar": {
+  "archive": "rar5-crc.rar",
+  "opened_as": "rar5-crc.rar",
+  "format": "Rar5FileInfo",
+  "needs_password": false,
+  "entries": [
+   {
+    "idx": 0,
+    "name": "stest1.txt",
+    "is_dir": false,
+    "is_symlink": false,
+    "file_size": 2048,
+    "compress_size": 55,
+    "crc32": "0xc5b7e6a2",
+    "blake2sp": null,
+    "host_os": 3,
+    "mode": "0o100644",
+    "mtime": "2011-06-12T09:53:33+00:00",
+    "ctime": null,
+    "atime": null,
+    "compress_type": 51,
+    "needs_password": true,
+    "encrypted": true,
+    "redir": null,
+    "volume": 0,
+    "content": {
+     "status": "READ",
+     "sha256": "2eaebb4c18cdef7f20089f8a2fa3475bc59c2a193f66e2f1513609a4bef13e22",
+     "nbytes": 2048,
+     "detail": ""
+    }
+   },
+   {
+    "idx": 1,
+    "name": "stest2.txt",
+    "is_dir": false,
+    "is_symlink": false,
+    "file_size": 2048,
+    "compress_size": 2048,
+    "crc32": "0xc5b7e6a2",
+    "blake2sp": null,
+    "host_os": 3,
+    "mode": "0o100644",
+    "mtime": "2011-06-12T09:53:33+00:00",
+    "ctime": "2016-05-22T09:12:33+00:00",
+    "atime": "2016-05-22T09:12:37+00:00",
+    "compress_type": 48,
+    "needs_password": true,
+    "encrypted": true,
+    "redir": null,
+    "volume": 0,
+    "content": {
+     "status": "READ",
+     "sha256": "2eaebb4c18cdef7f20089f8a2fa3475bc59c2a193f66e2f1513609a4bef13e22",
+     "nbytes": 2048,
+     "detail": ""
+    }
+   }
+  ],
+  "parse_error": null
+ },
+ "rar5-crc.sfx": {
+  "archive": "rar5-crc.sfx",
+  "opened_as": "rar5-crc.sfx",
+  "format": "Rar5FileInfo",
+  "needs_password": false,
+  "entries": [
+   {
+    "idx": 0,
+    "name": "stest1.txt",
+    "is_dir": false,
+    "is_symlink": false,
+    "file_size": 2048,
+    "compress_size": 55,
+    "crc32": "0xc5b7e6a2",
+    "blake2sp": null,
+    "host_os": 3,
+    "mode": "0o100644",
+    "mtime": "2011-06-12T09:53:33+00:00",
+    "ctime": null,
+    "atime": null,
+    "compress_type": 51,
+    "needs_password": true,
+    "encrypted": true,
+    "redir": null,
+    "volume": 0,
+    "content": {
+     "status": "UNREAD",
+     "sha256": null,
+     "nbytes": 0,
+     "detail": "bsdtar: stest1.txt: Not found in archive\nbsdtar: Error exit delayed from previous errors."
+    }
+   },
+   {
+    "idx": 1,
+    "name": "stest2.txt",
+    "is_dir": false,
+    "is_symlink": false,
+    "file_size": 2048,
+    "compress_size": 2048,
+    "crc32": "0xc5b7e6a2",
+    "blake2sp": null,
+    "host_os": 3,
+    "mode": "0o100644",
+    "mtime": "2011-06-12T09:53:33+00:00",
+    "ctime": "2016-05-22T09:12:33+00:00",
+    "atime": "2016-05-22T09:12:37+00:00",
+    "compress_type": 48,
+    "needs_password": true,
+    "encrypted": true,
+    "redir": null,
+    "volume": 0,
+    "content": {
+     "status": "UNREAD",
+     "sha256": null,
+     "nbytes": 0,
+     "detail": "bsdtar: stest2.txt: Not found in archive\nbsdtar: Error exit delayed from previous errors."
+    }
+   }
+  ],
+  "parse_error": null
+ },
+ "rar5-dups.rar": {
+  "archive": "rar5-dups.rar",
+  "opened_as": "rar5-dups.rar",
+  "format": "Rar5FileInfo",
+  "needs_password": false,
+  "entries": [
+   {
+    "idx": 0,
+    "name": "stest1.txt",
+    "is_dir": false,
+    "is_symlink": false,
+    "file_size": 2048,
+    "compress_size": 55,
+    "crc32": "0xc5b7e6a2",
+    "blake2sp": null,
+    "host_os": 2,
+    "mode": "0o40",
+    "mtime": "2011-06-12T09:53:33+00:00",
+    "ctime": null,
+    "atime": null,
+    "compress_type": 51,
+    "needs_password": true,
+    "encrypted": true,
+    "redir": null,
+    "volume": 0,
+    "content": {
+     "status": "READ",
+     "sha256": "2eaebb4c18cdef7f20089f8a2fa3475bc59c2a193f66e2f1513609a4bef13e22",
+     "nbytes": 2048,
+     "detail": ""
+    }
+   },
+   {
+    "idx": 1,
+    "name": "stest2.txt",
+    "is_dir": false,
+    "is_symlink": false,
+    "file_size": 2048,
+    "compress_size": 0,
+    "crc32": 0,
+    "blake2sp": null,
+    "host_os": 2,
+    "mode": "0o40",
+    "mtime": "2011-06-12T09:53:33+00:00",
+    "ctime": null,
+    "atime": null,
+    "compress_type": 48,
+    "needs_password": true,
+    "encrypted": true,
+    "redir": {
+     "type": 5,
+     "flags": 0,
+     "target": "stest1.txt"
+    },
+    "volume": 0,
+    "content": {
+     "status": "ALIAS",
+     "reason": "hardlink/file-copy",
+     "target": "stest1.txt"
+    }
+   },
+   {
+    "idx": 2,
+    "name": "stest3.txt",
+    "is_dir": false,
+    "is_symlink": false,
+    "file_size": 2048,
+    "compress_size": 0,
+    "crc32": 0,
+    "blake2sp": null,
+    "host_os": 2,
+    "mode": "0o40",
+    "mtime": "2011-06-12T09:53:33+00:00",
+    "ctime": null,
+    "atime": null,
+    "compress_type": 48,
+    "needs_password": true,
+    "encrypted": true,
+    "redir": {
+     "type": 5,
+     "flags": 0,
+     "target": "stest1.txt"
+    },
+    "volume": 0,
+    "content": {
+     "status": "ALIAS",
+     "reason": "hardlink/file-copy",
+     "target": "stest1.txt"
+    }
+   },
+   {
+    "idx": 3,
+    "name": "stest4.txt",
+    "is_dir": false,
+    "is_symlink": false,
+    "file_size": 2048,
+    "compress_size": 0,
+    "crc32": 0,
+    "blake2sp": null,
+    "host_os": 2,
+    "mode": "0o40",
+    "mtime": "2011-06-12T09:53:33+00:00",
+    "ctime": null,
+    "atime": null,
+    "compress_type": 48,
+    "needs_password": true,
+    "encrypted": true,
+    "redir": {
+     "type": 5,
+     "flags": 0,
+     "target": "stest1.txt"
+    },
+    "volume": 0,
+    "content": {
+     "status": "ALIAS",
+     "reason": "hardlink/file-copy",
+     "target": "stest1.txt"
+    }
+   },
+   {
+    "idx": 4,
+    "name": "stest5.txt",
+    "is_dir": false,
+    "is_symlink": false,
+    "file_size": 2048,
+    "compress_size": 0,
+    "crc32": 0,
+    "blake2sp": null,
+    "host_os": 2,
+    "mode": "0o40",
+    "mtime": "2011-06-12T09:53:33+00:00",
+    "ctime": null,
+    "atime": null,
+    "compress_type": 48,
+    "needs_password": true,
+    "encrypted": true,
+    "redir": {
+     "type": 5,
+     "flags": 0,
+     "target": "stest1.txt"
+    },
+    "volume": 0,
+    "content": {
+     "status": "ALIAS",
+     "reason": "hardlink/file-copy",
+     "target": "stest1.txt"
+    }
+   },
+   {
+    "idx": 5,
+    "name": "stest6.txt",
+    "is_dir": false,
+    "is_symlink": false,
+    "file_size": 2048,
+    "compress_size": 0,
+    "crc32": 0,
+    "blake2sp": null,
+    "host_os": 2,
+    "mode": "0o40",
+    "mtime": "2011-06-12T09:53:33+00:00",
+    "ctime": null,
+    "atime": null,
+    "compress_type": 48,
+    "needs_password": true,
+    "encrypted": true,
+    "redir": {
+     "type": 5,
+     "flags": 0,
+     "target": "stest1.txt"
+    },
+    "volume": 0,
+    "content": {
+     "status": "ALIAS",
+     "reason": "hardlink/file-copy",
+     "target": "stest1.txt"
+    }
+   },
+   {
+    "idx": 6,
+    "name": "stest7.txt",
+    "is_dir": false,
+    "is_symlink": false,
+    "file_size": 2048,
+    "compress_size": 0,
+    "crc32": 0,
+    "blake2sp": null,
+    "host_os": 2,
+    "mode": "0o40",
+    "mtime": "2011-06-12T09:53:33+00:00",
+    "ctime": null,
+    "atime": null,
+    "compress_type": 48,
+    "needs_password": true,
+    "encrypted": true,
+    "redir": {
+     "type": 5,
+     "flags": 0,
+     "target": "stest1.txt"
+    },
+    "volume": 0,
+    "content": {
+     "status": "ALIAS",
+     "reason": "hardlink/file-copy",
+     "target": "stest1.txt"
+    }
+   },
+   {
+    "idx": 7,
+    "name": "stest8.txt",
+    "is_dir": false,
+    "is_symlink": false,
+    "file_size": 2048,
+    "compress_size": 0,
+    "crc32": 0,
+    "blake2sp": null,
+    "host_os": 2,
+    "mode": "0o40",
+    "mtime": "2011-06-12T09:53:33+00:00",
+    "ctime": null,
+    "atime": null,
+    "compress_type": 48,
+    "needs_password": true,
+    "encrypted": true,
+    "redir": {
+     "type": 5,
+     "flags": 0,
+     "target": "stest1.txt"
+    },
+    "volume": 0,
+    "content": {
+     "status": "ALIAS",
+     "reason": "hardlink/file-copy",
+     "target": "stest1.txt"
+    }
+   },
+   {
+    "idx": 8,
+    "name": "stest9.txt",
+    "is_dir": false,
+    "is_symlink": false,
+    "file_size": 2048,
+    "compress_size": 0,
+    "crc32": 0,
+    "blake2sp": null,
+    "host_os": 2,
+    "mode": "0o40",
+    "mtime": "2011-06-12T09:53:33+00:00",
+    "ctime": null,
+    "atime": null,
+    "compress_type": 48,
+    "needs_password": true,
+    "encrypted": true,
+    "redir": {
+     "type": 5,
+     "flags": 0,
+     "target": "stest1.txt"
+    },
+    "volume": 0,
+    "content": {
+     "status": "ALIAS",
+     "reason": "hardlink/file-copy",
+     "target": "stest1.txt"
+    }
+   }
+  ],
+  "parse_error": null
+ },
+ "rar5-evil-symlink-traversal.rar": {
+  "archive": "rar5-evil-symlink-traversal.rar",
+  "opened_as": "rar5-evil-symlink-traversal.rar",
+  "format": "Rar5FileInfo",
+  "needs_password": false,
+  "entries": [
+   {
+    "idx": 0,
+    "name": "up",
+    "is_dir": false,
+    "is_symlink": true,
+    "file_size": 0,
+    "compress_size": 0,
+    "crc32": 0,
+    "blake2sp": null,
+    "host_os": 3,
+    "mode": "0o120755",
+    "mtime": "2026-05-11T21:59:26.388379155+00:00",
+    "ctime": null,
+    "atime": null,
+    "compress_type": 48,
+    "needs_password": true,
+    "encrypted": true,
+    "redir": {
+     "type": 1,
+     "flags": 1,
+     "target": ".."
+    },
+    "volume": 0,
+    "content": {
+     "status": "LINK",
+     "reason": "redirection target",
+     "target": ".."
+    }
+   },
+   {
+    "idx": 1,
+    "name": "up/pwned.txt",
+    "is_dir": false,
+    "is_symlink": false,
+    "file_size": 23,
+    "compress_size": 23,
+    "crc32": "0xc0327d47",
+    "blake2sp": null,
+    "host_os": 3,
+    "mode": "0o100644",
+    "mtime": "2026-05-11T21:59:26.388813228+00:00",
+    "ctime": null,
+    "atime": null,
+    "compress_type": 48,
+    "needs_password": true,
+    "encrypted": true,
+    "redir": null,
+    "volume": 0,
+    "content": {
+     "status": "READ",
+     "sha256": "e17a996f7f8f472e8a4c410c86ac4239425c0f4831f6528b3bb998b1b96f211f",
+     "nbytes": 23,
+     "detail": ""
+    }
+   }
+  ],
+  "parse_error": null
+ },
+ "rar5-hlink.rar": {
+  "archive": "rar5-hlink.rar",
+  "opened_as": "rar5-hlink.rar",
+  "format": "Rar5FileInfo",
+  "needs_password": false,
+  "entries": [
+   {
+    "idx": 0,
+    "name": "stest1.txt",
+    "is_dir": false,
+    "is_symlink": false,
+    "file_size": 2048,
+    "compress_size": 55,
+    "crc32": "0xc5b7e6a2",
+    "blake2sp": null,
+    "host_os": 3,
+    "mode": "0o100664",
+    "mtime": "2011-06-12T09:53:33+00:00",
+    "ctime": null,
+    "atime": null,
+    "compress_type": 51,
+    "needs_password": true,
+    "encrypted": true,
+    "redir": null,
+    "volume": 0,
+    "content": {
+     "status": "READ",
+     "sha256": "2eaebb4c18cdef7f20089f8a2fa3475bc59c2a193f66e2f1513609a4bef13e22",
+     "nbytes": 2048,
+     "detail": ""
+    }
+   },
+   {
+    "idx": 1,
+    "name": "stest2.txt",
+    "is_dir": false,
+    "is_symlink": false,
+    "file_size": 2048,
+    "compress_size": 0,
+    "crc32": 0,
+    "blake2sp": null,
+    "host_os": 3,
+    "mode": "0o100664",
+    "mtime": "2011-06-12T09:53:33+00:00",
+    "ctime": null,
+    "atime": null,
+    "compress_type": 48,
+    "needs_password": true,
+    "encrypted": true,
+    "redir": {
+     "type": 4,
+     "flags": 0,
+     "target": "stest1.txt"
+    },
+    "volume": 0,
+    "content": {
+     "status": "ALIAS",
+     "reason": "hardlink/file-copy",
+     "target": "stest1.txt"
+    }
+   },
+   {
+    "idx": 2,
+    "name": "stest3.txt",
+    "is_dir": false,
+    "is_symlink": false,
+    "file_size": 2048,
+    "compress_size": 0,
+    "crc32": 0,
+    "blake2sp": null,
+    "host_os": 3,
+    "mode": "0o100664",
+    "mtime": "2011-06-12T09:53:33+00:00",
+    "ctime": null,
+    "atime": null,
+    "compress_type": 48,
+    "needs_password": true,
+    "encrypted": true,
+    "redir": {
+     "type": 4,
+     "flags": 0,
+     "target": "stest1.txt"
+    },
+    "volume": 0,
+    "content": {
+     "status": "ALIAS",
+     "reason": "hardlink/file-copy",
+     "target": "stest1.txt"
+    }
+   }
+  ],
+  "parse_error": null
+ },
+ "rar5-hpsw.rar": {
+  "archive": "rar5-hpsw.rar",
+  "opened_as": "rar5-hpsw.rar",
+  "format": "RarFile",
+  "needs_password": true,
+  "entries": [],
+  "parse_error": null
+ },
+ "rar5-owner.rar": {
+  "archive": "rar5-owner.rar",
+  "opened_as": "rar5-owner.rar",
+  "format": "Rar5FileInfo",
+  "needs_password": false,
+  "entries": [
+   {
+    "idx": 0,
+    "name": "owner1.txt",
+    "is_dir": false,
+    "is_symlink": false,
+    "file_size": 2,
+    "compress_size": 2,
+    "crc32": "0x6751fc53",
+    "blake2sp": null,
+    "host_os": 3,
+    "mode": "0o100644",
+    "mtime": "2020-07-30T19:48:11.364898178+00:00",
+    "ctime": null,
+    "atime": null,
+    "compress_type": 48,
+    "needs_password": true,
+    "encrypted": true,
+    "redir": null,
+    "volume": 0,
+    "content": {
+     "status": "READ",
+     "sha256": "4355a46b19d348dc2f57c046f8ef63d4538ebb936000f3c9ee954a27460dd865",
+     "nbytes": 2,
+     "detail": ""
+    }
+   },
+   {
+    "idx": 1,
+    "name": "owner2.txt",
+    "is_dir": false,
+    "is_symlink": false,
+    "file_size": 2,
+    "compress_size": 2,
+    "crc32": "0x4c7caf90",
+    "blake2sp": null,
+    "host_os": 3,
+    "mode": "0o100644",
+    "mtime": "2020-07-30T19:48:16.347603034+00:00",
+    "ctime": null,
+    "atime": null,
+    "compress_type": 48,
+    "needs_password": true,
+    "encrypted": true,
+    "redir": null,
+    "volume": 0,
+    "content": {
+     "status": "READ",
+     "sha256": "53c234e5e8472b6ac51c1ae1cab3fe06fad053beb8ebfd8977b010655bfdd3c3",
+     "nbytes": 2,
+     "detail": ""
+    }
+   }
+  ],
+  "parse_error": null
+ },
+ "rar5-psw-blake.rar": {
+  "archive": "rar5-psw-blake.rar",
+  "opened_as": "rar5-psw-blake.rar",
+  "format": "Rar5FileInfo",
+  "needs_password": true,
+  "entries": [
+   {
+    "idx": 0,
+    "name": "stest1.txt",
+    "is_dir": false,
+    "is_symlink": false,
+    "file_size": 2048,
+    "compress_size": 64,
+    "crc32": 0,
+    "blake2sp": "5cdbd3f49f594a35edb63c923b64abdadba3bf1468b6259ee1e1c54ba2f0d65e",
+    "host_os": 3,
+    "mode": "0o100644",
+    "mtime": "2011-06-12T09:53:33+00:00",
+    "ctime": null,
+    "atime": null,
+    "compress_type": 51,
+    "needs_password": true,
+    "encrypted": true,
+    "redir": null,
+    "volume": 0,
+    "content": {
+     "status": "UNREAD",
+     "sha256": null,
+     "nbytes": 0,
+     "detail": "stest1.txt: Unsupported block header size (was 7, max is 2): Inappropriate file type or format\nbsdtar: Error exit delayed from previous errors."
+    }
+   },
+   {
+    "idx": 1,
+    "name": "stest2.txt",
+    "is_dir": false,
+    "is_symlink": false,
+    "file_size": 2048,
+    "compress_size": 2048,
+    "crc32": 0,
+    "blake2sp": "5cdbd3f49f594a35edb63c923b64abdadba3bf1468b6259ee1e1c54ba2f0d65e",
+    "host_os": 3,
+    "mode": "0o100644",
+    "mtime": "2011-06-12T09:53:33+00:00",
+    "ctime": "2016-05-22T09:12:33+00:00",
+    "atime": "2016-05-22T09:12:37+00:00",
+    "compress_type": 48,
+    "needs_password": true,
+    "encrypted": true,
+    "redir": null,
+    "volume": 0,
+    "content": {
+     "status": "READ",
+     "sha256": "a5ce1941245427d326bd21ea046943d6080507d93d3f8cb026e9e77af2a35951",
+     "nbytes": 2048,
+     "detail": ""
+    }
+   }
+  ],
+  "parse_error": null
+ },
+ "rar5-psw.rar": {
+  "archive": "rar5-psw.rar",
+  "opened_as": "rar5-psw.rar",
+  "format": "Rar5FileInfo",
+  "needs_password": true,
+  "entries": [
+   {
+    "idx": 0,
+    "name": "stest1.txt",
+    "is_dir": false,
+    "is_symlink": false,
+    "file_size": 2048,
+    "compress_size": 64,
+    "crc32": "0xba28eeea",
+    "blake2sp": null,
+    "host_os": 3,
+    "mode": "0o100644",
+    "mtime": "2011-06-12T09:53:33+00:00",
+    "ctime": null,
+    "atime": null,
+    "compress_type": 51,
+    "needs_password": true,
+    "encrypted": true,
+    "redir": null,
+    "volume": 0,
+    "content": {
+     "status": "UNREAD",
+     "sha256": null,
+     "nbytes": 0,
+     "detail": "stest1.txt: Unsupported block header size (was 5, max is 2): Inappropriate file type or format\nbsdtar: Error exit delayed from previous errors."
+    }
+   },
+   {
+    "idx": 1,
+    "name": "stest2.txt",
+    "is_dir": false,
+    "is_symlink": false,
+    "file_size": 2048,
+    "compress_size": 2048,
+    "crc32": "0xba28eeea",
+    "blake2sp": null,
+    "host_os": 3,
+    "mode": "0o100644",
+    "mtime": "2011-06-12T09:53:33+00:00",
+    "ctime": "2016-05-22T09:12:33+00:00",
+    "atime": "2016-05-22T09:12:37+00:00",
+    "compress_type": 48,
+    "needs_password": true,
+    "encrypted": true,
+    "redir": null,
+    "volume": 0,
+    "content": {
+     "status": "READ",
+     "sha256": "499971fea68b2363c5245241c95dd1b1f75e63d75360d822d9feb6d7be202b0c",
+     "nbytes": 2048,
+     "detail": ""
+    }
+   }
+  ],
+  "parse_error": null
+ },
+ "rar5-quick-open.rar": {
+  "archive": "rar5-quick-open.rar",
+  "opened_as": "rar5-quick-open.rar",
+  "format": "Rar5FileInfo",
+  "needs_password": false,
+  "entries": [
+   {
+    "idx": 0,
+    "name": "stest1.txt",
+    "is_dir": false,
+    "is_symlink": false,
+    "file_size": 2048,
+    "compress_size": 55,
+    "crc32": "0xc5b7e6a2",
+    "blake2sp": null,
+    "host_os": 3,
+    "mode": "0o100644",
+    "mtime": "2011-06-12T09:53:33+00:00",
+    "ctime": null,
+    "atime": null,
+    "compress_type": 51,
+    "needs_password": true,
+    "encrypted": true,
+    "redir": null,
+    "volume": 0,
+    "content": {
+     "status": "READ",
+     "sha256": "2eaebb4c18cdef7f20089f8a2fa3475bc59c2a193f66e2f1513609a4bef13e22",
+     "nbytes": 2048,
+     "detail": ""
+    }
+   },
+   {
+    "idx": 1,
+    "name": "stest2.txt",
+    "is_dir": false,
+    "is_symlink": false,
+    "file_size": 2048,
+    "compress_size": 55,
+    "crc32": "0xc5b7e6a2",
+    "blake2sp": null,
+    "host_os": 3,
+    "mode": "0o100644",
+    "mtime": "2011-06-12T09:53:33+00:00",
+    "ctime": null,
+    "atime": null,
+    "compress_type": 51,
+    "needs_password": true,
+    "encrypted": true,
+    "redir": null,
+    "volume": 0,
+    "content": {
+     "status": "READ",
+     "sha256": "2eaebb4c18cdef7f20089f8a2fa3475bc59c2a193f66e2f1513609a4bef13e22",
+     "nbytes": 2048,
+     "detail": ""
+    }
+   }
+  ],
+  "parse_error": null
+ },
+ "rar5-readonly-unix.rar": {
+  "archive": "rar5-readonly-unix.rar",
+  "opened_as": "rar5-readonly-unix.rar",
+  "format": "Rar5FileInfo",
+  "needs_password": false,
+  "entries": [
+   {
+    "idx": 0,
+    "name": "ro_dir/ro_file.txt",
+    "is_dir": false,
+    "is_symlink": false,
+    "file_size": 9,
+    "compress_size": 9,
+    "crc32": "0x818d2276",
+    "blake2sp": null,
+    "host_os": 3,
+    "mode": "0o100444",
+    "mtime": "2020-07-26T19:11:42.312616322+00:00",
+    "ctime": null,
+    "atime": null,
+    "compress_type": 48,
+    "needs_password": true,
+    "encrypted": true,
+    "redir": null,
+    "volume": 0,
+    "content": {
+     "status": "READ",
+     "sha256": "e8556b2a4c237957175ab9e9f63a67b39feb54b8d33b2b27f7e3c9af0d323900",
+     "nbytes": 9,
+     "detail": ""
+    }
+   },
+   {
+    "idx": 1,
+    "name": "ro_dir/",
+    "is_dir": true,
+    "is_symlink": false,
+    "file_size": 0,
+    "compress_size": 0,
+    "crc32": 0,
+    "blake2sp": null,
+    "host_os": 3,
+    "mode": "0o40555",
+    "mtime": "2020-07-26T19:11:42.328617082+00:00",
+    "ctime": null,
+    "atime": null,
+    "compress_type": 48,
+    "needs_password": true,
+    "encrypted": true,
+    "redir": null,
+    "volume": 0,
+    "content": {
+     "status": "DIR",
+     "reason": "directory, no bytes"
+    }
+   }
+  ],
+  "parse_error": null
+ },
+ "rar5-readonly-win.rar": {
+  "archive": "rar5-readonly-win.rar",
+  "opened_as": "rar5-readonly-win.rar",
+  "format": "Rar3Info",
+  "needs_password": false,
+  "entries": [
+   {
+    "idx": 0,
+    "name": "ro_dir/ro_file.txt",
+    "is_dir": false,
+    "is_symlink": false,
+    "file_size": 9,
+    "compress_size": 9,
+    "crc32": "0x818d2276",
+    "blake2sp": null,
+    "host_os": 2,
+    "mode": "0o41",
+    "mtime": "2020-07-26T22:11:42.312616300",
+    "ctime": null,
+    "atime": null,
+    "compress_type": 48,
+    "needs_password": true,
+    "encrypted": true,
+    "redir": null,
+    "volume": 0,
+    "content": {
+     "status": "READ",
+     "sha256": "e8556b2a4c237957175ab9e9f63a67b39feb54b8d33b2b27f7e3c9af0d323900",
+     "nbytes": 9,
+     "detail": ""
+    }
+   },
+   {
+    "idx": 1,
+    "name": "ro_dir/",
+    "is_dir": true,
+    "is_symlink": false,
+    "file_size": 0,
+    "compress_size": 0,
+    "crc32": 0,
+    "blake2sp": null,
+    "host_os": 2,
+    "mode": "0o21",
+    "mtime": "2020-07-26T22:11:42.328617",
+    "ctime": null,
+    "atime": null,
+    "compress_type": 48,
+    "needs_password": true,
+    "encrypted": true,
+    "redir": null,
+    "volume": 0,
+    "content": {
+     "status": "DIR",
+     "reason": "directory, no bytes"
+    }
+   }
+  ],
+  "parse_error": null
+ },
+ "rar5-solid-qo.rar": {
+  "archive": "rar5-solid-qo.rar",
+  "opened_as": "rar5-solid-qo.rar",
+  "format": "Rar5FileInfo",
+  "needs_password": false,
+  "entries": [
+   {
+    "idx": 0,
+    "name": "somedir/stest1.txt",
+    "is_dir": false,
+    "is_symlink": false,
+    "file_size": 2048,
+    "compress_size": 59,
+    "crc32": "0xc5b7e6a2",
+    "blake2sp": null,
+    "host_os": 3,
+    "mode": "0o100644",
+    "mtime": "2016-05-22T09:48:36+00:00",
+    "ctime": null,
+    "atime": null,
+    "compress_type": 51,
+    "needs_password": true,
+    "encrypted": true,
+    "redir": null,
+    "volume": 0,
+    "content": {
+     "status": "READ",
+     "sha256": "2eaebb4c18cdef7f20089f8a2fa3475bc59c2a193f66e2f1513609a4bef13e22",
+     "nbytes": 2048,
+     "detail": ""
+    }
+   },
+   {
+    "idx": 1,
+    "name": "stest1.txt",
+    "is_dir": false,
+    "is_symlink": false,
+    "file_size": 2048,
+    "compress_size": 12,
+    "crc32": "0xc5b7e6a2",
+    "blake2sp": null,
+    "host_os": 3,
+    "mode": "0o100644",
+    "mtime": "2011-06-12T09:53:33+00:00",
+    "ctime": null,
+    "atime": null,
+    "compress_type": 51,
+    "needs_password": true,
+    "encrypted": true,
+    "redir": null,
+    "volume": 0,
+    "content": {
+     "status": "READ",
+     "sha256": "2eaebb4c18cdef7f20089f8a2fa3475bc59c2a193f66e2f1513609a4bef13e22",
+     "nbytes": 2048,
+     "detail": ""
+    }
+   },
+   {
+    "idx": 2,
+    "name": "somedir/stest2.txt",
+    "is_dir": false,
+    "is_symlink": false,
+    "file_size": 2048,
+    "compress_size": 12,
+    "crc32": "0xc5b7e6a2",
+    "blake2sp": null,
+    "host_os": 3,
+    "mode": "0o100644",
+    "mtime": "2016-05-22T09:48:36+00:00",
+    "ctime": null,
+    "atime": null,
+    "compress_type": 51,
+    "needs_password": true,
+    "encrypted": true,
+    "redir": null,
+    "volume": 0,
+    "content": {
+     "status": "READ",
+     "sha256": "2eaebb4c18cdef7f20089f8a2fa3475bc59c2a193f66e2f1513609a4bef13e22",
+     "nbytes": 2048,
+     "detail": ""
+    }
+   },
+   {
+    "idx": 3,
+    "name": "stest2.txt",
+    "is_dir": false,
+    "is_symlink": false,
+    "file_size": 2048,
+    "compress_size": 12,
+    "crc32": "0xc5b7e6a2",
+    "blake2sp": null,
+    "host_os": 3,
+    "mode": "0o100644",
+    "mtime": "2011-06-12T09:53:33+00:00",
+    "ctime": null,
+    "atime": null,
+    "compress_type": 51,
+    "needs_password": true,
+    "encrypted": true,
+    "redir": null,
+    "volume": 0,
+    "content": {
+     "status": "READ",
+     "sha256": "2eaebb4c18cdef7f20089f8a2fa3475bc59c2a193f66e2f1513609a4bef13e22",
+     "nbytes": 2048,
+     "detail": ""
+    }
+   }
+  ],
+  "parse_error": null
+ },
+ "rar5-solid.rar": {
+  "archive": "rar5-solid.rar",
+  "opened_as": "rar5-solid.rar",
+  "format": "Rar5FileInfo",
+  "needs_password": false,
+  "entries": [
+   {
+    "idx": 0,
+    "name": "stest1.txt",
+    "is_dir": false,
+    "is_symlink": false,
+    "file_size": 2048,
+    "compress_size": 58,
+    "crc32": "0xc5b7e6a2",
+    "blake2sp": null,
+    "host_os": 3,
+    "mode": "0o100666",
+    "mtime": null,
+    "ctime": null,
+    "atime": null,
+    "compress_type": 51,
+    "needs_password": true,
+    "encrypted": true,
+    "redir": null,
+    "volume": 0,
+    "content": {
+     "status": "READ",
+     "sha256": "2eaebb4c18cdef7f20089f8a2fa3475bc59c2a193f66e2f1513609a4bef13e22",
+     "nbytes": 2048,
+     "detail": ""
+    }
+   },
+   {
+    "idx": 1,
+    "name": "stest2.txt",
+    "is_dir": false,
+    "is_symlink": false,
+    "file_size": 2048,
+    "compress_size": 13,
+    "crc32": "0xc5b7e6a2",
+    "blake2sp": null,
+    "host_os": 3,
+    "mode": "0o100666",
+    "mtime": null,
+    "ctime": null,
+    "atime": null,
+    "compress_type": 51,
+    "needs_password": true,
+    "encrypted": true,
+    "redir": null,
+    "volume": 0,
+    "content": {
+     "status": "READ",
+     "sha256": "2eaebb4c18cdef7f20089f8a2fa3475bc59c2a193f66e2f1513609a4bef13e22",
+     "nbytes": 2048,
+     "detail": ""
+    }
+   }
+  ],
+  "parse_error": null
+ },
+ "rar5-subdirs.rar": {
+  "archive": "rar5-subdirs.rar",
+  "opened_as": "rar5-subdirs.rar",
+  "format": "Rar5FileInfo",
+  "needs_password": false,
+  "entries": [
+   {
+    "idx": 0,
+    "name": "sub/dir2/file2.txt",
+    "is_dir": false,
+    "is_symlink": false,
+    "file_size": 6,
+    "compress_size": 6,
+    "crc32": "0xc904a4c7",
+    "blake2sp": null,
+    "host_os": 3,
+    "mode": "0o100644",
+    "mtime": "2020-07-20T18:01:44.319218821+00:00",
+    "ctime": null,
+    "atime": null,
+    "compress_type": 48,
+    "needs_password": true,
+    "encrypted": true,
+    "redir": null,
+    "volume": 0,
+    "content": {
+     "status": "READ",
+     "sha256": "67ee5478eaadb034ba59944eb977797b49ca6aa8d3574587f36ebcbeeb65f70e",
+     "nbytes": 6,
+     "detail": ""
+    }
+   },
+   {
+    "idx": 1,
+    "name": "sub/with space/long fn.txt",
+    "is_dir": false,
+    "is_symlink": false,
+    "file_size": 8,
+    "compress_size": 8,
+    "crc32": "0x71b7247d",
+    "blake2sp": null,
+    "host_os": 3,
+    "mode": "0o100644",
+    "mtime": "2020-07-20T18:02:17.499892070+00:00",
+    "ctime": null,
+    "atime": null,
+    "compress_type": 48,
+    "needs_password": true,
+    "encrypted": true,
+    "redir": null,
+    "volume": 0,
+    "content": {
+     "status": "READ",
+     "sha256": "e708f3c52269d19a8ac86b5934ff9cf2a80c696cb04a66a435e96f9ca44f7c18",
+     "nbytes": 8,
+     "detail": ""
+    }
+   },
+   {
+    "idx": 2,
+    "name": "sub/üȵĩöḋè/file.txt",
+    "is_dir": false,
+    "is_symlink": false,
+    "file_size": 5,
+    "compress_size": 5,
+    "crc32": "0x2fec89c1",
+    "blake2sp": null,
+    "host_os": 3,
+    "mode": "0o100644",
+    "mtime": "2020-07-20T18:07:00.141758621+00:00",
+    "ctime": null,
+    "atime": null,
+    "compress_type": 48,
+    "needs_password": true,
+    "encrypted": true,
+    "redir": null,
+    "volume": 0,
+    "content": {
+     "status": "UNREAD",
+     "sha256": null,
+     "nbytes": 0,
+     "detail": "bsdtar: sub/üȵĩöḋè/file.txt: Not found in archive\nbsdtar: Error exit delayed from previous errors."
+    }
+   },
+   {
+    "idx": 3,
+    "name": "sub/dir1/file1.txt",
+    "is_dir": false,
+    "is_symlink": false,
+    "file_size": 6,
+    "compress_size": 6,
+    "crc32": "0xe229f704",
+    "blake2sp": null,
+    "host_os": 3,
+    "mode": "0o100644",
+    "mtime": "2020-07-20T18:01:33.875008284+00:00",
+    "ctime": null,
+    "atime": null,
+    "compress_type": 48,
+    "needs_password": true,
+    "encrypted": true,
+    "redir": null,
+    "volume": 0,
+    "content": {
+     "status": "READ",
+     "sha256": "ecdc5536f73bdae8816f0ea40726ef5e9b810d914493075903bb90623d97b1d8",
+     "nbytes": 6,
+     "detail": ""
+    }
+   },
+   {
+    "idx": 4,
+    "name": "sub/dir2/",
+    "is_dir": true,
+    "is_symlink": false,
+    "file_size": 0,
+    "compress_size": 0,
+    "crc32": 0,
+    "blake2sp": null,
+    "host_os": 3,
+    "mode": "0o40755",
+    "mtime": "2020-07-20T18:01:44.335219144+00:00",
+    "ctime": null,
+    "atime": null,
+    "compress_type": 48,
+    "needs_password": true,
+    "encrypted": true,
+    "redir": null,
+    "volume": 0,
+    "content": {
+     "status": "DIR",
+     "reason": "directory, no bytes"
+    }
+   },
+   {
+    "idx": 5,
+    "name": "sub/with space/",
+    "is_dir": true,
+    "is_symlink": false,
+    "file_size": 0,
+    "compress_size": 0,
+    "crc32": 0,
+    "blake2sp": null,
+    "host_os": 3,
+    "mode": "0o40755",
+    "mtime": "2020-07-20T18:02:17.511892315+00:00",
+    "ctime": null,
+    "atime": null,
+    "compress_type": 48,
+    "needs_password": true,
+    "encrypted": true,
+    "redir": null,
+    "volume": 0,
+    "content": {
+     "status": "DIR",
+     "reason": "directory, no bytes"
+    }
+   },
+   {
+    "idx": 6,
+    "name": "sub/empty/",
+    "is_dir": true,
+    "is_symlink": false,
+    "file_size": 0,
+    "compress_size": 0,
+    "crc32": 0,
+    "blake2sp": null,
+    "host_os": 3,
+    "mode": "0o40755",
+    "mtime": "2020-07-20T18:01:09.182513654+00:00",
+    "ctime": null,
+    "atime": null,
+    "compress_type": 48,
+    "needs_password": true,
+    "encrypted": true,
+    "redir": null,
+    "volume": 0,
+    "content": {
+     "status": "DIR",
+     "reason": "directory, no bytes"
+    }
+   },
+   {
+    "idx": 7,
+    "name": "sub/üȵĩöḋè/",
+    "is_dir": true,
+    "is_symlink": false,
+    "file_size": 0,
+    "compress_size": 0,
+    "crc32": 0,
+    "blake2sp": null,
+    "host_os": 3,
+    "mode": "0o40755",
+    "mtime": "2020-07-20T18:07:00.153758873+00:00",
+    "ctime": null,
+    "atime": null,
+    "compress_type": 48,
+    "needs_password": true,
+    "encrypted": true,
+    "redir": null,
+    "volume": 0,
+    "content": {
+     "status": "DIR",
+     "reason": "directory, no bytes"
+    }
+   },
+   {
+    "idx": 8,
+    "name": "sub/dir1/",
+    "is_dir": true,
+    "is_symlink": false,
+    "file_size": 0,
+    "compress_size": 0,
+    "crc32": 0,
+    "blake2sp": null,
+    "host_os": 3,
+    "mode": "0o40755",
+    "mtime": "2020-07-20T18:01:33.887008525+00:00",
+    "ctime": null,
+    "atime": null,
+    "compress_type": 48,
+    "needs_password": true,
+    "encrypted": true,
+    "redir": null,
+    "volume": 0,
+    "content": {
+     "status": "DIR",
+     "reason": "directory, no bytes"
+    }
+   },
+   {
+    "idx": 9,
+    "name": "sub/",
+    "is_dir": true,
+    "is_symlink": false,
+    "file_size": 0,
+    "compress_size": 0,
+    "crc32": 0,
+    "blake2sp": null,
+    "host_os": 3,
+    "mode": "0o40755",
+    "mtime": "2020-07-20T18:06:42.241383868+00:00",
+    "ctime": null,
+    "atime": null,
+    "compress_type": 48,
+    "needs_password": true,
+    "encrypted": true,
+    "redir": null,
+    "volume": 0,
+    "content": {
+     "status": "DIR",
+     "reason": "directory, no bytes"
+    }
+   }
+  ],
+  "parse_error": null
+ },
+ "rar5-symlink-unix.rar": {
+  "archive": "rar5-symlink-unix.rar",
+  "opened_as": "rar5-symlink-unix.rar",
+  "format": "Rar5FileInfo",
+  "needs_password": false,
+  "entries": [
+   {
+    "idx": 0,
+    "name": "data_link",
+    "is_dir": false,
+    "is_symlink": true,
+    "file_size": 8,
+    "compress_size": 0,
+    "crc32": 0,
+    "blake2sp": null,
+    "host_os": 3,
+    "mode": "0o120777",
+    "mtime": "2020-07-26T20:13:58.125453113+00:00",
+    "ctime": null,
+    "atime": null,
+    "compress_type": 48,
+    "needs_password": true,
+    "encrypted": true,
+    "redir": {
+     "type": 1,
+     "flags": 0,
+     "target": "data.txt"
+    },
+    "volume": 0,
+    "content": {
+     "status": "LINK",
+     "reason": "redirection target",
+     "target": "data.txt"
+    }
+   },
+   {
+    "idx": 1,
+    "name": "data.txt",
+    "is_dir": false,
+    "is_symlink": false,
+    "file_size": 5,
+    "compress_size": 5,
+    "crc32": "0xe6c1c582",
+    "blake2sp": null,
+    "host_os": 3,
+    "mode": "0o100664",
+    "mtime": "2020-07-26T20:13:33.568312816+00:00",
+    "ctime": null,
+    "atime": null,
+    "compress_type": 48,
+    "needs_password": true,
+    "encrypted": true,
+    "redir": null,
+    "volume": 0,
+    "content": {
+     "status": "READ",
+     "sha256": "6667b2d1aab6a00caa5aee5af8ad9f1465e567abf1c209d15727d57b3e8f6e5f",
+     "nbytes": 5,
+     "detail": ""
+    }
+   },
+   {
+    "idx": 2,
+    "name": "random_link",
+    "is_dir": false,
+    "is_symlink": true,
+    "file_size": 12,
+    "compress_size": 0,
+    "crc32": 0,
+    "blake2sp": null,
+    "host_os": 3,
+    "mode": "0o120777",
+    "mtime": "2020-07-26T20:32:08.896575845+00:00",
+    "ctime": null,
+    "atime": null,
+    "compress_type": 48,
+    "needs_password": true,
+    "encrypted": true,
+    "redir": {
+     "type": 1,
+     "flags": 0,
+     "target": "../random123"
+    },
+    "volume": 0,
+    "content": {
+     "status": "LINK",
+     "reason": "redirection target",
+     "target": "../random123"
+    }
+   }
+  ],
+  "parse_error": null
+ },
+ "rar5-symlink-win.rar": {
+  "archive": "rar5-symlink-win.rar",
+  "opened_as": "rar5-symlink-win.rar",
+  "format": "Rar5FileInfo",
+  "needs_password": false,
+  "entries": [
+   {
+    "idx": 0,
+    "name": "content/file.txt",
+    "is_dir": false,
+    "is_symlink": false,
+    "file_size": 9,
+    "compress_size": 9,
+    "crc32": "0x35f39d4d",
+    "blake2sp": null,
+    "host_os": 2,
+    "mode": "0o40",
+    "mtime": "2020-07-27T17:39:15.672228900+00:00",
+    "ctime": null,
+    "atime": null,
+    "compress_type": 48,
+    "needs_password": true,
+    "encrypted": true,
+    "redir": null,
+    "volume": 0,
+    "content": {
+     "status": "READ",
+     "sha256": "0743bcde888f7850d063579501c234b33769bf3b857f73331aaf9167adcaece1",
+     "nbytes": 9,
+     "detail": ""
+    }
+   },
+   {
+    "idx": 1,
+    "name": "links/bad_link",
+    "is_dir": false,
+    "is_symlink": true,
+    "file_size": 0,
+    "compress_size": 0,
+    "crc32": 0,
+    "blake2sp": null,
+    "host_os": 2,
+    "mode": "0o2040",
+    "mtime": "2020-07-27T17:43:43.625091100+00:00",
+    "ctime": null,
+    "atime": null,
+    "compress_type": 48,
+    "needs_password": true,
+    "encrypted": true,
+    "redir": {
+     "type": 2,
+     "flags": 0,
+     "target": "../../missing"
+    },
+    "volume": 0,
+    "content": {
+     "status": "LINK",
+     "reason": "redirection target",
+     "target": "../../missing"
+    }
+   },
+   {
+    "idx": 2,
+    "name": "links/file_link",
+    "is_dir": false,
+    "is_symlink": true,
+    "file_size": 0,
+    "compress_size": 0,
+    "crc32": 0,
+    "blake2sp": null,
+    "host_os": 2,
+    "mode": "0o2040",
+    "mtime": "2020-07-27T17:40:02.484275100+00:00",
+    "ctime": null,
+    "atime": null,
+    "compress_type": 48,
+    "needs_password": true,
+    "encrypted": true,
+    "redir": {
+     "type": 2,
+     "flags": 0,
+     "target": "../content/file.txt"
+    },
+    "volume": 0,
+    "content": {
+     "status": "LINK",
+     "reason": "redirection target",
+     "target": "../content/file.txt"
+    }
+   },
+   {
+    "idx": 3,
+    "name": "content/dir1/",
+    "is_dir": true,
+    "is_symlink": false,
+    "file_size": 0,
+    "compress_size": 0,
+    "crc32": 0,
+    "blake2sp": null,
+    "host_os": 2,
+    "mode": "0o20",
+    "mtime": "2020-07-27T17:39:19.969920300+00:00",
+    "ctime": null,
+    "atime": null,
+    "compress_type": 48,
+    "needs_password": true,
+    "encrypted": true,
+    "redir": null,
+    "volume": 0,
+    "content": {
+     "status": "DIR",
+     "reason": "directory, no bytes"
+    }
+   },
+   {
+    "idx": 4,
+    "name": "content/dir2/",
+    "is_dir": true,
+    "is_symlink": false,
+    "file_size": 0,
+    "compress_size": 0,
+    "crc32": 0,
+    "blake2sp": null,
+    "host_os": 2,
+    "mode": "0o20",
+    "mtime": "2020-07-27T17:39:21.062348800+00:00",
+    "ctime": null,
+    "atime": null,
+    "compress_type": 48,
+    "needs_password": true,
+    "encrypted": true,
+    "redir": null,
+    "volume": 0,
+    "content": {
+     "status": "DIR",
+     "reason": "directory, no bytes"
+    }
+   },
+   {
+    "idx": 5,
+    "name": "links/dir_junction",
+    "is_dir": false,
+    "is_symlink": true,
+    "file_size": 0,
+    "compress_size": 0,
+    "crc32": 0,
+    "blake2sp": null,
+    "host_os": 2,
+    "mode": "0o2020",
+    "mtime": "2020-07-27T17:40:48.345425800+00:00",
+    "ctime": null,
+    "atime": null,
+    "compress_type": 48,
+    "needs_password": true,
+    "encrypted": true,
+    "redir": {
+     "type": 3,
+     "flags": 1,
+     "target": "/??/C:/Users/User/stuff/content/dir2"
+    },
+    "volume": 0,
+    "content": {
+     "status": "LINK",
+     "reason": "redirection target",
+     "target": "/??/C:/Users/User/stuff/content/dir2"
+    }
+   },
+   {
+    "idx": 6,
+    "name": "links/dir_link",
+    "is_dir": false,
+    "is_symlink": true,
+    "file_size": 0,
+    "compress_size": 0,
+    "crc32": 0,
+    "blake2sp": null,
+    "host_os": 2,
+    "mode": "0o2020",
+    "mtime": "2020-07-27T17:40:28.452838+00:00",
+    "ctime": null,
+    "atime": null,
+    "compress_type": 48,
+    "needs_password": true,
+    "encrypted": true,
+    "redir": {
+     "type": 2,
+     "flags": 1,
+     "target": "../content/dir1"
+    },
+    "volume": 0,
+    "content": {
+     "status": "LINK",
+     "reason": "redirection target",
+     "target": "../content/dir1"
+    }
+   },
+   {
+    "idx": 7,
+    "name": "content/",
+    "is_dir": true,
+    "is_symlink": false,
+    "file_size": 0,
+    "compress_size": 0,
+    "crc32": 0,
+    "blake2sp": null,
+    "host_os": 2,
+    "mode": "0o20",
+    "mtime": "2020-07-27T17:43:17.077898200+00:00",
+    "ctime": null,
+    "atime": null,
+    "compress_type": 48,
+    "needs_password": true,
+    "encrypted": true,
+    "redir": null,
+    "volume": 0,
+    "content": {
+     "status": "DIR",
+     "reason": "directory, no bytes"
+    }
+   },
+   {
+    "idx": 8,
+    "name": "links/",
+    "is_dir": true,
+    "is_symlink": false,
+    "file_size": 0,
+    "compress_size": 0,
+    "crc32": 0,
+    "blake2sp": null,
+    "host_os": 2,
+    "mode": "0o20",
+    "mtime": "2020-07-27T17:43:43.625091100+00:00",
+    "ctime": null,
+    "atime": null,
+    "compress_type": 48,
+    "needs_password": true,
+    "encrypted": true,
+    "redir": null,
+    "volume": 0,
+    "content": {
+     "status": "DIR",
+     "reason": "directory, no bytes"
+    }
+   }
+  ],
+  "parse_error": null
+ },
+ "rar5-times.rar": {
+  "archive": "rar5-times.rar",
+  "opened_as": "rar5-times.rar",
+  "format": "Rar5FileInfo",
+  "needs_password": false,
+  "entries": [
+   {
+    "idx": 0,
+    "name": "stest1.txt",
+    "is_dir": false,
+    "is_symlink": false,
+    "file_size": 2048,
+    "compress_size": 55,
+    "crc32": "0xc5b7e6a2",
+    "blake2sp": null,
+    "host_os": 3,
+    "mode": "0o100644",
+    "mtime": "2011-06-12T09:53:33+00:00",
+    "ctime": null,
+    "atime": "2016-05-22T09:12:36+00:00",
+    "compress_type": 51,
+    "needs_password": true,
+    "encrypted": true,
+    "redir": null,
+    "volume": 0,
+    "content": {
+     "status": "READ",
+     "sha256": "2eaebb4c18cdef7f20089f8a2fa3475bc59c2a193f66e2f1513609a4bef13e22",
+     "nbytes": 2048,
+     "detail": ""
+    }
+   }
+  ],
+  "parse_error": null
+ },
+ "rar5-times2.rar": {
+  "archive": "rar5-times2.rar",
+  "opened_as": "rar5-times2.rar",
+  "format": "Rar5FileInfo",
+  "needs_password": false,
+  "entries": [
+   {
+    "idx": 0,
+    "name": "afile.txt",
+    "is_dir": false,
+    "is_symlink": false,
+    "file_size": 0,
+    "compress_size": 0,
+    "crc32": 0,
+    "blake2sp": null,
+    "host_os": 2,
+    "mode": "0o40",
+    "mtime": "2011-05-10T18:28:47.899345100+00:00",
+    "ctime": null,
+    "atime": null,
+    "compress_type": 48,
+    "needs_password": true,
+    "encrypted": true,
+    "redir": null,
+    "volume": 0,
+    "content": {
+     "status": "READ",
+     "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+     "nbytes": 0,
+     "detail": ""
+    }
+   }
+  ],
+  "parse_error": null
+ },
+ "rar5-versions.rar": {
+  "archive": "rar5-versions.rar",
+  "opened_as": "rar5-versions.rar",
+  "format": "Rar5FileInfo",
+  "needs_password": false,
+  "entries": [
+   {
+    "idx": 0,
+    "name": "versioned.txt",
+    "is_dir": false,
+    "is_symlink": false,
+    "file_size": 2,
+    "compress_size": 2,
+    "crc32": "0x55679ed1",
+    "blake2sp": null,
+    "host_os": 3,
+    "mode": "0o100644",
+    "mtime": "2020-07-30T19:52:46.436647570+00:00",
+    "ctime": null,
+    "atime": null,
+    "compress_type": 48,
+    "needs_password": true,
+    "encrypted": true,
+    "redir": null,
+    "volume": 0,
+    "content": {
+     "status": "READ",
+     "sha256": "1121cfccd5913f0a63fec40a6ffd44ea64f9dc135c66634ba001d10bcf4302a2",
+     "nbytes": 2,
+     "detail": ""
+    }
+   }
+  ],
+  "parse_error": null
+ },
+ "rar5-vols.part1.rar": {
+  "archive": "rar5-vols.part1.rar",
+  "opened_as": "rar5-vols.part1.rar",
+  "format": "Rar5FileInfo",
+  "needs_password": false,
+  "entries": [
+   {
+    "idx": 0,
+    "name": "vols/bigfile.txt",
+    "is_dir": false,
+    "is_symlink": false,
+    "file_size": 205000,
+    "compress_size": 205000,
+    "crc32": "0x509ad74c",
+    "blake2sp": null,
+    "host_os": 3,
+    "mode": "0o100664",
+    "mtime": "2016-05-24T08:42:37+00:00",
+    "ctime": null,
+    "atime": null,
+    "compress_type": 48,
+    "needs_password": true,
+    "encrypted": true,
+    "redir": null,
+    "volume": 0,
+    "content": {
+     "status": "UNREAD",
+     "sha256": null,
+     "nbytes": 0,
+     "detail": "vols/bigfile.txt: Too small block encountered (0 bytes): Inappropriate file type or format\nbsdtar: Error exit delayed from previous errors."
+    }
+   },
+   {
+    "idx": 1,
+    "name": "vols/smallfile.txt",
+    "is_dir": false,
+    "is_symlink": false,
+    "file_size": 2050,
+    "compress_size": 2050,
+    "crc32": "0xd08a1f86",
+    "blake2sp": null,
+    "host_os": 3,
+    "mode": "0o100664",
+    "mtime": "2016-05-24T08:42:43+00:00",
+    "ctime": null,
+    "atime": null,
+    "compress_type": 48,
+    "needs_password": true,
+    "encrypted": true,
+    "redir": null,
+    "volume": 2,
+    "content": {
+     "status": "UNREAD",
+     "sha256": null,
+     "nbytes": 0,
+     "detail": "bsdtar: Too small block encountered (0 bytes)\nbsdtar: vols/smallfile.txt: Not found in archive\nbsdtar: Error exit delayed from previous errors."
+    }
+   }
+  ],
+  "parse_error": null
+ },
+ "rar5-vols.part2.rar": {
+  "archive": "rar5-vols.part2.rar",
+  "opened_as": "rar5-vols.part1.rar",
+  "format": "Rar5FileInfo",
+  "needs_password": false,
+  "entries": [],
+  "parse_error": null
+ },
+ "rar5-vols.part3.rar": {
+  "archive": "rar5-vols.part3.rar",
+  "opened_as": "rar5-vols.part1.rar",
+  "format": "Rar5FileInfo",
+  "needs_password": false,
+  "entries": [
+   {
+    "idx": 1,
+    "name": "vols/smallfile.txt",
+    "is_dir": false,
+    "is_symlink": false,
+    "file_size": 2050,
+    "compress_size": 2050,
+    "crc32": "0xd08a1f86",
+    "blake2sp": null,
+    "host_os": 3,
+    "mode": "0o100664",
+    "mtime": "2016-05-24T08:42:43+00:00",
+    "ctime": null,
+    "atime": null,
+    "compress_type": 48,
+    "needs_password": true,
+    "encrypted": true,
+    "redir": null,
+    "volume": 2,
+    "content": {
+     "status": "UNREAD",
+     "sha256": null,
+     "nbytes": 0,
+     "detail": "bsdtar: Too small block encountered (0 bytes)\nbsdtar: vols/smallfile.txt: Not found in archive\nbsdtar: Error exit delayed from previous errors."
+    }
+   }
+  ],
+  "parse_error": null
+ },
+ "seektest.rar": {
+  "archive": "seektest.rar",
+  "opened_as": "seektest.rar",
+  "format": "Rar3Info",
+  "needs_password": false,
+  "entries": [
+   {
+    "idx": 0,
+    "name": "stest1.txt",
+    "is_dir": false,
+    "is_symlink": false,
+    "file_size": 2048,
+    "compress_size": 90,
+    "crc32": "0xc5b7e6a2",
+    "blake2sp": null,
+    "host_os": 3,
+    "mode": "0o100644",
+    "mtime": "2011-06-12T12:53:33",
+    "ctime": null,
+    "atime": null,
+    "compress_type": 53,
+    "needs_password": true,
+    "encrypted": true,
+    "redir": null,
+    "volume": 0,
+    "content": {
+     "status": "READ",
+     "sha256": "2eaebb4c18cdef7f20089f8a2fa3475bc59c2a193f66e2f1513609a4bef13e22",
+     "nbytes": 2048,
+     "detail": ""
+    }
+   },
+   {
+    "idx": 1,
+    "name": "stest2.txt",
+    "is_dir": false,
+    "is_symlink": false,
+    "file_size": 2048,
+    "compress_size": 2048,
+    "crc32": "0xc5b7e6a2",
+    "blake2sp": null,
+    "host_os": 3,
+    "mode": "0o100644",
+    "mtime": "2011-06-12T12:53:33",
+    "ctime": null,
+    "atime": null,
+    "compress_type": 48,
+    "needs_password": true,
+    "encrypted": true,
+    "redir": null,
+    "volume": 0,
+    "content": {
+     "status": "READ",
+     "sha256": "2eaebb4c18cdef7f20089f8a2fa3475bc59c2a193f66e2f1513609a4bef13e22",
+     "nbytes": 2048,
+     "detail": ""
+    }
+   }
+  ],
+  "parse_error": null
+ },
+ "unicode.rar": {
+  "archive": "unicode.rar",
+  "opened_as": "unicode.rar",
+  "format": "Rar3Info",
+  "needs_password": false,
+  "entries": [
+   {
+    "idx": 0,
+    "name": "уииоотивл.txt",
+    "is_dir": false,
+    "is_symlink": false,
+    "file_size": 2,
+    "compress_size": 17,
+    "crc32": "0x6751fc53",
+    "blake2sp": null,
+    "host_os": 3,
+    "mode": "0o100644",
+    "mtime": null,
+    "ctime": null,
+    "atime": null,
+    "compress_type": 53,
+    "needs_password": true,
+    "encrypted": true,
+    "redir": null,
+    "volume": 0,
+    "content": {
+     "status": "UNREAD",
+     "sha256": null,
+     "nbytes": 0,
+     "detail": "bsdtar: RAR solid archive support unavailable.\nbsdtar: Error exit delayed from previous errors."
+    }
+   },
+   {
+    "idx": 1,
+    "name": "𝐀𝐁𝐁𝐂.txt",
+    "is_dir": false,
+    "is_symlink": false,
+    "file_size": 2,
+    "compress_size": 13,
+    "crc32": "0x6751fc53",
+    "blake2sp": null,
+    "host_os": 3,
+    "mode": "0o100644",
+    "mtime": null,
+    "ctime": null,
+    "atime": null,
+    "compress_type": 53,
+    "needs_password": true,
+    "encrypted": true,
+    "redir": null,
+    "volume": 0,
+    "content": {
+     "status": "UNREAD",
+     "sha256": null,
+     "nbytes": 0,
+     "detail": "bsdtar: RAR solid archive support unavailable.\nbsdtar: 𝐀𝐁𝐁𝐂.txt: Not found in archive\nbsdtar: Error exit delayed from previous errors."
+    }
+   }
+  ],
+  "parse_error": null
+ },
+ "unicode2.rar": {
+  "archive": "unicode2.rar",
+  "opened_as": "unicode2.rar",
+  "format": "Rar3Info",
+  "needs_password": false,
+  "entries": [
+   {
+    "idx": 0,
+    "name": "𝐀𝐁𝐁𝐂.txt",
+    "is_dir": false,
+    "is_symlink": false,
+    "file_size": 2,
+    "compress_size": 2,
+    "crc32": "0x6751fc53",
+    "blake2sp": null,
+    "host_os": 2,
+    "mode": "0o40",
+    "mtime": null,
+    "ctime": null,
+    "atime": null,
+    "compress_type": 48,
+    "needs_password": true,
+    "encrypted": true,
+    "redir": null,
+    "volume": 0,
+    "content": {
+     "status": "READ",
+     "sha256": "4355a46b19d348dc2f57c046f8ef63d4538ebb936000f3c9ee954a27460dd865",
+     "nbytes": 2,
+     "detail": ""
+    }
+   },
+   {
+    "idx": 1,
+    "name": "уииоотивл.txt",
+    "is_dir": false,
+    "is_symlink": false,
+    "file_size": 2,
+    "compress_size": 2,
+    "crc32": "0x6751fc53",
+    "blake2sp": null,
+    "host_os": 2,
+    "mode": "0o40",
+    "mtime": null,
+    "ctime": null,
+    "atime": null,
+    "compress_type": 48,
+    "needs_password": true,
+    "encrypted": true,
+    "redir": null,
+    "volume": 0,
+    "content": {
+     "status": "READ",
+     "sha256": "4355a46b19d348dc2f57c046f8ef63d4538ebb936000f3c9ee954a27460dd865",
+     "nbytes": 2,
+     "detail": ""
+    }
+   }
+  ],
+  "parse_error": null
+ }
+}

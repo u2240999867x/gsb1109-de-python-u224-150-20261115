@@ -1,0 +1,4812 @@
+{
+ "families": {
+  "0e70e07a": {
+   "members": [
+    "unicode.rar",
+    "unicode2.rar"
+   ],
+   "pairs": {
+    "unicode.rar  ||  unicode2.rar": {
+     "only_in_a": [],
+     "only_in_b": [],
+     "items": [
+      {
+       "name": "уииоотивл.txt",
+       "bucket": "IDENTICAL",
+       "reason": "",
+       "key_a": [
+        "FILE",
+        "4355a46b19d348dc2f57c046f8ef63d4538ebb936000f3c9ee954a27460dd865"
+       ],
+       "key_b": [
+        "FILE",
+        "4355a46b19d348dc2f57c046f8ef63d4538ebb936000f3c9ee954a27460dd865"
+       ],
+       "attr_delta": {
+        "host_os": [
+         3,
+         2
+        ],
+        "mode": [
+         "0o100644",
+         "0o40"
+        ],
+        "compress_type": [
+         53,
+         48
+        ]
+       }
+      },
+      {
+       "name": "𝐀𝐁𝐁𝐂.txt",
+       "bucket": "IDENTICAL",
+       "reason": "",
+       "key_a": [
+        "FILE",
+        "4355a46b19d348dc2f57c046f8ef63d4538ebb936000f3c9ee954a27460dd865"
+       ],
+       "key_b": [
+        "FILE",
+        "4355a46b19d348dc2f57c046f8ef63d4538ebb936000f3c9ee954a27460dd865"
+       ],
+       "attr_delta": {
+        "host_os": [
+         3,
+         2
+        ],
+        "mode": [
+         "0o100644",
+         "0o40"
+        ],
+        "compress_type": [
+         53,
+         48
+        ]
+       }
+      }
+     ],
+     "order_changed": true
+    }
+   }
+  },
+  "2045a5ef": {
+   "members": [
+    "rar3-readonly-unix.rar",
+    "rar3-readonly-win.rar",
+    "rar5-readonly-unix.rar",
+    "rar5-readonly-win.rar"
+   ],
+   "pairs": {
+    "rar3-readonly-unix.rar  ||  rar3-readonly-win.rar": {
+     "only_in_a": [],
+     "only_in_b": [],
+     "items": [
+      {
+       "name": "ro_dir/",
+       "bucket": "IDENTICAL",
+       "reason": "",
+       "key_a": [
+        "DIR"
+       ],
+       "key_b": [
+        "DIR"
+       ],
+       "attr_delta": {
+        "host_os": [
+         3,
+         2
+        ],
+        "mode": [
+         "0o40555",
+         "0o21"
+        ]
+       }
+      },
+      {
+       "name": "ro_dir/ro_file.txt",
+       "bucket": "IDENTICAL",
+       "reason": "",
+       "key_a": [
+        "FILE",
+        "e8556b2a4c237957175ab9e9f63a67b39feb54b8d33b2b27f7e3c9af0d323900"
+       ],
+       "key_b": [
+        "FILE",
+        "e8556b2a4c237957175ab9e9f63a67b39feb54b8d33b2b27f7e3c9af0d323900"
+       ],
+       "attr_delta": {
+        "host_os": [
+         3,
+         2
+        ],
+        "mode": [
+         "0o100444",
+         "0o41"
+        ]
+       }
+      }
+     ],
+     "order_changed": false
+    },
+    "rar3-readonly-unix.rar  ||  rar5-readonly-unix.rar": {
+     "only_in_a": [],
+     "only_in_b": [],
+     "items": [
+      {
+       "name": "ro_dir/",
+       "bucket": "IDENTICAL",
+       "reason": "",
+       "key_a": [
+        "DIR"
+       ],
+       "key_b": [
+        "DIR"
+       ],
+       "attr_delta": {
+        "mtime": [
+         "2020-07-26T22:11:42.328617",
+         "2020-07-26T19:11:42.328617082+00:00"
+        ]
+       }
+      },
+      {
+       "name": "ro_dir/ro_file.txt",
+       "bucket": "IDENTICAL",
+       "reason": "",
+       "key_a": [
+        "FILE",
+        "e8556b2a4c237957175ab9e9f63a67b39feb54b8d33b2b27f7e3c9af0d323900"
+       ],
+       "key_b": [
+        "FILE",
+        "e8556b2a4c237957175ab9e9f63a67b39feb54b8d33b2b27f7e3c9af0d323900"
+       ],
+       "attr_delta": {
+        "mtime": [
+         "2020-07-26T22:11:42.312616300",
+         "2020-07-26T19:11:42.312616322+00:00"
+        ]
+       }
+      }
+     ],
+     "order_changed": false
+    },
+    "rar3-readonly-unix.rar  ||  rar5-readonly-win.rar": {
+     "only_in_a": [],
+     "only_in_b": [],
+     "items": [
+      {
+       "name": "ro_dir/",
+       "bucket": "IDENTICAL",
+       "reason": "",
+       "key_a": [
+        "DIR"
+       ],
+       "key_b": [
+        "DIR"
+       ],
+       "attr_delta": {
+        "host_os": [
+         3,
+         2
+        ],
+        "mode": [
+         "0o40555",
+         "0o21"
+        ]
+       }
+      },
+      {
+       "name": "ro_dir/ro_file.txt",
+       "bucket": "IDENTICAL",
+       "reason": "",
+       "key_a": [
+        "FILE",
+        "e8556b2a4c237957175ab9e9f63a67b39feb54b8d33b2b27f7e3c9af0d323900"
+       ],
+       "key_b": [
+        "FILE",
+        "e8556b2a4c237957175ab9e9f63a67b39feb54b8d33b2b27f7e3c9af0d323900"
+       ],
+       "attr_delta": {
+        "host_os": [
+         3,
+         2
+        ],
+        "mode": [
+         "0o100444",
+         "0o41"
+        ]
+       }
+      }
+     ],
+     "order_changed": false
+    },
+    "rar3-readonly-win.rar  ||  rar5-readonly-unix.rar": {
+     "only_in_a": [],
+     "only_in_b": [],
+     "items": [
+      {
+       "name": "ro_dir/",
+       "bucket": "IDENTICAL",
+       "reason": "",
+       "key_a": [
+        "DIR"
+       ],
+       "key_b": [
+        "DIR"
+       ],
+       "attr_delta": {
+        "host_os": [
+         2,
+         3
+        ],
+        "mode": [
+         "0o21",
+         "0o40555"
+        ],
+        "mtime": [
+         "2020-07-26T22:11:42.328617",
+         "2020-07-26T19:11:42.328617082+00:00"
+        ]
+       }
+      },
+      {
+       "name": "ro_dir/ro_file.txt",
+       "bucket": "IDENTICAL",
+       "reason": "",
+       "key_a": [
+        "FILE",
+        "e8556b2a4c237957175ab9e9f63a67b39feb54b8d33b2b27f7e3c9af0d323900"
+       ],
+       "key_b": [
+        "FILE",
+        "e8556b2a4c237957175ab9e9f63a67b39feb54b8d33b2b27f7e3c9af0d323900"
+       ],
+       "attr_delta": {
+        "host_os": [
+         2,
+         3
+        ],
+        "mode": [
+         "0o41",
+         "0o100444"
+        ],
+        "mtime": [
+         "2020-07-26T22:11:42.312616300",
+         "2020-07-26T19:11:42.312616322+00:00"
+        ]
+       }
+      }
+     ],
+     "order_changed": false
+    },
+    "rar3-readonly-win.rar  ||  rar5-readonly-win.rar": {
+     "only_in_a": [],
+     "only_in_b": [],
+     "items": [
+      {
+       "name": "ro_dir/",
+       "bucket": "IDENTICAL",
+       "reason": "",
+       "key_a": [
+        "DIR"
+       ],
+       "key_b": [
+        "DIR"
+       ],
+       "attr_delta": {}
+      },
+      {
+       "name": "ro_dir/ro_file.txt",
+       "bucket": "IDENTICAL",
+       "reason": "",
+       "key_a": [
+        "FILE",
+        "e8556b2a4c237957175ab9e9f63a67b39feb54b8d33b2b27f7e3c9af0d323900"
+       ],
+       "key_b": [
+        "FILE",
+        "e8556b2a4c237957175ab9e9f63a67b39feb54b8d33b2b27f7e3c9af0d323900"
+       ],
+       "attr_delta": {}
+      }
+     ],
+     "order_changed": false
+    },
+    "rar5-readonly-unix.rar  ||  rar5-readonly-win.rar": {
+     "only_in_a": [],
+     "only_in_b": [],
+     "items": [
+      {
+       "name": "ro_dir/",
+       "bucket": "IDENTICAL",
+       "reason": "",
+       "key_a": [
+        "DIR"
+       ],
+       "key_b": [
+        "DIR"
+       ],
+       "attr_delta": {
+        "host_os": [
+         3,
+         2
+        ],
+        "mode": [
+         "0o40555",
+         "0o21"
+        ],
+        "mtime": [
+         "2020-07-26T19:11:42.328617082+00:00",
+         "2020-07-26T22:11:42.328617"
+        ]
+       }
+      },
+      {
+       "name": "ro_dir/ro_file.txt",
+       "bucket": "IDENTICAL",
+       "reason": "",
+       "key_a": [
+        "FILE",
+        "e8556b2a4c237957175ab9e9f63a67b39feb54b8d33b2b27f7e3c9af0d323900"
+       ],
+       "key_b": [
+        "FILE",
+        "e8556b2a4c237957175ab9e9f63a67b39feb54b8d33b2b27f7e3c9af0d323900"
+       ],
+       "attr_delta": {
+        "host_os": [
+         3,
+         2
+        ],
+        "mode": [
+         "0o100444",
+         "0o41"
+        ],
+        "mtime": [
+         "2020-07-26T19:11:42.312616322+00:00",
+         "2020-07-26T22:11:42.312616300"
+        ]
+       }
+      }
+     ],
+     "order_changed": false
+    }
+   }
+  },
+  "222960e5": {
+   "members": [
+    "rar15-comment-lock.rar",
+    "rar15-comment.rar",
+    "rar202-comment-nopsw.rar",
+    "rar202-comment-psw.rar"
+   ],
+   "pairs": {
+    "rar15-comment-lock.rar  ||  rar15-comment.rar": {
+     "only_in_a": [],
+     "only_in_b": [],
+     "items": [
+      {
+       "name": "FILE1.TXT",
+       "bucket": "IDENTICAL",
+       "reason": "",
+       "key_a": [
+        "FILE",
+        "d7bca5c38fa696e969cf7335ede13e715dddc0c9dc618a1743463f3f84f145b8"
+       ],
+       "key_b": [
+        "FILE",
+        "d7bca5c38fa696e969cf7335ede13e715dddc0c9dc618a1743463f3f84f145b8"
+       ],
+       "attr_delta": {}
+      },
+      {
+       "name": "FILE2.TXT",
+       "bucket": "IDENTICAL",
+       "reason": "",
+       "key_a": [
+        "FILE",
+        "42c3ccb0c4f1b28eb2fbc62d9fb14aa04befd076183284bc82c3819478da5f94"
+       ],
+       "key_b": [
+        "FILE",
+        "42c3ccb0c4f1b28eb2fbc62d9fb14aa04befd076183284bc82c3819478da5f94"
+       ],
+       "attr_delta": {}
+      }
+     ],
+     "order_changed": false
+    },
+    "rar15-comment-lock.rar  ||  rar202-comment-nopsw.rar": {
+     "only_in_a": [],
+     "only_in_b": [],
+     "items": [
+      {
+       "name": "FILE1.TXT",
+       "bucket": "DIFFERENT",
+       "reason": "verified content keys differ",
+       "key_a": [
+        "FILE",
+        "d7bca5c38fa696e969cf7335ede13e715dddc0c9dc618a1743463f3f84f145b8"
+       ],
+       "key_b": [
+        "FILE",
+        "2b69a7f7ba9698a49a49a33d4857610b4408109ff096e5d5ec2a1394cf33314a"
+       ],
+       "attr_delta": {
+        "compress_type": [
+         51,
+         48
+        ],
+        "crc32_header": [
+         "0xe27f07a9",
+         "0x7a197dba"
+        ]
+       }
+      },
+      {
+       "name": "FILE2.TXT",
+       "bucket": "DIFFERENT",
+       "reason": "verified content keys differ",
+       "key_a": [
+        "FILE",
+        "42c3ccb0c4f1b28eb2fbc62d9fb14aa04befd076183284bc82c3819478da5f94"
+       ],
+       "key_b": [
+        "FILE",
+        "24040d7b811b76bf0b32993100e66d4d2dadd90ca3e5d250c17a0f20491a3531"
+       ],
+       "attr_delta": {
+        "crc32_header": [
+         "0x3c4306f7",
+         "0x785fc3e3"
+        ],
+        "file_size": [
+         8,
+         7
+        ]
+       }
+      }
+     ],
+     "order_changed": false
+    },
+    "rar15-comment-lock.rar  ||  rar202-comment-psw.rar": {
+     "only_in_a": [],
+     "only_in_b": [],
+     "items": [
+      {
+       "name": "FILE1.TXT",
+       "bucket": "DIFFERENT",
+       "reason": "verified content keys differ",
+       "key_a": [
+        "FILE",
+        "d7bca5c38fa696e969cf7335ede13e715dddc0c9dc618a1743463f3f84f145b8"
+       ],
+       "key_b": [
+        "FILE",
+        "2b69a7f7ba9698a49a49a33d4857610b4408109ff096e5d5ec2a1394cf33314a"
+       ],
+       "attr_delta": {
+        "crc32_header": [
+         "0xe27f07a9",
+         "0x7a197dba"
+        ]
+       }
+      },
+      {
+       "name": "FILE2.TXT",
+       "bucket": "DIFFERENT",
+       "reason": "verified content keys differ",
+       "key_a": [
+        "FILE",
+        "42c3ccb0c4f1b28eb2fbc62d9fb14aa04befd076183284bc82c3819478da5f94"
+       ],
+       "key_b": [
+        "FILE",
+        "24040d7b811b76bf0b32993100e66d4d2dadd90ca3e5d250c17a0f20491a3531"
+       ],
+       "attr_delta": {
+        "compress_type": [
+         48,
+         51
+        ],
+        "crc32_header": [
+         "0x3c4306f7",
+         "0x785fc3e3"
+        ],
+        "file_size": [
+         8,
+         7
+        ]
+       }
+      }
+     ],
+     "order_changed": false
+    },
+    "rar15-comment.rar  ||  rar202-comment-nopsw.rar": {
+     "only_in_a": [],
+     "only_in_b": [],
+     "items": [
+      {
+       "name": "FILE1.TXT",
+       "bucket": "DIFFERENT",
+       "reason": "verified content keys differ",
+       "key_a": [
+        "FILE",
+        "d7bca5c38fa696e969cf7335ede13e715dddc0c9dc618a1743463f3f84f145b8"
+       ],
+       "key_b": [
+        "FILE",
+        "2b69a7f7ba9698a49a49a33d4857610b4408109ff096e5d5ec2a1394cf33314a"
+       ],
+       "attr_delta": {
+        "compress_type": [
+         51,
+         48
+        ],
+        "crc32_header": [
+         "0xe27f07a9",
+         "0x7a197dba"
+        ]
+       }
+      },
+      {
+       "name": "FILE2.TXT",
+       "bucket": "DIFFERENT",
+       "reason": "verified content keys differ",
+       "key_a": [
+        "FILE",
+        "42c3ccb0c4f1b28eb2fbc62d9fb14aa04befd076183284bc82c3819478da5f94"
+       ],
+       "key_b": [
+        "FILE",
+        "24040d7b811b76bf0b32993100e66d4d2dadd90ca3e5d250c17a0f20491a3531"
+       ],
+       "attr_delta": {
+        "crc32_header": [
+         "0x3c4306f7",
+         "0x785fc3e3"
+        ],
+        "file_size": [
+         8,
+         7
+        ]
+       }
+      }
+     ],
+     "order_changed": false
+    },
+    "rar15-comment.rar  ||  rar202-comment-psw.rar": {
+     "only_in_a": [],
+     "only_in_b": [],
+     "items": [
+      {
+       "name": "FILE1.TXT",
+       "bucket": "DIFFERENT",
+       "reason": "verified content keys differ",
+       "key_a": [
+        "FILE",
+        "d7bca5c38fa696e969cf7335ede13e715dddc0c9dc618a1743463f3f84f145b8"
+       ],
+       "key_b": [
+        "FILE",
+        "2b69a7f7ba9698a49a49a33d4857610b4408109ff096e5d5ec2a1394cf33314a"
+       ],
+       "attr_delta": {
+        "crc32_header": [
+         "0xe27f07a9",
+         "0x7a197dba"
+        ]
+       }
+      },
+      {
+       "name": "FILE2.TXT",
+       "bucket": "DIFFERENT",
+       "reason": "verified content keys differ",
+       "key_a": [
+        "FILE",
+        "42c3ccb0c4f1b28eb2fbc62d9fb14aa04befd076183284bc82c3819478da5f94"
+       ],
+       "key_b": [
+        "FILE",
+        "24040d7b811b76bf0b32993100e66d4d2dadd90ca3e5d250c17a0f20491a3531"
+       ],
+       "attr_delta": {
+        "compress_type": [
+         48,
+         51
+        ],
+        "crc32_header": [
+         "0x3c4306f7",
+         "0x785fc3e3"
+        ],
+        "file_size": [
+         8,
+         7
+        ]
+       }
+      }
+     ],
+     "order_changed": false
+    },
+    "rar202-comment-nopsw.rar  ||  rar202-comment-psw.rar": {
+     "only_in_a": [],
+     "only_in_b": [],
+     "items": [
+      {
+       "name": "FILE1.TXT",
+       "bucket": "IDENTICAL",
+       "reason": "",
+       "key_a": [
+        "FILE",
+        "2b69a7f7ba9698a49a49a33d4857610b4408109ff096e5d5ec2a1394cf33314a"
+       ],
+       "key_b": [
+        "FILE",
+        "2b69a7f7ba9698a49a49a33d4857610b4408109ff096e5d5ec2a1394cf33314a"
+       ],
+       "attr_delta": {
+        "compress_type": [
+         48,
+         51
+        ]
+       }
+      },
+      {
+       "name": "FILE2.TXT",
+       "bucket": "IDENTICAL",
+       "reason": "",
+       "key_a": [
+        "FILE",
+        "24040d7b811b76bf0b32993100e66d4d2dadd90ca3e5d250c17a0f20491a3531"
+       ],
+       "key_b": [
+        "FILE",
+        "24040d7b811b76bf0b32993100e66d4d2dadd90ca3e5d250c17a0f20491a3531"
+       ],
+       "attr_delta": {
+        "compress_type": [
+         48,
+         51
+        ]
+       }
+      }
+     ],
+     "order_changed": false
+    }
+   }
+  },
+  "2bf11484": {
+   "members": [
+    "rar3-versions.rar",
+    "rar5-versions.rar"
+   ],
+   "pairs": {
+    "rar3-versions.rar  ||  rar5-versions.rar": {
+     "only_in_a": [],
+     "only_in_b": [],
+     "items": [
+      {
+       "name": "versioned.txt",
+       "bucket": "IDENTICAL",
+       "reason": "",
+       "key_a": [
+        "FILE",
+        "1121cfccd5913f0a63fec40a6ffd44ea64f9dc135c66634ba001d10bcf4302a2"
+       ],
+       "key_b": [
+        "FILE",
+        "1121cfccd5913f0a63fec40a6ffd44ea64f9dc135c66634ba001d10bcf4302a2"
+       ],
+       "attr_delta": {
+        "mtime": [
+         "2020-07-30T22:52:46.436647500",
+         "2020-07-30T19:52:46.436647570+00:00"
+        ]
+       }
+      }
+     ],
+     "order_changed": false
+    }
+   }
+  },
+  "4418c893": {
+   "members": [
+    "rar5-solid-qo.rar"
+   ],
+   "pairs": {}
+  },
+  "5436437f": {
+   "members": [
+    "rar2-unix-owner.rar"
+   ],
+   "pairs": {}
+  },
+  "6e38ed2c": {
+   "members": [
+    "rar3-old.rar",
+    "rar3-vols.part1.rar",
+    "rar5-vols.part1.rar"
+   ],
+   "pairs": {
+    "rar3-old.rar  ||  rar3-vols.part1.rar": {
+     "only_in_a": [],
+     "only_in_b": [],
+     "items": [
+      {
+       "name": "vols/bigfile.txt",
+       "bucket": "IDENTICAL",
+       "reason": "",
+       "key_a": [
+        "FILE",
+        "57613b4a0d18b31472c9abe90780dcaf834f4edf48e79008f027a99710cf3632"
+       ],
+       "key_b": [
+        "FILE",
+        "57613b4a0d18b31472c9abe90780dcaf834f4edf48e79008f027a99710cf3632"
+       ],
+       "attr_delta": {}
+      },
+      {
+       "name": "vols/smallfile.txt",
+       "bucket": "IDENTICAL",
+       "reason": "",
+       "key_a": [
+        "FILE",
+        "6805973b24128edda3148235c77a7f7b5a7a9be6272bc882a6e030871b2b18d1"
+       ],
+       "key_b": [
+        "FILE",
+        "6805973b24128edda3148235c77a7f7b5a7a9be6272bc882a6e030871b2b18d1"
+       ],
+       "attr_delta": {}
+      }
+     ],
+     "order_changed": false
+    },
+    "rar3-old.rar  ||  rar5-vols.part1.rar": {
+     "only_in_a": [],
+     "only_in_b": [],
+     "items": [
+      {
+       "name": "vols/bigfile.txt",
+       "bucket": "IDENTICAL",
+       "reason": "",
+       "key_a": [
+        "FILE",
+        "57613b4a0d18b31472c9abe90780dcaf834f4edf48e79008f027a99710cf3632"
+       ],
+       "key_b": [
+        "FILE",
+        "57613b4a0d18b31472c9abe90780dcaf834f4edf48e79008f027a99710cf3632"
+       ],
+       "attr_delta": {
+        "mtime": [
+         "2016-05-24T11:42:37",
+         "2016-05-24T08:42:37+00:00"
+        ]
+       }
+      },
+      {
+       "name": "vols/smallfile.txt",
+       "bucket": "IDENTICAL",
+       "reason": "",
+       "key_a": [
+        "FILE",
+        "6805973b24128edda3148235c77a7f7b5a7a9be6272bc882a6e030871b2b18d1"
+       ],
+       "key_b": [
+        "FILE",
+        "6805973b24128edda3148235c77a7f7b5a7a9be6272bc882a6e030871b2b18d1"
+       ],
+       "attr_delta": {
+        "mtime": [
+         "2016-05-24T11:42:43",
+         "2016-05-24T08:42:43+00:00"
+        ]
+       }
+      }
+     ],
+     "order_changed": false
+    },
+    "rar3-vols.part1.rar  ||  rar5-vols.part1.rar": {
+     "only_in_a": [],
+     "only_in_b": [],
+     "items": [
+      {
+       "name": "vols/bigfile.txt",
+       "bucket": "IDENTICAL",
+       "reason": "",
+       "key_a": [
+        "FILE",
+        "57613b4a0d18b31472c9abe90780dcaf834f4edf48e79008f027a99710cf3632"
+       ],
+       "key_b": [
+        "FILE",
+        "57613b4a0d18b31472c9abe90780dcaf834f4edf48e79008f027a99710cf3632"
+       ],
+       "attr_delta": {
+        "mtime": [
+         "2016-05-24T11:42:37",
+         "2016-05-24T08:42:37+00:00"
+        ]
+       }
+      },
+      {
+       "name": "vols/smallfile.txt",
+       "bucket": "IDENTICAL",
+       "reason": "",
+       "key_a": [
+        "FILE",
+        "6805973b24128edda3148235c77a7f7b5a7a9be6272bc882a6e030871b2b18d1"
+       ],
+       "key_b": [
+        "FILE",
+        "6805973b24128edda3148235c77a7f7b5a7a9be6272bc882a6e030871b2b18d1"
+       ],
+       "attr_delta": {
+        "mtime": [
+         "2016-05-24T11:42:43",
+         "2016-05-24T08:42:43+00:00"
+        ]
+       }
+      }
+     ],
+     "order_changed": false
+    }
+   }
+  },
+  "7076ae69": {
+   "members": [
+    "rar3-seektest.sfx",
+    "rar3-solid.rar",
+    "rar5-blake.rar",
+    "rar5-crc.rar",
+    "rar5-crc.sfx",
+    "rar5-psw-blake.rar",
+    "rar5-psw.rar",
+    "rar5-quick-open.rar",
+    "rar5-solid.rar",
+    "seektest.rar"
+   ],
+   "pairs": {
+    "rar3-seektest.sfx  ||  rar3-solid.rar": {
+     "only_in_a": [],
+     "only_in_b": [],
+     "items": [
+      {
+       "name": "stest1.txt",
+       "bucket": "IDENTICAL",
+       "reason": "",
+       "key_a": [
+        "FILE",
+        "2eaebb4c18cdef7f20089f8a2fa3475bc59c2a193f66e2f1513609a4bef13e22"
+       ],
+       "key_b": [
+        "FILE",
+        "2eaebb4c18cdef7f20089f8a2fa3475bc59c2a193f66e2f1513609a4bef13e22"
+       ],
+       "attr_delta": {
+        "compress_type": [
+         53,
+         51
+        ]
+       }
+      },
+      {
+       "name": "stest2.txt",
+       "bucket": "IDENTICAL",
+       "reason": "",
+       "key_a": [
+        "FILE",
+        "2eaebb4c18cdef7f20089f8a2fa3475bc59c2a193f66e2f1513609a4bef13e22"
+       ],
+       "key_b": [
+        "FILE",
+        "2eaebb4c18cdef7f20089f8a2fa3475bc59c2a193f66e2f1513609a4bef13e22"
+       ],
+       "attr_delta": {
+        "compress_type": [
+         48,
+         51
+        ]
+       }
+      }
+     ],
+     "order_changed": false
+    },
+    "rar3-seektest.sfx  ||  rar5-blake.rar": {
+     "only_in_a": [],
+     "only_in_b": [],
+     "items": [
+      {
+       "name": "stest1.txt",
+       "bucket": "IDENTICAL",
+       "reason": "",
+       "key_a": [
+        "FILE",
+        "2eaebb4c18cdef7f20089f8a2fa3475bc59c2a193f66e2f1513609a4bef13e22"
+       ],
+       "key_b": [
+        "FILE",
+        "2eaebb4c18cdef7f20089f8a2fa3475bc59c2a193f66e2f1513609a4bef13e22"
+       ],
+       "attr_delta": {
+        "mtime": [
+         "2011-06-12T12:53:33",
+         "2011-06-12T09:53:33+00:00"
+        ],
+        "compress_type": [
+         53,
+         51
+        ],
+        "crc32_header": [
+         "0xc5b7e6a2",
+         0
+        ],
+        "blake2sp_header": [
+         null,
+         "7cd5c1ac31f0cf58844a57fb9072c44768dbea1456e37c21e491f4853982ede0"
+        ]
+       }
+      },
+      {
+       "name": "stest2.txt",
+       "bucket": "IDENTICAL",
+       "reason": "",
+       "key_a": [
+        "FILE",
+        "2eaebb4c18cdef7f20089f8a2fa3475bc59c2a193f66e2f1513609a4bef13e22"
+       ],
+       "key_b": [
+        "FILE",
+        "2eaebb4c18cdef7f20089f8a2fa3475bc59c2a193f66e2f1513609a4bef13e22"
+       ],
+       "attr_delta": {
+        "mtime": [
+         "2011-06-12T12:53:33",
+         "2011-06-12T09:53:33+00:00"
+        ],
+        "ctime": [
+         null,
+         "2016-05-22T09:12:33+00:00"
+        ],
+        "crc32_header": [
+         "0xc5b7e6a2",
+         0
+        ],
+        "blake2sp_header": [
+         null,
+         "7cd5c1ac31f0cf58844a57fb9072c44768dbea1456e37c21e491f4853982ede0"
+        ]
+       }
+      }
+     ],
+     "order_changed": false
+    },
+    "rar3-seektest.sfx  ||  rar5-crc.rar": {
+     "only_in_a": [],
+     "only_in_b": [],
+     "items": [
+      {
+       "name": "stest1.txt",
+       "bucket": "IDENTICAL",
+       "reason": "",
+       "key_a": [
+        "FILE",
+        "2eaebb4c18cdef7f20089f8a2fa3475bc59c2a193f66e2f1513609a4bef13e22"
+       ],
+       "key_b": [
+        "FILE",
+        "2eaebb4c18cdef7f20089f8a2fa3475bc59c2a193f66e2f1513609a4bef13e22"
+       ],
+       "attr_delta": {
+        "mtime": [
+         "2011-06-12T12:53:33",
+         "2011-06-12T09:53:33+00:00"
+        ],
+        "compress_type": [
+         53,
+         51
+        ]
+       }
+      },
+      {
+       "name": "stest2.txt",
+       "bucket": "IDENTICAL",
+       "reason": "",
+       "key_a": [
+        "FILE",
+        "2eaebb4c18cdef7f20089f8a2fa3475bc59c2a193f66e2f1513609a4bef13e22"
+       ],
+       "key_b": [
+        "FILE",
+        "2eaebb4c18cdef7f20089f8a2fa3475bc59c2a193f66e2f1513609a4bef13e22"
+       ],
+       "attr_delta": {
+        "mtime": [
+         "2011-06-12T12:53:33",
+         "2011-06-12T09:53:33+00:00"
+        ],
+        "ctime": [
+         null,
+         "2016-05-22T09:12:33+00:00"
+        ]
+       }
+      }
+     ],
+     "order_changed": false
+    },
+    "rar3-seektest.sfx  ||  rar5-crc.sfx": {
+     "only_in_a": [],
+     "only_in_b": [],
+     "items": [
+      {
+       "name": "stest1.txt",
+       "bucket": "IDENTICAL",
+       "reason": "",
+       "key_a": [
+        "FILE",
+        "2eaebb4c18cdef7f20089f8a2fa3475bc59c2a193f66e2f1513609a4bef13e22"
+       ],
+       "key_b": [
+        "FILE",
+        "2eaebb4c18cdef7f20089f8a2fa3475bc59c2a193f66e2f1513609a4bef13e22"
+       ],
+       "attr_delta": {
+        "mtime": [
+         "2011-06-12T12:53:33",
+         "2011-06-12T09:53:33+00:00"
+        ],
+        "compress_type": [
+         53,
+         51
+        ]
+       }
+      },
+      {
+       "name": "stest2.txt",
+       "bucket": "IDENTICAL",
+       "reason": "",
+       "key_a": [
+        "FILE",
+        "2eaebb4c18cdef7f20089f8a2fa3475bc59c2a193f66e2f1513609a4bef13e22"
+       ],
+       "key_b": [
+        "FILE",
+        "2eaebb4c18cdef7f20089f8a2fa3475bc59c2a193f66e2f1513609a4bef13e22"
+       ],
+       "attr_delta": {
+        "mtime": [
+         "2011-06-12T12:53:33",
+         "2011-06-12T09:53:33+00:00"
+        ],
+        "ctime": [
+         null,
+         "2016-05-22T09:12:33+00:00"
+        ]
+       }
+      }
+     ],
+     "order_changed": false
+    },
+    "rar3-seektest.sfx  ||  rar5-psw-blake.rar": {
+     "only_in_a": [],
+     "only_in_b": [],
+     "items": [
+      {
+       "name": "stest1.txt",
+       "bucket": "IDENTICAL",
+       "reason": "",
+       "key_a": [
+        "FILE",
+        "2eaebb4c18cdef7f20089f8a2fa3475bc59c2a193f66e2f1513609a4bef13e22"
+       ],
+       "key_b": [
+        "FILE",
+        "2eaebb4c18cdef7f20089f8a2fa3475bc59c2a193f66e2f1513609a4bef13e22"
+       ],
+       "attr_delta": {
+        "mtime": [
+         "2011-06-12T12:53:33",
+         "2011-06-12T09:53:33+00:00"
+        ],
+        "compress_type": [
+         53,
+         51
+        ],
+        "crc32_header": [
+         "0xc5b7e6a2",
+         0
+        ],
+        "blake2sp_header": [
+         null,
+         "5cdbd3f49f594a35edb63c923b64abdadba3bf1468b6259ee1e1c54ba2f0d65e"
+        ]
+       }
+      },
+      {
+       "name": "stest2.txt",
+       "bucket": "IDENTICAL",
+       "reason": "",
+       "key_a": [
+        "FILE",
+        "2eaebb4c18cdef7f20089f8a2fa3475bc59c2a193f66e2f1513609a4bef13e22"
+       ],
+       "key_b": [
+        "FILE",
+        "2eaebb4c18cdef7f20089f8a2fa3475bc59c2a193f66e2f1513609a4bef13e22"
+       ],
+       "attr_delta": {
+        "mtime": [
+         "2011-06-12T12:53:33",
+         "2011-06-12T09:53:33+00:00"
+        ],
+        "ctime": [
+         null,
+         "2016-05-22T09:12:33+00:00"
+        ],
+        "crc32_header": [
+         "0xc5b7e6a2",
+         0
+        ],
+        "blake2sp_header": [
+         null,
+         "5cdbd3f49f594a35edb63c923b64abdadba3bf1468b6259ee1e1c54ba2f0d65e"
+        ]
+       }
+      }
+     ],
+     "order_changed": false
+    },
+    "rar3-seektest.sfx  ||  rar5-psw.rar": {
+     "only_in_a": [],
+     "only_in_b": [],
+     "items": [
+      {
+       "name": "stest1.txt",
+       "bucket": "IDENTICAL",
+       "reason": "",
+       "key_a": [
+        "FILE",
+        "2eaebb4c18cdef7f20089f8a2fa3475bc59c2a193f66e2f1513609a4bef13e22"
+       ],
+       "key_b": [
+        "FILE",
+        "2eaebb4c18cdef7f20089f8a2fa3475bc59c2a193f66e2f1513609a4bef13e22"
+       ],
+       "attr_delta": {
+        "mtime": [
+         "2011-06-12T12:53:33",
+         "2011-06-12T09:53:33+00:00"
+        ],
+        "compress_type": [
+         53,
+         51
+        ],
+        "crc32_header": [
+         "0xc5b7e6a2",
+         "0xba28eeea"
+        ]
+       }
+      },
+      {
+       "name": "stest2.txt",
+       "bucket": "IDENTICAL",
+       "reason": "",
+       "key_a": [
+        "FILE",
+        "2eaebb4c18cdef7f20089f8a2fa3475bc59c2a193f66e2f1513609a4bef13e22"
+       ],
+       "key_b": [
+        "FILE",
+        "2eaebb4c18cdef7f20089f8a2fa3475bc59c2a193f66e2f1513609a4bef13e22"
+       ],
+       "attr_delta": {
+        "mtime": [
+         "2011-06-12T12:53:33",
+         "2011-06-12T09:53:33+00:00"
+        ],
+        "ctime": [
+         null,
+         "2016-05-22T09:12:33+00:00"
+        ],
+        "crc32_header": [
+         "0xc5b7e6a2",
+         "0xba28eeea"
+        ]
+       }
+      }
+     ],
+     "order_changed": false
+    },
+    "rar3-seektest.sfx  ||  rar5-quick-open.rar": {
+     "only_in_a": [],
+     "only_in_b": [],
+     "items": [
+      {
+       "name": "stest1.txt",
+       "bucket": "IDENTICAL",
+       "reason": "",
+       "key_a": [
+        "FILE",
+        "2eaebb4c18cdef7f20089f8a2fa3475bc59c2a193f66e2f1513609a4bef13e22"
+       ],
+       "key_b": [
+        "FILE",
+        "2eaebb4c18cdef7f20089f8a2fa3475bc59c2a193f66e2f1513609a4bef13e22"
+       ],
+       "attr_delta": {
+        "mtime": [
+         "2011-06-12T12:53:33",
+         "2011-06-12T09:53:33+00:00"
+        ],
+        "compress_type": [
+         53,
+         51
+        ]
+       }
+      },
+      {
+       "name": "stest2.txt",
+       "bucket": "IDENTICAL",
+       "reason": "",
+       "key_a": [
+        "FILE",
+        "2eaebb4c18cdef7f20089f8a2fa3475bc59c2a193f66e2f1513609a4bef13e22"
+       ],
+       "key_b": [
+        "FILE",
+        "2eaebb4c18cdef7f20089f8a2fa3475bc59c2a193f66e2f1513609a4bef13e22"
+       ],
+       "attr_delta": {
+        "mtime": [
+         "2011-06-12T12:53:33",
+         "2011-06-12T09:53:33+00:00"
+        ],
+        "compress_type": [
+         48,
+         51
+        ]
+       }
+      }
+     ],
+     "order_changed": false
+    },
+    "rar3-seektest.sfx  ||  rar5-solid.rar": {
+     "only_in_a": [],
+     "only_in_b": [],
+     "items": [
+      {
+       "name": "stest1.txt",
+       "bucket": "IDENTICAL",
+       "reason": "",
+       "key_a": [
+        "FILE",
+        "2eaebb4c18cdef7f20089f8a2fa3475bc59c2a193f66e2f1513609a4bef13e22"
+       ],
+       "key_b": [
+        "FILE",
+        "2eaebb4c18cdef7f20089f8a2fa3475bc59c2a193f66e2f1513609a4bef13e22"
+       ],
+       "attr_delta": {
+        "mode": [
+         "0o100644",
+         "0o100666"
+        ],
+        "mtime": [
+         "2011-06-12T12:53:33",
+         null
+        ],
+        "compress_type": [
+         53,
+         51
+        ]
+       }
+      },
+      {
+       "name": "stest2.txt",
+       "bucket": "IDENTICAL",
+       "reason": "",
+       "key_a": [
+        "FILE",
+        "2eaebb4c18cdef7f20089f8a2fa3475bc59c2a193f66e2f1513609a4bef13e22"
+       ],
+       "key_b": [
+        "FILE",
+        "2eaebb4c18cdef7f20089f8a2fa3475bc59c2a193f66e2f1513609a4bef13e22"
+       ],
+       "attr_delta": {
+        "mode": [
+         "0o100644",
+         "0o100666"
+        ],
+        "mtime": [
+         "2011-06-12T12:53:33",
+         null
+        ],
+        "compress_type": [
+         48,
+         51
+        ]
+       }
+      }
+     ],
+     "order_changed": false
+    },
+    "rar3-seektest.sfx  ||  seektest.rar": {
+     "only_in_a": [],
+     "only_in_b": [],
+     "items": [
+      {
+       "name": "stest1.txt",
+       "bucket": "IDENTICAL",
+       "reason": "",
+       "key_a": [
+        "FILE",
+        "2eaebb4c18cdef7f20089f8a2fa3475bc59c2a193f66e2f1513609a4bef13e22"
+       ],
+       "key_b": [
+        "FILE",
+        "2eaebb4c18cdef7f20089f8a2fa3475bc59c2a193f66e2f1513609a4bef13e22"
+       ],
+       "attr_delta": {}
+      },
+      {
+       "name": "stest2.txt",
+       "bucket": "IDENTICAL",
+       "reason": "",
+       "key_a": [
+        "FILE",
+        "2eaebb4c18cdef7f20089f8a2fa3475bc59c2a193f66e2f1513609a4bef13e22"
+       ],
+       "key_b": [
+        "FILE",
+        "2eaebb4c18cdef7f20089f8a2fa3475bc59c2a193f66e2f1513609a4bef13e22"
+       ],
+       "attr_delta": {}
+      }
+     ],
+     "order_changed": false
+    },
+    "rar3-solid.rar  ||  rar5-blake.rar": {
+     "only_in_a": [],
+     "only_in_b": [],
+     "items": [
+      {
+       "name": "stest1.txt",
+       "bucket": "IDENTICAL",
+       "reason": "",
+       "key_a": [
+        "FILE",
+        "2eaebb4c18cdef7f20089f8a2fa3475bc59c2a193f66e2f1513609a4bef13e22"
+       ],
+       "key_b": [
+        "FILE",
+        "2eaebb4c18cdef7f20089f8a2fa3475bc59c2a193f66e2f1513609a4bef13e22"
+       ],
+       "attr_delta": {
+        "mtime": [
+         "2011-06-12T12:53:33",
+         "2011-06-12T09:53:33+00:00"
+        ],
+        "crc32_header": [
+         "0xc5b7e6a2",
+         0
+        ],
+        "blake2sp_header": [
+         null,
+         "7cd5c1ac31f0cf58844a57fb9072c44768dbea1456e37c21e491f4853982ede0"
+        ]
+       }
+      },
+      {
+       "name": "stest2.txt",
+       "bucket": "IDENTICAL",
+       "reason": "",
+       "key_a": [
+        "FILE",
+        "2eaebb4c18cdef7f20089f8a2fa3475bc59c2a193f66e2f1513609a4bef13e22"
+       ],
+       "key_b": [
+        "FILE",
+        "2eaebb4c18cdef7f20089f8a2fa3475bc59c2a193f66e2f1513609a4bef13e22"
+       ],
+       "attr_delta": {
+        "mtime": [
+         "2011-06-12T12:53:33",
+         "2011-06-12T09:53:33+00:00"
+        ],
+        "ctime": [
+         null,
+         "2016-05-22T09:12:33+00:00"
+        ],
+        "compress_type": [
+         51,
+         48
+        ],
+        "crc32_header": [
+         "0xc5b7e6a2",
+         0
+        ],
+        "blake2sp_header": [
+         null,
+         "7cd5c1ac31f0cf58844a57fb9072c44768dbea1456e37c21e491f4853982ede0"
+        ]
+       }
+      }
+     ],
+     "order_changed": false
+    },
+    "rar3-solid.rar  ||  rar5-crc.rar": {
+     "only_in_a": [],
+     "only_in_b": [],
+     "items": [
+      {
+       "name": "stest1.txt",
+       "bucket": "IDENTICAL",
+       "reason": "",
+       "key_a": [
+        "FILE",
+        "2eaebb4c18cdef7f20089f8a2fa3475bc59c2a193f66e2f1513609a4bef13e22"
+       ],
+       "key_b": [
+        "FILE",
+        "2eaebb4c18cdef7f20089f8a2fa3475bc59c2a193f66e2f1513609a4bef13e22"
+       ],
+       "attr_delta": {
+        "mtime": [
+         "2011-06-12T12:53:33",
+         "2011-06-12T09:53:33+00:00"
+        ]
+       }
+      },
+      {
+       "name": "stest2.txt",
+       "bucket": "IDENTICAL",
+       "reason": "",
+       "key_a": [
+        "FILE",
+        "2eaebb4c18cdef7f20089f8a2fa3475bc59c2a193f66e2f1513609a4bef13e22"
+       ],
+       "key_b": [
+        "FILE",
+        "2eaebb4c18cdef7f20089f8a2fa3475bc59c2a193f66e2f1513609a4bef13e22"
+       ],
+       "attr_delta": {
+        "mtime": [
+         "2011-06-12T12:53:33",
+         "2011-06-12T09:53:33+00:00"
+        ],
+        "ctime": [
+         null,
+         "2016-05-22T09:12:33+00:00"
+        ],
+        "compress_type": [
+         51,
+         48
+        ]
+       }
+      }
+     ],
+     "order_changed": false
+    },
+    "rar3-solid.rar  ||  rar5-crc.sfx": {
+     "only_in_a": [],
+     "only_in_b": [],
+     "items": [
+      {
+       "name": "stest1.txt",
+       "bucket": "IDENTICAL",
+       "reason": "",
+       "key_a": [
+        "FILE",
+        "2eaebb4c18cdef7f20089f8a2fa3475bc59c2a193f66e2f1513609a4bef13e22"
+       ],
+       "key_b": [
+        "FILE",
+        "2eaebb4c18cdef7f20089f8a2fa3475bc59c2a193f66e2f1513609a4bef13e22"
+       ],
+       "attr_delta": {
+        "mtime": [
+         "2011-06-12T12:53:33",
+         "2011-06-12T09:53:33+00:00"
+        ]
+       }
+      },
+      {
+       "name": "stest2.txt",
+       "bucket": "IDENTICAL",
+       "reason": "",
+       "key_a": [
+        "FILE",
+        "2eaebb4c18cdef7f20089f8a2fa3475bc59c2a193f66e2f1513609a4bef13e22"
+       ],
+       "key_b": [
+        "FILE",
+        "2eaebb4c18cdef7f20089f8a2fa3475bc59c2a193f66e2f1513609a4bef13e22"
+       ],
+       "attr_delta": {
+        "mtime": [
+         "2011-06-12T12:53:33",
+         "2011-06-12T09:53:33+00:00"
+        ],
+        "ctime": [
+         null,
+         "2016-05-22T09:12:33+00:00"
+        ],
+        "compress_type": [
+         51,
+         48
+        ]
+       }
+      }
+     ],
+     "order_changed": false
+    },
+    "rar3-solid.rar  ||  rar5-psw-blake.rar": {
+     "only_in_a": [],
+     "only_in_b": [],
+     "items": [
+      {
+       "name": "stest1.txt",
+       "bucket": "IDENTICAL",
+       "reason": "",
+       "key_a": [
+        "FILE",
+        "2eaebb4c18cdef7f20089f8a2fa3475bc59c2a193f66e2f1513609a4bef13e22"
+       ],
+       "key_b": [
+        "FILE",
+        "2eaebb4c18cdef7f20089f8a2fa3475bc59c2a193f66e2f1513609a4bef13e22"
+       ],
+       "attr_delta": {
+        "mtime": [
+         "2011-06-12T12:53:33",
+         "2011-06-12T09:53:33+00:00"
+        ],
+        "crc32_header": [
+         "0xc5b7e6a2",
+         0
+        ],
+        "blake2sp_header": [
+         null,
+         "5cdbd3f49f594a35edb63c923b64abdadba3bf1468b6259ee1e1c54ba2f0d65e"
+        ]
+       }
+      },
+      {
+       "name": "stest2.txt",
+       "bucket": "IDENTICAL",
+       "reason": "",
+       "key_a": [
+        "FILE",
+        "2eaebb4c18cdef7f20089f8a2fa3475bc59c2a193f66e2f1513609a4bef13e22"
+       ],
+       "key_b": [
+        "FILE",
+        "2eaebb4c18cdef7f20089f8a2fa3475bc59c2a193f66e2f1513609a4bef13e22"
+       ],
+       "attr_delta": {
+        "mtime": [
+         "2011-06-12T12:53:33",
+         "2011-06-12T09:53:33+00:00"
+        ],
+        "ctime": [
+         null,
+         "2016-05-22T09:12:33+00:00"
+        ],
+        "compress_type": [
+         51,
+         48
+        ],
+        "crc32_header": [
+         "0xc5b7e6a2",
+         0
+        ],
+        "blake2sp_header": [
+         null,
+         "5cdbd3f49f594a35edb63c923b64abdadba3bf1468b6259ee1e1c54ba2f0d65e"
+        ]
+       }
+      }
+     ],
+     "order_changed": false
+    },
+    "rar3-solid.rar  ||  rar5-psw.rar": {
+     "only_in_a": [],
+     "only_in_b": [],
+     "items": [
+      {
+       "name": "stest1.txt",
+       "bucket": "IDENTICAL",
+       "reason": "",
+       "key_a": [
+        "FILE",
+        "2eaebb4c18cdef7f20089f8a2fa3475bc59c2a193f66e2f1513609a4bef13e22"
+       ],
+       "key_b": [
+        "FILE",
+        "2eaebb4c18cdef7f20089f8a2fa3475bc59c2a193f66e2f1513609a4bef13e22"
+       ],
+       "attr_delta": {
+        "mtime": [
+         "2011-06-12T12:53:33",
+         "2011-06-12T09:53:33+00:00"
+        ],
+        "crc32_header": [
+         "0xc5b7e6a2",
+         "0xba28eeea"
+        ]
+       }
+      },
+      {
+       "name": "stest2.txt",
+       "bucket": "IDENTICAL",
+       "reason": "",
+       "key_a": [
+        "FILE",
+        "2eaebb4c18cdef7f20089f8a2fa3475bc59c2a193f66e2f1513609a4bef13e22"
+       ],
+       "key_b": [
+        "FILE",
+        "2eaebb4c18cdef7f20089f8a2fa3475bc59c2a193f66e2f1513609a4bef13e22"
+       ],
+       "attr_delta": {
+        "mtime": [
+         "2011-06-12T12:53:33",
+         "2011-06-12T09:53:33+00:00"
+        ],
+        "ctime": [
+         null,
+         "2016-05-22T09:12:33+00:00"
+        ],
+        "compress_type": [
+         51,
+         48
+        ],
+        "crc32_header": [
+         "0xc5b7e6a2",
+         "0xba28eeea"
+        ]
+       }
+      }
+     ],
+     "order_changed": false
+    },
+    "rar3-solid.rar  ||  rar5-quick-open.rar": {
+     "only_in_a": [],
+     "only_in_b": [],
+     "items": [
+      {
+       "name": "stest1.txt",
+       "bucket": "IDENTICAL",
+       "reason": "",
+       "key_a": [
+        "FILE",
+        "2eaebb4c18cdef7f20089f8a2fa3475bc59c2a193f66e2f1513609a4bef13e22"
+       ],
+       "key_b": [
+        "FILE",
+        "2eaebb4c18cdef7f20089f8a2fa3475bc59c2a193f66e2f1513609a4bef13e22"
+       ],
+       "attr_delta": {
+        "mtime": [
+         "2011-06-12T12:53:33",
+         "2011-06-12T09:53:33+00:00"
+        ]
+       }
+      },
+      {
+       "name": "stest2.txt",
+       "bucket": "IDENTICAL",
+       "reason": "",
+       "key_a": [
+        "FILE",
+        "2eaebb4c18cdef7f20089f8a2fa3475bc59c2a193f66e2f1513609a4bef13e22"
+       ],
+       "key_b": [
+        "FILE",
+        "2eaebb4c18cdef7f20089f8a2fa3475bc59c2a193f66e2f1513609a4bef13e22"
+       ],
+       "attr_delta": {
+        "mtime": [
+         "2011-06-12T12:53:33",
+         "2011-06-12T09:53:33+00:00"
+        ]
+       }
+      }
+     ],
+     "order_changed": false
+    },
+    "rar3-solid.rar  ||  rar5-solid.rar": {
+     "only_in_a": [],
+     "only_in_b": [],
+     "items": [
+      {
+       "name": "stest1.txt",
+       "bucket": "IDENTICAL",
+       "reason": "",
+       "key_a": [
+        "FILE",
+        "2eaebb4c18cdef7f20089f8a2fa3475bc59c2a193f66e2f1513609a4bef13e22"
+       ],
+       "key_b": [
+        "FILE",
+        "2eaebb4c18cdef7f20089f8a2fa3475bc59c2a193f66e2f1513609a4bef13e22"
+       ],
+       "attr_delta": {
+        "mode": [
+         "0o100644",
+         "0o100666"
+        ],
+        "mtime": [
+         "2011-06-12T12:53:33",
+         null
+        ]
+       }
+      },
+      {
+       "name": "stest2.txt",
+       "bucket": "IDENTICAL",
+       "reason": "",
+       "key_a": [
+        "FILE",
+        "2eaebb4c18cdef7f20089f8a2fa3475bc59c2a193f66e2f1513609a4bef13e22"
+       ],
+       "key_b": [
+        "FILE",
+        "2eaebb4c18cdef7f20089f8a2fa3475bc59c2a193f66e2f1513609a4bef13e22"
+       ],
+       "attr_delta": {
+        "mode": [
+         "0o100644",
+         "0o100666"
+        ],
+        "mtime": [
+         "2011-06-12T12:53:33",
+         null
+        ]
+       }
+      }
+     ],
+     "order_changed": false
+    },
+    "rar3-solid.rar  ||  seektest.rar": {
+     "only_in_a": [],
+     "only_in_b": [],
+     "items": [
+      {
+       "name": "stest1.txt",
+       "bucket": "IDENTICAL",
+       "reason": "",
+       "key_a": [
+        "FILE",
+        "2eaebb4c18cdef7f20089f8a2fa3475bc59c2a193f66e2f1513609a4bef13e22"
+       ],
+       "key_b": [
+        "FILE",
+        "2eaebb4c18cdef7f20089f8a2fa3475bc59c2a193f66e2f1513609a4bef13e22"
+       ],
+       "attr_delta": {
+        "compress_type": [
+         51,
+         53
+        ]
+       }
+      },
+      {
+       "name": "stest2.txt",
+       "bucket": "IDENTICAL",
+       "reason": "",
+       "key_a": [
+        "FILE",
+        "2eaebb4c18cdef7f20089f8a2fa3475bc59c2a193f66e2f1513609a4bef13e22"
+       ],
+       "key_b": [
+        "FILE",
+        "2eaebb4c18cdef7f20089f8a2fa3475bc59c2a193f66e2f1513609a4bef13e22"
+       ],
+       "attr_delta": {
+        "compress_type": [
+         51,
+         48
+        ]
+       }
+      }
+     ],
+     "order_changed": false
+    },
+    "rar5-blake.rar  ||  rar5-crc.rar": {
+     "only_in_a": [],
+     "only_in_b": [],
+     "items": [
+      {
+       "name": "stest1.txt",
+       "bucket": "IDENTICAL",
+       "reason": "",
+       "key_a": [
+        "FILE",
+        "2eaebb4c18cdef7f20089f8a2fa3475bc59c2a193f66e2f1513609a4bef13e22"
+       ],
+       "key_b": [
+        "FILE",
+        "2eaebb4c18cdef7f20089f8a2fa3475bc59c2a193f66e2f1513609a4bef13e22"
+       ],
+       "attr_delta": {
+        "crc32_header": [
+         0,
+         "0xc5b7e6a2"
+        ],
+        "blake2sp_header": [
+         "7cd5c1ac31f0cf58844a57fb9072c44768dbea1456e37c21e491f4853982ede0",
+         null
+        ]
+       }
+      },
+      {
+       "name": "stest2.txt",
+       "bucket": "IDENTICAL",
+       "reason": "",
+       "key_a": [
+        "FILE",
+        "2eaebb4c18cdef7f20089f8a2fa3475bc59c2a193f66e2f1513609a4bef13e22"
+       ],
+       "key_b": [
+        "FILE",
+        "2eaebb4c18cdef7f20089f8a2fa3475bc59c2a193f66e2f1513609a4bef13e22"
+       ],
+       "attr_delta": {
+        "crc32_header": [
+         0,
+         "0xc5b7e6a2"
+        ],
+        "blake2sp_header": [
+         "7cd5c1ac31f0cf58844a57fb9072c44768dbea1456e37c21e491f4853982ede0",
+         null
+        ]
+       }
+      }
+     ],
+     "order_changed": false
+    },
+    "rar5-blake.rar  ||  rar5-crc.sfx": {
+     "only_in_a": [],
+     "only_in_b": [],
+     "items": [
+      {
+       "name": "stest1.txt",
+       "bucket": "IDENTICAL",
+       "reason": "",
+       "key_a": [
+        "FILE",
+        "2eaebb4c18cdef7f20089f8a2fa3475bc59c2a193f66e2f1513609a4bef13e22"
+       ],
+       "key_b": [
+        "FILE",
+        "2eaebb4c18cdef7f20089f8a2fa3475bc59c2a193f66e2f1513609a4bef13e22"
+       ],
+       "attr_delta": {
+        "crc32_header": [
+         0,
+         "0xc5b7e6a2"
+        ],
+        "blake2sp_header": [
+         "7cd5c1ac31f0cf58844a57fb9072c44768dbea1456e37c21e491f4853982ede0",
+         null
+        ]
+       }
+      },
+      {
+       "name": "stest2.txt",
+       "bucket": "IDENTICAL",
+       "reason": "",
+       "key_a": [
+        "FILE",
+        "2eaebb4c18cdef7f20089f8a2fa3475bc59c2a193f66e2f1513609a4bef13e22"
+       ],
+       "key_b": [
+        "FILE",
+        "2eaebb4c18cdef7f20089f8a2fa3475bc59c2a193f66e2f1513609a4bef13e22"
+       ],
+       "attr_delta": {
+        "crc32_header": [
+         0,
+         "0xc5b7e6a2"
+        ],
+        "blake2sp_header": [
+         "7cd5c1ac31f0cf58844a57fb9072c44768dbea1456e37c21e491f4853982ede0",
+         null
+        ]
+       }
+      }
+     ],
+     "order_changed": false
+    },
+    "rar5-blake.rar  ||  rar5-psw-blake.rar": {
+     "only_in_a": [],
+     "only_in_b": [],
+     "items": [
+      {
+       "name": "stest1.txt",
+       "bucket": "IDENTICAL",
+       "reason": "",
+       "key_a": [
+        "FILE",
+        "2eaebb4c18cdef7f20089f8a2fa3475bc59c2a193f66e2f1513609a4bef13e22"
+       ],
+       "key_b": [
+        "FILE",
+        "2eaebb4c18cdef7f20089f8a2fa3475bc59c2a193f66e2f1513609a4bef13e22"
+       ],
+       "attr_delta": {
+        "blake2sp_header": [
+         "7cd5c1ac31f0cf58844a57fb9072c44768dbea1456e37c21e491f4853982ede0",
+         "5cdbd3f49f594a35edb63c923b64abdadba3bf1468b6259ee1e1c54ba2f0d65e"
+        ]
+       }
+      },
+      {
+       "name": "stest2.txt",
+       "bucket": "IDENTICAL",
+       "reason": "",
+       "key_a": [
+        "FILE",
+        "2eaebb4c18cdef7f20089f8a2fa3475bc59c2a193f66e2f1513609a4bef13e22"
+       ],
+       "key_b": [
+        "FILE",
+        "2eaebb4c18cdef7f20089f8a2fa3475bc59c2a193f66e2f1513609a4bef13e22"
+       ],
+       "attr_delta": {
+        "blake2sp_header": [
+         "7cd5c1ac31f0cf58844a57fb9072c44768dbea1456e37c21e491f4853982ede0",
+         "5cdbd3f49f594a35edb63c923b64abdadba3bf1468b6259ee1e1c54ba2f0d65e"
+        ]
+       }
+      }
+     ],
+     "order_changed": false
+    },
+    "rar5-blake.rar  ||  rar5-psw.rar": {
+     "only_in_a": [],
+     "only_in_b": [],
+     "items": [
+      {
+       "name": "stest1.txt",
+       "bucket": "IDENTICAL",
+       "reason": "",
+       "key_a": [
+        "FILE",
+        "2eaebb4c18cdef7f20089f8a2fa3475bc59c2a193f66e2f1513609a4bef13e22"
+       ],
+       "key_b": [
+        "FILE",
+        "2eaebb4c18cdef7f20089f8a2fa3475bc59c2a193f66e2f1513609a4bef13e22"
+       ],
+       "attr_delta": {
+        "crc32_header": [
+         0,
+         "0xba28eeea"
+        ],
+        "blake2sp_header": [
+         "7cd5c1ac31f0cf58844a57fb9072c44768dbea1456e37c21e491f4853982ede0",
+         null
+        ]
+       }
+      },
+      {
+       "name": "stest2.txt",
+       "bucket": "IDENTICAL",
+       "reason": "",
+       "key_a": [
+        "FILE",
+        "2eaebb4c18cdef7f20089f8a2fa3475bc59c2a193f66e2f1513609a4bef13e22"
+       ],
+       "key_b": [
+        "FILE",
+        "2eaebb4c18cdef7f20089f8a2fa3475bc59c2a193f66e2f1513609a4bef13e22"
+       ],
+       "attr_delta": {
+        "crc32_header": [
+         0,
+         "0xba28eeea"
+        ],
+        "blake2sp_header": [
+         "7cd5c1ac31f0cf58844a57fb9072c44768dbea1456e37c21e491f4853982ede0",
+         null
+        ]
+       }
+      }
+     ],
+     "order_changed": false
+    },
+    "rar5-blake.rar  ||  rar5-quick-open.rar": {
+     "only_in_a": [],
+     "only_in_b": [],
+     "items": [
+      {
+       "name": "stest1.txt",
+       "bucket": "IDENTICAL",
+       "reason": "",
+       "key_a": [
+        "FILE",
+        "2eaebb4c18cdef7f20089f8a2fa3475bc59c2a193f66e2f1513609a4bef13e22"
+       ],
+       "key_b": [
+        "FILE",
+        "2eaebb4c18cdef7f20089f8a2fa3475bc59c2a193f66e2f1513609a4bef13e22"
+       ],
+       "attr_delta": {
+        "crc32_header": [
+         0,
+         "0xc5b7e6a2"
+        ],
+        "blake2sp_header": [
+         "7cd5c1ac31f0cf58844a57fb9072c44768dbea1456e37c21e491f4853982ede0",
+         null
+        ]
+       }
+      },
+      {
+       "name": "stest2.txt",
+       "bucket": "IDENTICAL",
+       "reason": "",
+       "key_a": [
+        "FILE",
+        "2eaebb4c18cdef7f20089f8a2fa3475bc59c2a193f66e2f1513609a4bef13e22"
+       ],
+       "key_b": [
+        "FILE",
+        "2eaebb4c18cdef7f20089f8a2fa3475bc59c2a193f66e2f1513609a4bef13e22"
+       ],
+       "attr_delta": {
+        "ctime": [
+         "2016-05-22T09:12:33+00:00",
+         null
+        ],
+        "compress_type": [
+         48,
+         51
+        ],
+        "crc32_header": [
+         0,
+         "0xc5b7e6a2"
+        ],
+        "blake2sp_header": [
+         "7cd5c1ac31f0cf58844a57fb9072c44768dbea1456e37c21e491f4853982ede0",
+         null
+        ]
+       }
+      }
+     ],
+     "order_changed": false
+    },
+    "rar5-blake.rar  ||  rar5-solid.rar": {
+     "only_in_a": [],
+     "only_in_b": [],
+     "items": [
+      {
+       "name": "stest1.txt",
+       "bucket": "IDENTICAL",
+       "reason": "",
+       "key_a": [
+        "FILE",
+        "2eaebb4c18cdef7f20089f8a2fa3475bc59c2a193f66e2f1513609a4bef13e22"
+       ],
+       "key_b": [
+        "FILE",
+        "2eaebb4c18cdef7f20089f8a2fa3475bc59c2a193f66e2f1513609a4bef13e22"
+       ],
+       "attr_delta": {
+        "mode": [
+         "0o100644",
+         "0o100666"
+        ],
+        "mtime": [
+         "2011-06-12T09:53:33+00:00",
+         null
+        ],
+        "crc32_header": [
+         0,
+         "0xc5b7e6a2"
+        ],
+        "blake2sp_header": [
+         "7cd5c1ac31f0cf58844a57fb9072c44768dbea1456e37c21e491f4853982ede0",
+         null
+        ]
+       }
+      },
+      {
+       "name": "stest2.txt",
+       "bucket": "IDENTICAL",
+       "reason": "",
+       "key_a": [
+        "FILE",
+        "2eaebb4c18cdef7f20089f8a2fa3475bc59c2a193f66e2f1513609a4bef13e22"
+       ],
+       "key_b": [
+        "FILE",
+        "2eaebb4c18cdef7f20089f8a2fa3475bc59c2a193f66e2f1513609a4bef13e22"
+       ],
+       "attr_delta": {
+        "mode": [
+         "0o100644",
+         "0o100666"
+        ],
+        "mtime": [
+         "2011-06-12T09:53:33+00:00",
+         null
+        ],
+        "ctime": [
+         "2016-05-22T09:12:33+00:00",
+         null
+        ],
+        "compress_type": [
+         48,
+         51
+        ],
+        "crc32_header": [
+         0,
+         "0xc5b7e6a2"
+        ],
+        "blake2sp_header": [
+         "7cd5c1ac31f0cf58844a57fb9072c44768dbea1456e37c21e491f4853982ede0",
+         null
+        ]
+       }
+      }
+     ],
+     "order_changed": false
+    },
+    "rar5-blake.rar  ||  seektest.rar": {
+     "only_in_a": [],
+     "only_in_b": [],
+     "items": [
+      {
+       "name": "stest1.txt",
+       "bucket": "IDENTICAL",
+       "reason": "",
+       "key_a": [
+        "FILE",
+        "2eaebb4c18cdef7f20089f8a2fa3475bc59c2a193f66e2f1513609a4bef13e22"
+       ],
+       "key_b": [
+        "FILE",
+        "2eaebb4c18cdef7f20089f8a2fa3475bc59c2a193f66e2f1513609a4bef13e22"
+       ],
+       "attr_delta": {
+        "mtime": [
+         "2011-06-12T09:53:33+00:00",
+         "2011-06-12T12:53:33"
+        ],
+        "compress_type": [
+         51,
+         53
+        ],
+        "crc32_header": [
+         0,
+         "0xc5b7e6a2"
+        ],
+        "blake2sp_header": [
+         "7cd5c1ac31f0cf58844a57fb9072c44768dbea1456e37c21e491f4853982ede0",
+         null
+        ]
+       }
+      },
+      {
+       "name": "stest2.txt",
+       "bucket": "IDENTICAL",
+       "reason": "",
+       "key_a": [
+        "FILE",
+        "2eaebb4c18cdef7f20089f8a2fa3475bc59c2a193f66e2f1513609a4bef13e22"
+       ],
+       "key_b": [
+        "FILE",
+        "2eaebb4c18cdef7f20089f8a2fa3475bc59c2a193f66e2f1513609a4bef13e22"
+       ],
+       "attr_delta": {
+        "mtime": [
+         "2011-06-12T09:53:33+00:00",
+         "2011-06-12T12:53:33"
+        ],
+        "ctime": [
+         "2016-05-22T09:12:33+00:00",
+         null
+        ],
+        "crc32_header": [
+         0,
+         "0xc5b7e6a2"
+        ],
+        "blake2sp_header": [
+         "7cd5c1ac31f0cf58844a57fb9072c44768dbea1456e37c21e491f4853982ede0",
+         null
+        ]
+       }
+      }
+     ],
+     "order_changed": false
+    },
+    "rar5-crc.rar  ||  rar5-crc.sfx": {
+     "only_in_a": [],
+     "only_in_b": [],
+     "items": [
+      {
+       "name": "stest1.txt",
+       "bucket": "IDENTICAL",
+       "reason": "",
+       "key_a": [
+        "FILE",
+        "2eaebb4c18cdef7f20089f8a2fa3475bc59c2a193f66e2f1513609a4bef13e22"
+       ],
+       "key_b": [
+        "FILE",
+        "2eaebb4c18cdef7f20089f8a2fa3475bc59c2a193f66e2f1513609a4bef13e22"
+       ],
+       "attr_delta": {}
+      },
+      {
+       "name": "stest2.txt",
+       "bucket": "IDENTICAL",
+       "reason": "",
+       "key_a": [
+        "FILE",
+        "2eaebb4c18cdef7f20089f8a2fa3475bc59c2a193f66e2f1513609a4bef13e22"
+       ],
+       "key_b": [
+        "FILE",
+        "2eaebb4c18cdef7f20089f8a2fa3475bc59c2a193f66e2f1513609a4bef13e22"
+       ],
+       "attr_delta": {}
+      }
+     ],
+     "order_changed": false
+    },
+    "rar5-crc.rar  ||  rar5-psw-blake.rar": {
+     "only_in_a": [],
+     "only_in_b": [],
+     "items": [
+      {
+       "name": "stest1.txt",
+       "bucket": "IDENTICAL",
+       "reason": "",
+       "key_a": [
+        "FILE",
+        "2eaebb4c18cdef7f20089f8a2fa3475bc59c2a193f66e2f1513609a4bef13e22"
+       ],
+       "key_b": [
+        "FILE",
+        "2eaebb4c18cdef7f20089f8a2fa3475bc59c2a193f66e2f1513609a4bef13e22"
+       ],
+       "attr_delta": {
+        "crc32_header": [
+         "0xc5b7e6a2",
+         0
+        ],
+        "blake2sp_header": [
+         null,
+         "5cdbd3f49f594a35edb63c923b64abdadba3bf1468b6259ee1e1c54ba2f0d65e"
+        ]
+       }
+      },
+      {
+       "name": "stest2.txt",
+       "bucket": "IDENTICAL",
+       "reason": "",
+       "key_a": [
+        "FILE",
+        "2eaebb4c18cdef7f20089f8a2fa3475bc59c2a193f66e2f1513609a4bef13e22"
+       ],
+       "key_b": [
+        "FILE",
+        "2eaebb4c18cdef7f20089f8a2fa3475bc59c2a193f66e2f1513609a4bef13e22"
+       ],
+       "attr_delta": {
+        "crc32_header": [
+         "0xc5b7e6a2",
+         0
+        ],
+        "blake2sp_header": [
+         null,
+         "5cdbd3f49f594a35edb63c923b64abdadba3bf1468b6259ee1e1c54ba2f0d65e"
+        ]
+       }
+      }
+     ],
+     "order_changed": false
+    },
+    "rar5-crc.rar  ||  rar5-psw.rar": {
+     "only_in_a": [],
+     "only_in_b": [],
+     "items": [
+      {
+       "name": "stest1.txt",
+       "bucket": "IDENTICAL",
+       "reason": "",
+       "key_a": [
+        "FILE",
+        "2eaebb4c18cdef7f20089f8a2fa3475bc59c2a193f66e2f1513609a4bef13e22"
+       ],
+       "key_b": [
+        "FILE",
+        "2eaebb4c18cdef7f20089f8a2fa3475bc59c2a193f66e2f1513609a4bef13e22"
+       ],
+       "attr_delta": {
+        "crc32_header": [
+         "0xc5b7e6a2",
+         "0xba28eeea"
+        ]
+       }
+      },
+      {
+       "name": "stest2.txt",
+       "bucket": "IDENTICAL",
+       "reason": "",
+       "key_a": [
+        "FILE",
+        "2eaebb4c18cdef7f20089f8a2fa3475bc59c2a193f66e2f1513609a4bef13e22"
+       ],
+       "key_b": [
+        "FILE",
+        "2eaebb4c18cdef7f20089f8a2fa3475bc59c2a193f66e2f1513609a4bef13e22"
+       ],
+       "attr_delta": {
+        "crc32_header": [
+         "0xc5b7e6a2",
+         "0xba28eeea"
+        ]
+       }
+      }
+     ],
+     "order_changed": false
+    },
+    "rar5-crc.rar  ||  rar5-quick-open.rar": {
+     "only_in_a": [],
+     "only_in_b": [],
+     "items": [
+      {
+       "name": "stest1.txt",
+       "bucket": "IDENTICAL",
+       "reason": "",
+       "key_a": [
+        "FILE",
+        "2eaebb4c18cdef7f20089f8a2fa3475bc59c2a193f66e2f1513609a4bef13e22"
+       ],
+       "key_b": [
+        "FILE",
+        "2eaebb4c18cdef7f20089f8a2fa3475bc59c2a193f66e2f1513609a4bef13e22"
+       ],
+       "attr_delta": {}
+      },
+      {
+       "name": "stest2.txt",
+       "bucket": "IDENTICAL",
+       "reason": "",
+       "key_a": [
+        "FILE",
+        "2eaebb4c18cdef7f20089f8a2fa3475bc59c2a193f66e2f1513609a4bef13e22"
+       ],
+       "key_b": [
+        "FILE",
+        "2eaebb4c18cdef7f20089f8a2fa3475bc59c2a193f66e2f1513609a4bef13e22"
+       ],
+       "attr_delta": {
+        "ctime": [
+         "2016-05-22T09:12:33+00:00",
+         null
+        ],
+        "compress_type": [
+         48,
+         51
+        ]
+       }
+      }
+     ],
+     "order_changed": false
+    },
+    "rar5-crc.rar  ||  rar5-solid.rar": {
+     "only_in_a": [],
+     "only_in_b": [],
+     "items": [
+      {
+       "name": "stest1.txt",
+       "bucket": "IDENTICAL",
+       "reason": "",
+       "key_a": [
+        "FILE",
+        "2eaebb4c18cdef7f20089f8a2fa3475bc59c2a193f66e2f1513609a4bef13e22"
+       ],
+       "key_b": [
+        "FILE",
+        "2eaebb4c18cdef7f20089f8a2fa3475bc59c2a193f66e2f1513609a4bef13e22"
+       ],
+       "attr_delta": {
+        "mode": [
+         "0o100644",
+         "0o100666"
+        ],
+        "mtime": [
+         "2011-06-12T09:53:33+00:00",
+         null
+        ]
+       }
+      },
+      {
+       "name": "stest2.txt",
+       "bucket": "IDENTICAL",
+       "reason": "",
+       "key_a": [
+        "FILE",
+        "2eaebb4c18cdef7f20089f8a2fa3475bc59c2a193f66e2f1513609a4bef13e22"
+       ],
+       "key_b": [
+        "FILE",
+        "2eaebb4c18cdef7f20089f8a2fa3475bc59c2a193f66e2f1513609a4bef13e22"
+       ],
+       "attr_delta": {
+        "mode": [
+         "0o100644",
+         "0o100666"
+        ],
+        "mtime": [
+         "2011-06-12T09:53:33+00:00",
+         null
+        ],
+        "ctime": [
+         "2016-05-22T09:12:33+00:00",
+         null
+        ],
+        "compress_type": [
+         48,
+         51
+        ]
+       }
+      }
+     ],
+     "order_changed": false
+    },
+    "rar5-crc.rar  ||  seektest.rar": {
+     "only_in_a": [],
+     "only_in_b": [],
+     "items": [
+      {
+       "name": "stest1.txt",
+       "bucket": "IDENTICAL",
+       "reason": "",
+       "key_a": [
+        "FILE",
+        "2eaebb4c18cdef7f20089f8a2fa3475bc59c2a193f66e2f1513609a4bef13e22"
+       ],
+       "key_b": [
+        "FILE",
+        "2eaebb4c18cdef7f20089f8a2fa3475bc59c2a193f66e2f1513609a4bef13e22"
+       ],
+       "attr_delta": {
+        "mtime": [
+         "2011-06-12T09:53:33+00:00",
+         "2011-06-12T12:53:33"
+        ],
+        "compress_type": [
+         51,
+         53
+        ]
+       }
+      },
+      {
+       "name": "stest2.txt",
+       "bucket": "IDENTICAL",
+       "reason": "",
+       "key_a": [
+        "FILE",
+        "2eaebb4c18cdef7f20089f8a2fa3475bc59c2a193f66e2f1513609a4bef13e22"
+       ],
+       "key_b": [
+        "FILE",
+        "2eaebb4c18cdef7f20089f8a2fa3475bc59c2a193f66e2f1513609a4bef13e22"
+       ],
+       "attr_delta": {
+        "mtime": [
+         "2011-06-12T09:53:33+00:00",
+         "2011-06-12T12:53:33"
+        ],
+        "ctime": [
+         "2016-05-22T09:12:33+00:00",
+         null
+        ]
+       }
+      }
+     ],
+     "order_changed": false
+    },
+    "rar5-crc.sfx  ||  rar5-psw-blake.rar": {
+     "only_in_a": [],
+     "only_in_b": [],
+     "items": [
+      {
+       "name": "stest1.txt",
+       "bucket": "IDENTICAL",
+       "reason": "",
+       "key_a": [
+        "FILE",
+        "2eaebb4c18cdef7f20089f8a2fa3475bc59c2a193f66e2f1513609a4bef13e22"
+       ],
+       "key_b": [
+        "FILE",
+        "2eaebb4c18cdef7f20089f8a2fa3475bc59c2a193f66e2f1513609a4bef13e22"
+       ],
+       "attr_delta": {
+        "crc32_header": [
+         "0xc5b7e6a2",
+         0
+        ],
+        "blake2sp_header": [
+         null,
+         "5cdbd3f49f594a35edb63c923b64abdadba3bf1468b6259ee1e1c54ba2f0d65e"
+        ]
+       }
+      },
+      {
+       "name": "stest2.txt",
+       "bucket": "IDENTICAL",
+       "reason": "",
+       "key_a": [
+        "FILE",
+        "2eaebb4c18cdef7f20089f8a2fa3475bc59c2a193f66e2f1513609a4bef13e22"
+       ],
+       "key_b": [
+        "FILE",
+        "2eaebb4c18cdef7f20089f8a2fa3475bc59c2a193f66e2f1513609a4bef13e22"
+       ],
+       "attr_delta": {
+        "crc32_header": [
+         "0xc5b7e6a2",
+         0
+        ],
+        "blake2sp_header": [
+         null,
+         "5cdbd3f49f594a35edb63c923b64abdadba3bf1468b6259ee1e1c54ba2f0d65e"
+        ]
+       }
+      }
+     ],
+     "order_changed": false
+    },
+    "rar5-crc.sfx  ||  rar5-psw.rar": {
+     "only_in_a": [],
+     "only_in_b": [],
+     "items": [
+      {
+       "name": "stest1.txt",
+       "bucket": "IDENTICAL",
+       "reason": "",
+       "key_a": [
+        "FILE",
+        "2eaebb4c18cdef7f20089f8a2fa3475bc59c2a193f66e2f1513609a4bef13e22"
+       ],
+       "key_b": [
+        "FILE",
+        "2eaebb4c18cdef7f20089f8a2fa3475bc59c2a193f66e2f1513609a4bef13e22"
+       ],
+       "attr_delta": {
+        "crc32_header": [
+         "0xc5b7e6a2",
+         "0xba28eeea"
+        ]
+       }
+      },
+      {
+       "name": "stest2.txt",
+       "bucket": "IDENTICAL",
+       "reason": "",
+       "key_a": [
+        "FILE",
+        "2eaebb4c18cdef7f20089f8a2fa3475bc59c2a193f66e2f1513609a4bef13e22"
+       ],
+       "key_b": [
+        "FILE",
+        "2eaebb4c18cdef7f20089f8a2fa3475bc59c2a193f66e2f1513609a4bef13e22"
+       ],
+       "attr_delta": {
+        "crc32_header": [
+         "0xc5b7e6a2",
+         "0xba28eeea"
+        ]
+       }
+      }
+     ],
+     "order_changed": false
+    },
+    "rar5-crc.sfx  ||  rar5-quick-open.rar": {
+     "only_in_a": [],
+     "only_in_b": [],
+     "items": [
+      {
+       "name": "stest1.txt",
+       "bucket": "IDENTICAL",
+       "reason": "",
+       "key_a": [
+        "FILE",
+        "2eaebb4c18cdef7f20089f8a2fa3475bc59c2a193f66e2f1513609a4bef13e22"
+       ],
+       "key_b": [
+        "FILE",
+        "2eaebb4c18cdef7f20089f8a2fa3475bc59c2a193f66e2f1513609a4bef13e22"
+       ],
+       "attr_delta": {}
+      },
+      {
+       "name": "stest2.txt",
+       "bucket": "IDENTICAL",
+       "reason": "",
+       "key_a": [
+        "FILE",
+        "2eaebb4c18cdef7f20089f8a2fa3475bc59c2a193f66e2f1513609a4bef13e22"
+       ],
+       "key_b": [
+        "FILE",
+        "2eaebb4c18cdef7f20089f8a2fa3475bc59c2a193f66e2f1513609a4bef13e22"
+       ],
+       "attr_delta": {
+        "ctime": [
+         "2016-05-22T09:12:33+00:00",
+         null
+        ],
+        "compress_type": [
+         48,
+         51
+        ]
+       }
+      }
+     ],
+     "order_changed": false
+    },
+    "rar5-crc.sfx  ||  rar5-solid.rar": {
+     "only_in_a": [],
+     "only_in_b": [],
+     "items": [
+      {
+       "name": "stest1.txt",
+       "bucket": "IDENTICAL",
+       "reason": "",
+       "key_a": [
+        "FILE",
+        "2eaebb4c18cdef7f20089f8a2fa3475bc59c2a193f66e2f1513609a4bef13e22"
+       ],
+       "key_b": [
+        "FILE",
+        "2eaebb4c18cdef7f20089f8a2fa3475bc59c2a193f66e2f1513609a4bef13e22"
+       ],
+       "attr_delta": {
+        "mode": [
+         "0o100644",
+         "0o100666"
+        ],
+        "mtime": [
+         "2011-06-12T09:53:33+00:00",
+         null
+        ]
+       }
+      },
+      {
+       "name": "stest2.txt",
+       "bucket": "IDENTICAL",
+       "reason": "",
+       "key_a": [
+        "FILE",
+        "2eaebb4c18cdef7f20089f8a2fa3475bc59c2a193f66e2f1513609a4bef13e22"
+       ],
+       "key_b": [
+        "FILE",
+        "2eaebb4c18cdef7f20089f8a2fa3475bc59c2a193f66e2f1513609a4bef13e22"
+       ],
+       "attr_delta": {
+        "mode": [
+         "0o100644",
+         "0o100666"
+        ],
+        "mtime": [
+         "2011-06-12T09:53:33+00:00",
+         null
+        ],
+        "ctime": [
+         "2016-05-22T09:12:33+00:00",
+         null
+        ],
+        "compress_type": [
+         48,
+         51
+        ]
+       }
+      }
+     ],
+     "order_changed": false
+    },
+    "rar5-crc.sfx  ||  seektest.rar": {
+     "only_in_a": [],
+     "only_in_b": [],
+     "items": [
+      {
+       "name": "stest1.txt",
+       "bucket": "IDENTICAL",
+       "reason": "",
+       "key_a": [
+        "FILE",
+        "2eaebb4c18cdef7f20089f8a2fa3475bc59c2a193f66e2f1513609a4bef13e22"
+       ],
+       "key_b": [
+        "FILE",
+        "2eaebb4c18cdef7f20089f8a2fa3475bc59c2a193f66e2f1513609a4bef13e22"
+       ],
+       "attr_delta": {
+        "mtime": [
+         "2011-06-12T09:53:33+00:00",
+         "2011-06-12T12:53:33"
+        ],
+        "compress_type": [
+         51,
+         53
+        ]
+       }
+      },
+      {
+       "name": "stest2.txt",
+       "bucket": "IDENTICAL",
+       "reason": "",
+       "key_a": [
+        "FILE",
+        "2eaebb4c18cdef7f20089f8a2fa3475bc59c2a193f66e2f1513609a4bef13e22"
+       ],
+       "key_b": [
+        "FILE",
+        "2eaebb4c18cdef7f20089f8a2fa3475bc59c2a193f66e2f1513609a4bef13e22"
+       ],
+       "attr_delta": {
+        "mtime": [
+         "2011-06-12T09:53:33+00:00",
+         "2011-06-12T12:53:33"
+        ],
+        "ctime": [
+         "2016-05-22T09:12:33+00:00",
+         null
+        ]
+       }
+      }
+     ],
+     "order_changed": false
+    },
+    "rar5-psw-blake.rar  ||  rar5-psw.rar": {
+     "only_in_a": [],
+     "only_in_b": [],
+     "items": [
+      {
+       "name": "stest1.txt",
+       "bucket": "IDENTICAL",
+       "reason": "",
+       "key_a": [
+        "FILE",
+        "2eaebb4c18cdef7f20089f8a2fa3475bc59c2a193f66e2f1513609a4bef13e22"
+       ],
+       "key_b": [
+        "FILE",
+        "2eaebb4c18cdef7f20089f8a2fa3475bc59c2a193f66e2f1513609a4bef13e22"
+       ],
+       "attr_delta": {
+        "crc32_header": [
+         0,
+         "0xba28eeea"
+        ],
+        "blake2sp_header": [
+         "5cdbd3f49f594a35edb63c923b64abdadba3bf1468b6259ee1e1c54ba2f0d65e",
+         null
+        ]
+       }
+      },
+      {
+       "name": "stest2.txt",
+       "bucket": "IDENTICAL",
+       "reason": "",
+       "key_a": [
+        "FILE",
+        "2eaebb4c18cdef7f20089f8a2fa3475bc59c2a193f66e2f1513609a4bef13e22"
+       ],
+       "key_b": [
+        "FILE",
+        "2eaebb4c18cdef7f20089f8a2fa3475bc59c2a193f66e2f1513609a4bef13e22"
+       ],
+       "attr_delta": {
+        "crc32_header": [
+         0,
+         "0xba28eeea"
+        ],
+        "blake2sp_header": [
+         "5cdbd3f49f594a35edb63c923b64abdadba3bf1468b6259ee1e1c54ba2f0d65e",
+         null
+        ]
+       }
+      }
+     ],
+     "order_changed": false
+    },
+    "rar5-psw-blake.rar  ||  rar5-quick-open.rar": {
+     "only_in_a": [],
+     "only_in_b": [],
+     "items": [
+      {
+       "name": "stest1.txt",
+       "bucket": "IDENTICAL",
+       "reason": "",
+       "key_a": [
+        "FILE",
+        "2eaebb4c18cdef7f20089f8a2fa3475bc59c2a193f66e2f1513609a4bef13e22"
+       ],
+       "key_b": [
+        "FILE",
+        "2eaebb4c18cdef7f20089f8a2fa3475bc59c2a193f66e2f1513609a4bef13e22"
+       ],
+       "attr_delta": {
+        "crc32_header": [
+         0,
+         "0xc5b7e6a2"
+        ],
+        "blake2sp_header": [
+         "5cdbd3f49f594a35edb63c923b64abdadba3bf1468b6259ee1e1c54ba2f0d65e",
+         null
+        ]
+       }
+      },
+      {
+       "name": "stest2.txt",
+       "bucket": "IDENTICAL",
+       "reason": "",
+       "key_a": [
+        "FILE",
+        "2eaebb4c18cdef7f20089f8a2fa3475bc59c2a193f66e2f1513609a4bef13e22"
+       ],
+       "key_b": [
+        "FILE",
+        "2eaebb4c18cdef7f20089f8a2fa3475bc59c2a193f66e2f1513609a4bef13e22"
+       ],
+       "attr_delta": {
+        "ctime": [
+         "2016-05-22T09:12:33+00:00",
+         null
+        ],
+        "compress_type": [
+         48,
+         51
+        ],
+        "crc32_header": [
+         0,
+         "0xc5b7e6a2"
+        ],
+        "blake2sp_header": [
+         "5cdbd3f49f594a35edb63c923b64abdadba3bf1468b6259ee1e1c54ba2f0d65e",
+         null
+        ]
+       }
+      }
+     ],
+     "order_changed": false
+    },
+    "rar5-psw-blake.rar  ||  rar5-solid.rar": {
+     "only_in_a": [],
+     "only_in_b": [],
+     "items": [
+      {
+       "name": "stest1.txt",
+       "bucket": "IDENTICAL",
+       "reason": "",
+       "key_a": [
+        "FILE",
+        "2eaebb4c18cdef7f20089f8a2fa3475bc59c2a193f66e2f1513609a4bef13e22"
+       ],
+       "key_b": [
+        "FILE",
+        "2eaebb4c18cdef7f20089f8a2fa3475bc59c2a193f66e2f1513609a4bef13e22"
+       ],
+       "attr_delta": {
+        "mode": [
+         "0o100644",
+         "0o100666"
+        ],
+        "mtime": [
+         "2011-06-12T09:53:33+00:00",
+         null
+        ],
+        "crc32_header": [
+         0,
+         "0xc5b7e6a2"
+        ],
+        "blake2sp_header": [
+         "5cdbd3f49f594a35edb63c923b64abdadba3bf1468b6259ee1e1c54ba2f0d65e",
+         null
+        ]
+       }
+      },
+      {
+       "name": "stest2.txt",
+       "bucket": "IDENTICAL",
+       "reason": "",
+       "key_a": [
+        "FILE",
+        "2eaebb4c18cdef7f20089f8a2fa3475bc59c2a193f66e2f1513609a4bef13e22"
+       ],
+       "key_b": [
+        "FILE",
+        "2eaebb4c18cdef7f20089f8a2fa3475bc59c2a193f66e2f1513609a4bef13e22"
+       ],
+       "attr_delta": {
+        "mode": [
+         "0o100644",
+         "0o100666"
+        ],
+        "mtime": [
+         "2011-06-12T09:53:33+00:00",
+         null
+        ],
+        "ctime": [
+         "2016-05-22T09:12:33+00:00",
+         null
+        ],
+        "compress_type": [
+         48,
+         51
+        ],
+        "crc32_header": [
+         0,
+         "0xc5b7e6a2"
+        ],
+        "blake2sp_header": [
+         "5cdbd3f49f594a35edb63c923b64abdadba3bf1468b6259ee1e1c54ba2f0d65e",
+         null
+        ]
+       }
+      }
+     ],
+     "order_changed": false
+    },
+    "rar5-psw-blake.rar  ||  seektest.rar": {
+     "only_in_a": [],
+     "only_in_b": [],
+     "items": [
+      {
+       "name": "stest1.txt",
+       "bucket": "IDENTICAL",
+       "reason": "",
+       "key_a": [
+        "FILE",
+        "2eaebb4c18cdef7f20089f8a2fa3475bc59c2a193f66e2f1513609a4bef13e22"
+       ],
+       "key_b": [
+        "FILE",
+        "2eaebb4c18cdef7f20089f8a2fa3475bc59c2a193f66e2f1513609a4bef13e22"
+       ],
+       "attr_delta": {
+        "mtime": [
+         "2011-06-12T09:53:33+00:00",
+         "2011-06-12T12:53:33"
+        ],
+        "compress_type": [
+         51,
+         53
+        ],
+        "crc32_header": [
+         0,
+         "0xc5b7e6a2"
+        ],
+        "blake2sp_header": [
+         "5cdbd3f49f594a35edb63c923b64abdadba3bf1468b6259ee1e1c54ba2f0d65e",
+         null
+        ]
+       }
+      },
+      {
+       "name": "stest2.txt",
+       "bucket": "IDENTICAL",
+       "reason": "",
+       "key_a": [
+        "FILE",
+        "2eaebb4c18cdef7f20089f8a2fa3475bc59c2a193f66e2f1513609a4bef13e22"
+       ],
+       "key_b": [
+        "FILE",
+        "2eaebb4c18cdef7f20089f8a2fa3475bc59c2a193f66e2f1513609a4bef13e22"
+       ],
+       "attr_delta": {
+        "mtime": [
+         "2011-06-12T09:53:33+00:00",
+         "2011-06-12T12:53:33"
+        ],
+        "ctime": [
+         "2016-05-22T09:12:33+00:00",
+         null
+        ],
+        "crc32_header": [
+         0,
+         "0xc5b7e6a2"
+        ],
+        "blake2sp_header": [
+         "5cdbd3f49f594a35edb63c923b64abdadba3bf1468b6259ee1e1c54ba2f0d65e",
+         null
+        ]
+       }
+      }
+     ],
+     "order_changed": false
+    },
+    "rar5-psw.rar  ||  rar5-quick-open.rar": {
+     "only_in_a": [],
+     "only_in_b": [],
+     "items": [
+      {
+       "name": "stest1.txt",
+       "bucket": "IDENTICAL",
+       "reason": "",
+       "key_a": [
+        "FILE",
+        "2eaebb4c18cdef7f20089f8a2fa3475bc59c2a193f66e2f1513609a4bef13e22"
+       ],
+       "key_b": [
+        "FILE",
+        "2eaebb4c18cdef7f20089f8a2fa3475bc59c2a193f66e2f1513609a4bef13e22"
+       ],
+       "attr_delta": {
+        "crc32_header": [
+         "0xba28eeea",
+         "0xc5b7e6a2"
+        ]
+       }
+      },
+      {
+       "name": "stest2.txt",
+       "bucket": "IDENTICAL",
+       "reason": "",
+       "key_a": [
+        "FILE",
+        "2eaebb4c18cdef7f20089f8a2fa3475bc59c2a193f66e2f1513609a4bef13e22"
+       ],
+       "key_b": [
+        "FILE",
+        "2eaebb4c18cdef7f20089f8a2fa3475bc59c2a193f66e2f1513609a4bef13e22"
+       ],
+       "attr_delta": {
+        "ctime": [
+         "2016-05-22T09:12:33+00:00",
+         null
+        ],
+        "compress_type": [
+         48,
+         51
+        ],
+        "crc32_header": [
+         "0xba28eeea",
+         "0xc5b7e6a2"
+        ]
+       }
+      }
+     ],
+     "order_changed": false
+    },
+    "rar5-psw.rar  ||  rar5-solid.rar": {
+     "only_in_a": [],
+     "only_in_b": [],
+     "items": [
+      {
+       "name": "stest1.txt",
+       "bucket": "IDENTICAL",
+       "reason": "",
+       "key_a": [
+        "FILE",
+        "2eaebb4c18cdef7f20089f8a2fa3475bc59c2a193f66e2f1513609a4bef13e22"
+       ],
+       "key_b": [
+        "FILE",
+        "2eaebb4c18cdef7f20089f8a2fa3475bc59c2a193f66e2f1513609a4bef13e22"
+       ],
+       "attr_delta": {
+        "mode": [
+         "0o100644",
+         "0o100666"
+        ],
+        "mtime": [
+         "2011-06-12T09:53:33+00:00",
+         null
+        ],
+        "crc32_header": [
+         "0xba28eeea",
+         "0xc5b7e6a2"
+        ]
+       }
+      },
+      {
+       "name": "stest2.txt",
+       "bucket": "IDENTICAL",
+       "reason": "",
+       "key_a": [
+        "FILE",
+        "2eaebb4c18cdef7f20089f8a2fa3475bc59c2a193f66e2f1513609a4bef13e22"
+       ],
+       "key_b": [
+        "FILE",
+        "2eaebb4c18cdef7f20089f8a2fa3475bc59c2a193f66e2f1513609a4bef13e22"
+       ],
+       "attr_delta": {
+        "mode": [
+         "0o100644",
+         "0o100666"
+        ],
+        "mtime": [
+         "2011-06-12T09:53:33+00:00",
+         null
+        ],
+        "ctime": [
+         "2016-05-22T09:12:33+00:00",
+         null
+        ],
+        "compress_type": [
+         48,
+         51
+        ],
+        "crc32_header": [
+         "0xba28eeea",
+         "0xc5b7e6a2"
+        ]
+       }
+      }
+     ],
+     "order_changed": false
+    },
+    "rar5-psw.rar  ||  seektest.rar": {
+     "only_in_a": [],
+     "only_in_b": [],
+     "items": [
+      {
+       "name": "stest1.txt",
+       "bucket": "IDENTICAL",
+       "reason": "",
+       "key_a": [
+        "FILE",
+        "2eaebb4c18cdef7f20089f8a2fa3475bc59c2a193f66e2f1513609a4bef13e22"
+       ],
+       "key_b": [
+        "FILE",
+        "2eaebb4c18cdef7f20089f8a2fa3475bc59c2a193f66e2f1513609a4bef13e22"
+       ],
+       "attr_delta": {
+        "mtime": [
+         "2011-06-12T09:53:33+00:00",
+         "2011-06-12T12:53:33"
+        ],
+        "compress_type": [
+         51,
+         53
+        ],
+        "crc32_header": [
+         "0xba28eeea",
+         "0xc5b7e6a2"
+        ]
+       }
+      },
+      {
+       "name": "stest2.txt",
+       "bucket": "IDENTICAL",
+       "reason": "",
+       "key_a": [
+        "FILE",
+        "2eaebb4c18cdef7f20089f8a2fa3475bc59c2a193f66e2f1513609a4bef13e22"
+       ],
+       "key_b": [
+        "FILE",
+        "2eaebb4c18cdef7f20089f8a2fa3475bc59c2a193f66e2f1513609a4bef13e22"
+       ],
+       "attr_delta": {
+        "mtime": [
+         "2011-06-12T09:53:33+00:00",
+         "2011-06-12T12:53:33"
+        ],
+        "ctime": [
+         "2016-05-22T09:12:33+00:00",
+         null
+        ],
+        "crc32_header": [
+         "0xba28eeea",
+         "0xc5b7e6a2"
+        ]
+       }
+      }
+     ],
+     "order_changed": false
+    },
+    "rar5-quick-open.rar  ||  rar5-solid.rar": {
+     "only_in_a": [],
+     "only_in_b": [],
+     "items": [
+      {
+       "name": "stest1.txt",
+       "bucket": "IDENTICAL",
+       "reason": "",
+       "key_a": [
+        "FILE",
+        "2eaebb4c18cdef7f20089f8a2fa3475bc59c2a193f66e2f1513609a4bef13e22"
+       ],
+       "key_b": [
+        "FILE",
+        "2eaebb4c18cdef7f20089f8a2fa3475bc59c2a193f66e2f1513609a4bef13e22"
+       ],
+       "attr_delta": {
+        "mode": [
+         "0o100644",
+         "0o100666"
+        ],
+        "mtime": [
+         "2011-06-12T09:53:33+00:00",
+         null
+        ]
+       }
+      },
+      {
+       "name": "stest2.txt",
+       "bucket": "IDENTICAL",
+       "reason": "",
+       "key_a": [
+        "FILE",
+        "2eaebb4c18cdef7f20089f8a2fa3475bc59c2a193f66e2f1513609a4bef13e22"
+       ],
+       "key_b": [
+        "FILE",
+        "2eaebb4c18cdef7f20089f8a2fa3475bc59c2a193f66e2f1513609a4bef13e22"
+       ],
+       "attr_delta": {
+        "mode": [
+         "0o100644",
+         "0o100666"
+        ],
+        "mtime": [
+         "2011-06-12T09:53:33+00:00",
+         null
+        ]
+       }
+      }
+     ],
+     "order_changed": false
+    },
+    "rar5-quick-open.rar  ||  seektest.rar": {
+     "only_in_a": [],
+     "only_in_b": [],
+     "items": [
+      {
+       "name": "stest1.txt",
+       "bucket": "IDENTICAL",
+       "reason": "",
+       "key_a": [
+        "FILE",
+        "2eaebb4c18cdef7f20089f8a2fa3475bc59c2a193f66e2f1513609a4bef13e22"
+       ],
+       "key_b": [
+        "FILE",
+        "2eaebb4c18cdef7f20089f8a2fa3475bc59c2a193f66e2f1513609a4bef13e22"
+       ],
+       "attr_delta": {
+        "mtime": [
+         "2011-06-12T09:53:33+00:00",
+         "2011-06-12T12:53:33"
+        ],
+        "compress_type": [
+         51,
+         53
+        ]
+       }
+      },
+      {
+       "name": "stest2.txt",
+       "bucket": "IDENTICAL",
+       "reason": "",
+       "key_a": [
+        "FILE",
+        "2eaebb4c18cdef7f20089f8a2fa3475bc59c2a193f66e2f1513609a4bef13e22"
+       ],
+       "key_b": [
+        "FILE",
+        "2eaebb4c18cdef7f20089f8a2fa3475bc59c2a193f66e2f1513609a4bef13e22"
+       ],
+       "attr_delta": {
+        "mtime": [
+         "2011-06-12T09:53:33+00:00",
+         "2011-06-12T12:53:33"
+        ],
+        "compress_type": [
+         51,
+         48
+        ]
+       }
+      }
+     ],
+     "order_changed": false
+    },
+    "rar5-solid.rar  ||  seektest.rar": {
+     "only_in_a": [],
+     "only_in_b": [],
+     "items": [
+      {
+       "name": "stest1.txt",
+       "bucket": "IDENTICAL",
+       "reason": "",
+       "key_a": [
+        "FILE",
+        "2eaebb4c18cdef7f20089f8a2fa3475bc59c2a193f66e2f1513609a4bef13e22"
+       ],
+       "key_b": [
+        "FILE",
+        "2eaebb4c18cdef7f20089f8a2fa3475bc59c2a193f66e2f1513609a4bef13e22"
+       ],
+       "attr_delta": {
+        "mode": [
+         "0o100666",
+         "0o100644"
+        ],
+        "mtime": [
+         null,
+         "2011-06-12T12:53:33"
+        ],
+        "compress_type": [
+         51,
+         53
+        ]
+       }
+      },
+      {
+       "name": "stest2.txt",
+       "bucket": "IDENTICAL",
+       "reason": "",
+       "key_a": [
+        "FILE",
+        "2eaebb4c18cdef7f20089f8a2fa3475bc59c2a193f66e2f1513609a4bef13e22"
+       ],
+       "key_b": [
+        "FILE",
+        "2eaebb4c18cdef7f20089f8a2fa3475bc59c2a193f66e2f1513609a4bef13e22"
+       ],
+       "attr_delta": {
+        "mode": [
+         "0o100666",
+         "0o100644"
+        ],
+        "mtime": [
+         null,
+         "2011-06-12T12:53:33"
+        ],
+        "compress_type": [
+         51,
+         48
+        ]
+       }
+      }
+     ],
+     "order_changed": false
+    }
+   }
+  },
+  "7b59be42": {
+   "members": [
+    "ctime5.rar"
+   ],
+   "pairs": {}
+  },
+  "7e00c2af": {
+   "members": [
+    "rar3-old.r01",
+    "rar3-vols.part3.rar",
+    "rar5-vols.part3.rar"
+   ],
+   "pairs": {
+    "rar3-old.r01  ||  rar3-vols.part3.rar": {
+     "only_in_a": [],
+     "only_in_b": [],
+     "items": [
+      {
+       "name": "vols/smallfile.txt",
+       "bucket": "IDENTICAL",
+       "reason": "",
+       "key_a": [
+        "FILE",
+        "6805973b24128edda3148235c77a7f7b5a7a9be6272bc882a6e030871b2b18d1"
+       ],
+       "key_b": [
+        "FILE",
+        "6805973b24128edda3148235c77a7f7b5a7a9be6272bc882a6e030871b2b18d1"
+       ],
+       "attr_delta": {}
+      }
+     ],
+     "order_changed": false
+    },
+    "rar3-old.r01  ||  rar5-vols.part3.rar": {
+     "only_in_a": [],
+     "only_in_b": [],
+     "items": [
+      {
+       "name": "vols/smallfile.txt",
+       "bucket": "IDENTICAL",
+       "reason": "",
+       "key_a": [
+        "FILE",
+        "6805973b24128edda3148235c77a7f7b5a7a9be6272bc882a6e030871b2b18d1"
+       ],
+       "key_b": [
+        "FILE",
+        "6805973b24128edda3148235c77a7f7b5a7a9be6272bc882a6e030871b2b18d1"
+       ],
+       "attr_delta": {
+        "mtime": [
+         "2016-05-24T11:42:43",
+         "2016-05-24T08:42:43+00:00"
+        ]
+       }
+      }
+     ],
+     "order_changed": false
+    },
+    "rar3-vols.part3.rar  ||  rar5-vols.part3.rar": {
+     "only_in_a": [],
+     "only_in_b": [],
+     "items": [
+      {
+       "name": "vols/smallfile.txt",
+       "bucket": "IDENTICAL",
+       "reason": "",
+       "key_a": [
+        "FILE",
+        "6805973b24128edda3148235c77a7f7b5a7a9be6272bc882a6e030871b2b18d1"
+       ],
+       "key_b": [
+        "FILE",
+        "6805973b24128edda3148235c77a7f7b5a7a9be6272bc882a6e030871b2b18d1"
+       ],
+       "attr_delta": {
+        "mtime": [
+         "2016-05-24T11:42:43",
+         "2016-05-24T08:42:43+00:00"
+        ]
+       }
+      }
+     ],
+     "order_changed": false
+    }
+   }
+  },
+  "7f07524a": {
+   "members": [
+    "rar3-owner.rar",
+    "rar5-owner.rar"
+   ],
+   "pairs": {
+    "rar3-owner.rar  ||  rar5-owner.rar": {
+     "only_in_a": [],
+     "only_in_b": [],
+     "items": [
+      {
+       "name": "owner1.txt",
+       "bucket": "IDENTICAL",
+       "reason": "",
+       "key_a": [
+        "FILE",
+        "4355a46b19d348dc2f57c046f8ef63d4538ebb936000f3c9ee954a27460dd865"
+       ],
+       "key_b": [
+        "FILE",
+        "4355a46b19d348dc2f57c046f8ef63d4538ebb936000f3c9ee954a27460dd865"
+       ],
+       "attr_delta": {
+        "mtime": [
+         "2020-07-30T22:48:11.364898100",
+         "2020-07-30T19:48:11.364898178+00:00"
+        ]
+       }
+      },
+      {
+       "name": "owner2.txt",
+       "bucket": "IDENTICAL",
+       "reason": "",
+       "key_a": [
+        "FILE",
+        "53c234e5e8472b6ac51c1ae1cab3fe06fad053beb8ebfd8977b010655bfdd3c3"
+       ],
+       "key_b": [
+        "FILE",
+        "53c234e5e8472b6ac51c1ae1cab3fe06fad053beb8ebfd8977b010655bfdd3c3"
+       ],
+       "attr_delta": {
+        "mtime": [
+         "2020-07-30T22:48:16.347603",
+         "2020-07-30T19:48:16.347603034+00:00"
+        ]
+       }
+      }
+     ],
+     "order_changed": false
+    }
+   }
+  },
+  "8041a1b6": {
+   "members": [
+    "rar5-hlink.rar"
+   ],
+   "pairs": {}
+  },
+  "8de5145f": {
+   "members": [
+    "rar3-comment-plain.rar",
+    "rar3-comment-psw.rar"
+   ],
+   "pairs": {
+    "rar3-comment-plain.rar  ||  rar3-comment-psw.rar": {
+     "only_in_a": [],
+     "only_in_b": [],
+     "items": [
+      {
+       "name": "file1.txt",
+       "bucket": "IDENTICAL",
+       "reason": "",
+       "key_a": [
+        "FILE",
+        "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+       ],
+       "key_b": [
+        "FILE",
+        "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+       ],
+       "attr_delta": {}
+      },
+      {
+       "name": "file2.txt",
+       "bucket": "IDENTICAL",
+       "reason": "",
+       "key_a": [
+        "FILE",
+        "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+       ],
+       "key_b": [
+        "FILE",
+        "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+       ],
+       "attr_delta": {}
+      }
+     ],
+     "order_changed": false
+    }
+   }
+  },
+  "922c323d": {
+   "members": [
+    "rar3-subdirs.rar",
+    "rar5-subdirs.rar"
+   ],
+   "pairs": {
+    "rar3-subdirs.rar  ||  rar5-subdirs.rar": {
+     "only_in_a": [],
+     "only_in_b": [],
+     "items": [
+      {
+       "name": "sub/",
+       "bucket": "IDENTICAL",
+       "reason": "",
+       "key_a": [
+        "DIR"
+       ],
+       "key_b": [
+        "DIR"
+       ],
+       "attr_delta": {
+        "mtime": [
+         "2020-07-20T21:06:42.241383800",
+         "2020-07-20T18:06:42.241383868+00:00"
+        ]
+       }
+      },
+      {
+       "name": "sub/dir1/",
+       "bucket": "IDENTICAL",
+       "reason": "",
+       "key_a": [
+        "DIR"
+       ],
+       "key_b": [
+        "DIR"
+       ],
+       "attr_delta": {
+        "mtime": [
+         "2020-07-20T21:01:33.887008500",
+         "2020-07-20T18:01:33.887008525+00:00"
+        ]
+       }
+      },
+      {
+       "name": "sub/dir1/file1.txt",
+       "bucket": "IDENTICAL",
+       "reason": "",
+       "key_a": [
+        "FILE",
+        "ecdc5536f73bdae8816f0ea40726ef5e9b810d914493075903bb90623d97b1d8"
+       ],
+       "key_b": [
+        "FILE",
+        "ecdc5536f73bdae8816f0ea40726ef5e9b810d914493075903bb90623d97b1d8"
+       ],
+       "attr_delta": {
+        "mtime": [
+         "2020-07-20T21:01:33.875008200",
+         "2020-07-20T18:01:33.875008284+00:00"
+        ]
+       }
+      },
+      {
+       "name": "sub/dir2/",
+       "bucket": "IDENTICAL",
+       "reason": "",
+       "key_a": [
+        "DIR"
+       ],
+       "key_b": [
+        "DIR"
+       ],
+       "attr_delta": {
+        "mtime": [
+         "2020-07-20T21:01:44.335219100",
+         "2020-07-20T18:01:44.335219144+00:00"
+        ]
+       }
+      },
+      {
+       "name": "sub/dir2/file2.txt",
+       "bucket": "IDENTICAL",
+       "reason": "",
+       "key_a": [
+        "FILE",
+        "67ee5478eaadb034ba59944eb977797b49ca6aa8d3574587f36ebcbeeb65f70e"
+       ],
+       "key_b": [
+        "FILE",
+        "67ee5478eaadb034ba59944eb977797b49ca6aa8d3574587f36ebcbeeb65f70e"
+       ],
+       "attr_delta": {
+        "mtime": [
+         "2020-07-20T21:01:44.319218800",
+         "2020-07-20T18:01:44.319218821+00:00"
+        ]
+       }
+      },
+      {
+       "name": "sub/empty/",
+       "bucket": "IDENTICAL",
+       "reason": "",
+       "key_a": [
+        "DIR"
+       ],
+       "key_b": [
+        "DIR"
+       ],
+       "attr_delta": {
+        "mtime": [
+         "2020-07-20T21:01:09.182513600",
+         "2020-07-20T18:01:09.182513654+00:00"
+        ]
+       }
+      },
+      {
+       "name": "sub/with space/",
+       "bucket": "IDENTICAL",
+       "reason": "",
+       "key_a": [
+        "DIR"
+       ],
+       "key_b": [
+        "DIR"
+       ],
+       "attr_delta": {
+        "mtime": [
+         "2020-07-20T21:02:17.511892300",
+         "2020-07-20T18:02:17.511892315+00:00"
+        ]
+       }
+      },
+      {
+       "name": "sub/with space/long fn.txt",
+       "bucket": "IDENTICAL",
+       "reason": "",
+       "key_a": [
+        "FILE",
+        "e708f3c52269d19a8ac86b5934ff9cf2a80c696cb04a66a435e96f9ca44f7c18"
+       ],
+       "key_b": [
+        "FILE",
+        "e708f3c52269d19a8ac86b5934ff9cf2a80c696cb04a66a435e96f9ca44f7c18"
+       ],
+       "attr_delta": {
+        "mtime": [
+         "2020-07-20T21:02:17.499892",
+         "2020-07-20T18:02:17.499892070+00:00"
+        ]
+       }
+      },
+      {
+       "name": "sub/üȵĩöḋè/",
+       "bucket": "IDENTICAL",
+       "reason": "",
+       "key_a": [
+        "DIR"
+       ],
+       "key_b": [
+        "DIR"
+       ],
+       "attr_delta": {
+        "mtime": [
+         "2020-07-20T21:07:00.153758800",
+         "2020-07-20T18:07:00.153758873+00:00"
+        ]
+       }
+      },
+      {
+       "name": "sub/üȵĩöḋè/file.txt",
+       "bucket": "IDENTICAL",
+       "reason": "",
+       "key_a": [
+        "FILE",
+        "8b911a8716b94442f9ca3dff20584048536e4c2f47b8b5bb9096cbd43c3432d5"
+       ],
+       "key_b": [
+        "FILE",
+        "8b911a8716b94442f9ca3dff20584048536e4c2f47b8b5bb9096cbd43c3432d5"
+       ],
+       "attr_delta": {
+        "mtime": [
+         "2020-07-20T21:07:00.141758600",
+         "2020-07-20T18:07:00.141758621+00:00"
+        ]
+       }
+      }
+     ],
+     "order_changed": false
+    }
+   }
+  },
+  "9eb19329": {
+   "members": [
+    "rar5-evil-symlink-traversal.rar"
+   ],
+   "pairs": {}
+  },
+  "b4e1609c": {
+   "members": [
+    "rar3-symlink-unix.rar",
+    "rar5-symlink-unix.rar"
+   ],
+   "pairs": {
+    "rar3-symlink-unix.rar  ||  rar5-symlink-unix.rar": {
+     "only_in_a": [],
+     "only_in_b": [],
+     "items": [
+      {
+       "name": "data.txt",
+       "bucket": "IDENTICAL",
+       "reason": "",
+       "key_a": [
+        "FILE",
+        "6667b2d1aab6a00caa5aee5af8ad9f1465e567abf1c209d15727d57b3e8f6e5f"
+       ],
+       "key_b": [
+        "FILE",
+        "6667b2d1aab6a00caa5aee5af8ad9f1465e567abf1c209d15727d57b3e8f6e5f"
+       ],
+       "attr_delta": {
+        "mtime": [
+         "2020-07-26T23:13:33.568312800",
+         "2020-07-26T20:13:33.568312816+00:00"
+        ]
+       }
+      },
+      {
+       "name": "data_link",
+       "bucket": "IDENTICAL",
+       "reason": "",
+       "key_a": [
+        "LINK",
+        "data.txt"
+       ],
+       "key_b": [
+        "LINK",
+        "data.txt"
+       ],
+       "attr_delta": {
+        "mtime": [
+         "2020-07-26T23:13:58.125453100",
+         "2020-07-26T20:13:58.125453113+00:00"
+        ],
+        "crc32_header": [
+         "0x8b387909",
+         0
+        ],
+        "representation": [
+         "siflnk",
+         "redir:1"
+        ]
+       }
+      },
+      {
+       "name": "random_link",
+       "bucket": "IDENTICAL",
+       "reason": "",
+       "key_a": [
+        "LINK",
+        "../random123"
+       ],
+       "key_b": [
+        "LINK",
+        "../random123"
+       ],
+       "attr_delta": {
+        "mtime": [
+         "2020-07-26T23:32:08.896575800",
+         "2020-07-26T20:32:08.896575845+00:00"
+        ],
+        "crc32_header": [
+         "0xcfb67605",
+         0
+        ],
+        "representation": [
+         "siflnk",
+         "redir:1"
+        ]
+       }
+      }
+     ],
+     "order_changed": false
+    }
+   }
+  },
+  "d9e9833d": {
+   "members": [
+    "rar5-dups.rar"
+   ],
+   "pairs": {}
+  },
+  "da39a3ee": {
+   "members": [
+    "rar3-comment-hpsw.rar",
+    "rar3-old.r00",
+    "rar3-vols.part2.rar",
+    "rar5-hpsw.rar",
+    "rar5-vols.part2.rar"
+   ],
+   "pairs": {
+    "rar3-comment-hpsw.rar  ||  rar3-old.r00": {
+     "only_in_a": [],
+     "only_in_b": [],
+     "items": [],
+     "order_changed": false
+    },
+    "rar3-comment-hpsw.rar  ||  rar3-vols.part2.rar": {
+     "only_in_a": [],
+     "only_in_b": [],
+     "items": [],
+     "order_changed": false
+    },
+    "rar3-comment-hpsw.rar  ||  rar5-hpsw.rar": {
+     "only_in_a": [],
+     "only_in_b": [],
+     "items": [],
+     "order_changed": false
+    },
+    "rar3-comment-hpsw.rar  ||  rar5-vols.part2.rar": {
+     "only_in_a": [],
+     "only_in_b": [],
+     "items": [],
+     "order_changed": false
+    },
+    "rar3-old.r00  ||  rar3-vols.part2.rar": {
+     "only_in_a": [],
+     "only_in_b": [],
+     "items": [],
+     "order_changed": false
+    },
+    "rar3-old.r00  ||  rar5-hpsw.rar": {
+     "only_in_a": [],
+     "only_in_b": [],
+     "items": [],
+     "order_changed": false
+    },
+    "rar3-old.r00  ||  rar5-vols.part2.rar": {
+     "only_in_a": [],
+     "only_in_b": [],
+     "items": [],
+     "order_changed": false
+    },
+    "rar3-vols.part2.rar  ||  rar5-hpsw.rar": {
+     "only_in_a": [],
+     "only_in_b": [],
+     "items": [],
+     "order_changed": false
+    },
+    "rar3-vols.part2.rar  ||  rar5-vols.part2.rar": {
+     "only_in_a": [],
+     "only_in_b": [],
+     "items": [],
+     "order_changed": false
+    },
+    "rar5-hpsw.rar  ||  rar5-vols.part2.rar": {
+     "only_in_a": [],
+     "only_in_b": [],
+     "items": [],
+     "order_changed": false
+    }
+   }
+  },
+  "ef92e291": {
+   "members": [
+    "rar5-symlink-win.rar"
+   ],
+   "pairs": {}
+  },
+  "f3b0b2a3": {
+   "members": [
+    "ctime0.rar",
+    "ctime1.rar",
+    "ctime2.rar",
+    "ctime3.rar",
+    "ctime4.rar",
+    "rar5-times2.rar"
+   ],
+   "pairs": {
+    "ctime0.rar  ||  ctime1.rar": {
+     "only_in_a": [],
+     "only_in_b": [],
+     "items": [
+      {
+       "name": "afile.txt",
+       "bucket": "IDENTICAL",
+       "reason": "",
+       "key_a": [
+        "FILE",
+        "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+       ],
+       "key_b": [
+        "FILE",
+        "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+       ],
+       "attr_delta": {
+        "ctime": [
+         null,
+         "2011-05-10T21:28:47"
+        ]
+       }
+      }
+     ],
+     "order_changed": false
+    },
+    "ctime0.rar  ||  ctime2.rar": {
+     "only_in_a": [],
+     "only_in_b": [],
+     "items": [
+      {
+       "name": "afile.txt",
+       "bucket": "IDENTICAL",
+       "reason": "",
+       "key_a": [
+        "FILE",
+        "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+       ],
+       "key_b": [
+        "FILE",
+        "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+       ],
+       "attr_delta": {
+        "ctime": [
+         null,
+         "2011-05-10T21:28:47.897843200"
+        ]
+       }
+      }
+     ],
+     "order_changed": false
+    },
+    "ctime0.rar  ||  ctime3.rar": {
+     "only_in_a": [],
+     "only_in_b": [],
+     "items": [
+      {
+       "name": "afile.txt",
+       "bucket": "IDENTICAL",
+       "reason": "",
+       "key_a": [
+        "FILE",
+        "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+       ],
+       "key_b": [
+        "FILE",
+        "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+       ],
+       "attr_delta": {
+        "ctime": [
+         null,
+         "2011-05-10T21:28:47.899328"
+        ]
+       }
+      }
+     ],
+     "order_changed": false
+    },
+    "ctime0.rar  ||  ctime4.rar": {
+     "only_in_a": [],
+     "only_in_b": [],
+     "items": [
+      {
+       "name": "afile.txt",
+       "bucket": "IDENTICAL",
+       "reason": "",
+       "key_a": [
+        "FILE",
+        "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+       ],
+       "key_b": [
+        "FILE",
+        "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+       ],
+       "attr_delta": {
+        "ctime": [
+         null,
+         "2011-05-10T21:28:47.899345100"
+        ]
+       }
+      }
+     ],
+     "order_changed": false
+    },
+    "ctime0.rar  ||  rar5-times2.rar": {
+     "only_in_a": [],
+     "only_in_b": [],
+     "items": [
+      {
+       "name": "afile.txt",
+       "bucket": "IDENTICAL",
+       "reason": "",
+       "key_a": [
+        "FILE",
+        "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+       ],
+       "key_b": [
+        "FILE",
+        "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+       ],
+       "attr_delta": {
+        "mtime": [
+         "2011-05-10T21:28:47.899345100",
+         "2011-05-10T18:28:47.899345100+00:00"
+        ]
+       }
+      }
+     ],
+     "order_changed": false
+    },
+    "ctime1.rar  ||  ctime2.rar": {
+     "only_in_a": [],
+     "only_in_b": [],
+     "items": [
+      {
+       "name": "afile.txt",
+       "bucket": "IDENTICAL",
+       "reason": "",
+       "key_a": [
+        "FILE",
+        "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+       ],
+       "key_b": [
+        "FILE",
+        "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+       ],
+       "attr_delta": {
+        "ctime": [
+         "2011-05-10T21:28:47",
+         "2011-05-10T21:28:47.897843200"
+        ]
+       }
+      }
+     ],
+     "order_changed": false
+    },
+    "ctime1.rar  ||  ctime3.rar": {
+     "only_in_a": [],
+     "only_in_b": [],
+     "items": [
+      {
+       "name": "afile.txt",
+       "bucket": "IDENTICAL",
+       "reason": "",
+       "key_a": [
+        "FILE",
+        "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+       ],
+       "key_b": [
+        "FILE",
+        "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+       ],
+       "attr_delta": {
+        "ctime": [
+         "2011-05-10T21:28:47",
+         "2011-05-10T21:28:47.899328"
+        ]
+       }
+      }
+     ],
+     "order_changed": false
+    },
+    "ctime1.rar  ||  ctime4.rar": {
+     "only_in_a": [],
+     "only_in_b": [],
+     "items": [
+      {
+       "name": "afile.txt",
+       "bucket": "IDENTICAL",
+       "reason": "",
+       "key_a": [
+        "FILE",
+        "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+       ],
+       "key_b": [
+        "FILE",
+        "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+       ],
+       "attr_delta": {
+        "ctime": [
+         "2011-05-10T21:28:47",
+         "2011-05-10T21:28:47.899345100"
+        ]
+       }
+      }
+     ],
+     "order_changed": false
+    },
+    "ctime1.rar  ||  rar5-times2.rar": {
+     "only_in_a": [],
+     "only_in_b": [],
+     "items": [
+      {
+       "name": "afile.txt",
+       "bucket": "IDENTICAL",
+       "reason": "",
+       "key_a": [
+        "FILE",
+        "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+       ],
+       "key_b": [
+        "FILE",
+        "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+       ],
+       "attr_delta": {
+        "mtime": [
+         "2011-05-10T21:28:47.899345100",
+         "2011-05-10T18:28:47.899345100+00:00"
+        ],
+        "ctime": [
+         "2011-05-10T21:28:47",
+         null
+        ]
+       }
+      }
+     ],
+     "order_changed": false
+    },
+    "ctime2.rar  ||  ctime3.rar": {
+     "only_in_a": [],
+     "only_in_b": [],
+     "items": [
+      {
+       "name": "afile.txt",
+       "bucket": "IDENTICAL",
+       "reason": "",
+       "key_a": [
+        "FILE",
+        "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+       ],
+       "key_b": [
+        "FILE",
+        "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+       ],
+       "attr_delta": {
+        "ctime": [
+         "2011-05-10T21:28:47.897843200",
+         "2011-05-10T21:28:47.899328"
+        ]
+       }
+      }
+     ],
+     "order_changed": false
+    },
+    "ctime2.rar  ||  ctime4.rar": {
+     "only_in_a": [],
+     "only_in_b": [],
+     "items": [
+      {
+       "name": "afile.txt",
+       "bucket": "IDENTICAL",
+       "reason": "",
+       "key_a": [
+        "FILE",
+        "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+       ],
+       "key_b": [
+        "FILE",
+        "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+       ],
+       "attr_delta": {
+        "ctime": [
+         "2011-05-10T21:28:47.897843200",
+         "2011-05-10T21:28:47.899345100"
+        ]
+       }
+      }
+     ],
+     "order_changed": false
+    },
+    "ctime2.rar  ||  rar5-times2.rar": {
+     "only_in_a": [],
+     "only_in_b": [],
+     "items": [
+      {
+       "name": "afile.txt",
+       "bucket": "IDENTICAL",
+       "reason": "",
+       "key_a": [
+        "FILE",
+        "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+       ],
+       "key_b": [
+        "FILE",
+        "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+       ],
+       "attr_delta": {
+        "mtime": [
+         "2011-05-10T21:28:47.899345100",
+         "2011-05-10T18:28:47.899345100+00:00"
+        ],
+        "ctime": [
+         "2011-05-10T21:28:47.897843200",
+         null
+        ]
+       }
+      }
+     ],
+     "order_changed": false
+    },
+    "ctime3.rar  ||  ctime4.rar": {
+     "only_in_a": [],
+     "only_in_b": [],
+     "items": [
+      {
+       "name": "afile.txt",
+       "bucket": "IDENTICAL",
+       "reason": "",
+       "key_a": [
+        "FILE",
+        "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+       ],
+       "key_b": [
+        "FILE",
+        "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+       ],
+       "attr_delta": {
+        "ctime": [
+         "2011-05-10T21:28:47.899328",
+         "2011-05-10T21:28:47.899345100"
+        ]
+       }
+      }
+     ],
+     "order_changed": false
+    },
+    "ctime3.rar  ||  rar5-times2.rar": {
+     "only_in_a": [],
+     "only_in_b": [],
+     "items": [
+      {
+       "name": "afile.txt",
+       "bucket": "IDENTICAL",
+       "reason": "",
+       "key_a": [
+        "FILE",
+        "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+       ],
+       "key_b": [
+        "FILE",
+        "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+       ],
+       "attr_delta": {
+        "mtime": [
+         "2011-05-10T21:28:47.899345100",
+         "2011-05-10T18:28:47.899345100+00:00"
+        ],
+        "ctime": [
+         "2011-05-10T21:28:47.899328",
+         null
+        ]
+       }
+      }
+     ],
+     "order_changed": false
+    },
+    "ctime4.rar  ||  rar5-times2.rar": {
+     "only_in_a": [],
+     "only_in_b": [],
+     "items": [
+      {
+       "name": "afile.txt",
+       "bucket": "IDENTICAL",
+       "reason": "",
+       "key_a": [
+        "FILE",
+        "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+       ],
+       "key_b": [
+        "FILE",
+        "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+       ],
+       "attr_delta": {
+        "mtime": [
+         "2011-05-10T21:28:47.899345100",
+         "2011-05-10T18:28:47.899345100+00:00"
+        ],
+        "ctime": [
+         "2011-05-10T21:28:47.899345100",
+         null
+        ]
+       }
+      }
+     ],
+     "order_changed": false
+    }
+   }
+  },
+  "fc3bf1fd": {
+   "members": [
+    "rar5-times.rar"
+   ],
+   "pairs": {}
+  }
+ },
+ "content_groups": {
+  "e3b0c44298fc1c14": [
+   [
+    "ctime0.rar",
+    "afile.txt",
+    0
+   ],
+   [
+    "ctime1.rar",
+    "afile.txt",
+    0
+   ],
+   [
+    "ctime2.rar",
+    "afile.txt",
+    0
+   ],
+   [
+    "ctime3.rar",
+    "afile.txt",
+    0
+   ],
+   [
+    "ctime4.rar",
+    "afile.txt",
+    0
+   ],
+   [
+    "rar3-comment-plain.rar",
+    "file1.txt",
+    0
+   ],
+   [
+    "rar3-comment-plain.rar",
+    "file2.txt",
+    0
+   ],
+   [
+    "rar3-comment-psw.rar",
+    "file1.txt",
+    0
+   ],
+   [
+    "rar3-comment-psw.rar",
+    "file2.txt",
+    0
+   ],
+   [
+    "rar5-times2.rar",
+    "afile.txt",
+    0
+   ]
+  ],
+  "d7bca5c38fa696e9": [
+   [
+    "rar15-comment-lock.rar",
+    "FILE1.TXT",
+    7
+   ],
+   [
+    "rar15-comment.rar",
+    "FILE1.TXT",
+    7
+   ]
+  ],
+  "42c3ccb0c4f1b28e": [
+   [
+    "rar15-comment-lock.rar",
+    "FILE2.TXT",
+    8
+   ],
+   [
+    "rar15-comment.rar",
+    "FILE2.TXT",
+    8
+   ]
+  ],
+  "2b69a7f7ba9698a4": [
+   [
+    "rar202-comment-nopsw.rar",
+    "FILE1.TXT",
+    7
+   ],
+   [
+    "rar202-comment-psw.rar",
+    "FILE1.TXT",
+    7
+   ]
+  ],
+  "24040d7b811b76bf": [
+   [
+    "rar202-comment-nopsw.rar",
+    "FILE2.TXT",
+    7
+   ],
+   [
+    "rar202-comment-psw.rar",
+    "FILE2.TXT",
+    7
+   ]
+  ],
+  "6805973b24128edd": [
+   [
+    "rar3-old.r01",
+    "vols/smallfile.txt",
+    2050
+   ],
+   [
+    "rar3-old.rar",
+    "vols/smallfile.txt",
+    2050
+   ],
+   [
+    "rar3-vols.part1.rar",
+    "vols/smallfile.txt",
+    2050
+   ],
+   [
+    "rar3-vols.part3.rar",
+    "vols/smallfile.txt",
+    2050
+   ],
+   [
+    "rar5-vols.part1.rar",
+    "vols/smallfile.txt",
+    2050
+   ],
+   [
+    "rar5-vols.part3.rar",
+    "vols/smallfile.txt",
+    2050
+   ]
+  ],
+  "57613b4a0d18b314": [
+   [
+    "rar3-old.rar",
+    "vols/bigfile.txt",
+    205000
+   ],
+   [
+    "rar3-vols.part1.rar",
+    "vols/bigfile.txt",
+    205000
+   ],
+   [
+    "rar5-vols.part1.rar",
+    "vols/bigfile.txt",
+    205000
+   ]
+  ],
+  "4355a46b19d348dc": [
+   [
+    "rar3-owner.rar",
+    "owner1.txt",
+    2
+   ],
+   [
+    "rar5-owner.rar",
+    "owner1.txt",
+    2
+   ],
+   [
+    "unicode.rar",
+    "уииоотивл.txt",
+    2
+   ],
+   [
+    "unicode.rar",
+    "𝐀𝐁𝐁𝐂.txt",
+    2
+   ],
+   [
+    "unicode2.rar",
+    "𝐀𝐁𝐁𝐂.txt",
+    2
+   ],
+   [
+    "unicode2.rar",
+    "уииоотивл.txt",
+    2
+   ]
+  ],
+  "53c234e5e8472b6a": [
+   [
+    "rar3-owner.rar",
+    "owner2.txt",
+    2
+   ],
+   [
+    "rar5-owner.rar",
+    "owner2.txt",
+    2
+   ]
+  ],
+  "e8556b2a4c237957": [
+   [
+    "rar3-readonly-unix.rar",
+    "ro_dir/ro_file.txt",
+    9
+   ],
+   [
+    "rar3-readonly-win.rar",
+    "ro_dir/ro_file.txt",
+    9
+   ],
+   [
+    "rar5-readonly-unix.rar",
+    "ro_dir/ro_file.txt",
+    9
+   ],
+   [
+    "rar5-readonly-win.rar",
+    "ro_dir/ro_file.txt",
+    9
+   ]
+  ],
+  "2eaebb4c18cdef7f": [
+   [
+    "rar3-seektest.sfx",
+    "stest1.txt",
+    2048
+   ],
+   [
+    "rar3-seektest.sfx",
+    "stest2.txt",
+    2048
+   ],
+   [
+    "rar3-solid.rar",
+    "stest1.txt",
+    2048
+   ],
+   [
+    "rar3-solid.rar",
+    "stest2.txt",
+    2048
+   ],
+   [
+    "rar5-blake.rar",
+    "stest1.txt",
+    2048
+   ],
+   [
+    "rar5-blake.rar",
+    "stest2.txt",
+    2048
+   ],
+   [
+    "rar5-crc.rar",
+    "stest1.txt",
+    2048
+   ],
+   [
+    "rar5-crc.rar",
+    "stest2.txt",
+    2048
+   ],
+   [
+    "rar5-crc.sfx",
+    "stest1.txt",
+    2048
+   ],
+   [
+    "rar5-crc.sfx",
+    "stest2.txt",
+    2048
+   ],
+   [
+    "rar5-dups.rar",
+    "stest1.txt",
+    2048
+   ],
+   [
+    "rar5-hlink.rar",
+    "stest1.txt",
+    2048
+   ],
+   [
+    "rar5-psw-blake.rar",
+    "stest1.txt",
+    2048
+   ],
+   [
+    "rar5-psw-blake.rar",
+    "stest2.txt",
+    2048
+   ],
+   [
+    "rar5-psw.rar",
+    "stest1.txt",
+    2048
+   ],
+   [
+    "rar5-psw.rar",
+    "stest2.txt",
+    2048
+   ],
+   [
+    "rar5-quick-open.rar",
+    "stest1.txt",
+    2048
+   ],
+   [
+    "rar5-quick-open.rar",
+    "stest2.txt",
+    2048
+   ],
+   [
+    "rar5-solid-qo.rar",
+    "somedir/stest1.txt",
+    2048
+   ],
+   [
+    "rar5-solid-qo.rar",
+    "stest1.txt",
+    2048
+   ],
+   [
+    "rar5-solid-qo.rar",
+    "somedir/stest2.txt",
+    2048
+   ],
+   [
+    "rar5-solid-qo.rar",
+    "stest2.txt",
+    2048
+   ],
+   [
+    "rar5-solid.rar",
+    "stest1.txt",
+    2048
+   ],
+   [
+    "rar5-solid.rar",
+    "stest2.txt",
+    2048
+   ],
+   [
+    "rar5-times.rar",
+    "stest1.txt",
+    2048
+   ],
+   [
+    "seektest.rar",
+    "stest1.txt",
+    2048
+   ],
+   [
+    "seektest.rar",
+    "stest2.txt",
+    2048
+   ]
+  ],
+  "67ee5478eaadb034": [
+   [
+    "rar3-subdirs.rar",
+    "sub/dir2/file2.txt",
+    6
+   ],
+   [
+    "rar5-subdirs.rar",
+    "sub/dir2/file2.txt",
+    6
+   ]
+  ],
+  "e708f3c52269d19a": [
+   [
+    "rar3-subdirs.rar",
+    "sub/with space/long fn.txt",
+    8
+   ],
+   [
+    "rar5-subdirs.rar",
+    "sub/with space/long fn.txt",
+    8
+   ]
+  ],
+  "8b911a8716b94442": [
+   [
+    "rar3-subdirs.rar",
+    "sub/üȵĩöḋè/file.txt",
+    5
+   ],
+   [
+    "rar5-subdirs.rar",
+    "sub/üȵĩöḋè/file.txt",
+    5
+   ]
+  ],
+  "ecdc5536f73bdae8": [
+   [
+    "rar3-subdirs.rar",
+    "sub/dir1/file1.txt",
+    6
+   ],
+   [
+    "rar5-subdirs.rar",
+    "sub/dir1/file1.txt",
+    6
+   ]
+  ],
+  "6667b2d1aab6a00c": [
+   [
+    "rar3-symlink-unix.rar",
+    "data.txt",
+    5
+   ],
+   [
+    "rar5-symlink-unix.rar",
+    "data.txt",
+    5
+   ]
+  ],
+  "1121cfccd5913f0a": [
+   [
+    "rar3-versions.rar",
+    "versioned.txt",
+    2
+   ],
+   [
+    "rar5-versions.rar",
+    "versioned.txt",
+    2
+   ]
+  ]
+ },
+ "unread_archives": [
+  [
+   "rar3-comment-hpsw.rar",
+   "NoCrypto: Cannot parse encrypted headers - no crypto"
+  ],
+  [
+   "rar5-hpsw.rar",
+   "NoCrypto: Cannot parse encrypted headers - no crypto"
+  ]
+ ]
+}

@@ -1,0 +1,892 @@
+{
+ "ctime0.rar": {
+  "status": "READ",
+  "members": {
+   "afile.txt": {
+    "kind": "FILE",
+    "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "nbytes": 0
+   }
+  },
+  "error": null
+ },
+ "ctime1.rar": {
+  "status": "READ",
+  "members": {
+   "afile.txt": {
+    "kind": "FILE",
+    "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "nbytes": 0
+   }
+  },
+  "error": null
+ },
+ "ctime2.rar": {
+  "status": "READ",
+  "members": {
+   "afile.txt": {
+    "kind": "FILE",
+    "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "nbytes": 0
+   }
+  },
+  "error": null
+ },
+ "ctime3.rar": {
+  "status": "READ",
+  "members": {
+   "afile.txt": {
+    "kind": "FILE",
+    "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "nbytes": 0
+   }
+  },
+  "error": null
+ },
+ "ctime4.rar": {
+  "status": "READ",
+  "members": {
+   "afile.txt": {
+    "kind": "FILE",
+    "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "nbytes": 0
+   }
+  },
+  "error": null
+ },
+ "ctime5.rar": {
+  "status": "READ",
+  "members": {
+   "timed.txt": {
+    "kind": "FILE",
+    "sha256": "fe8edeeb98cc6d3b93cf2d57000254b84bd9eba34b4df7ce4b87db8b937b7703",
+    "nbytes": 2
+   }
+  },
+  "error": null
+ },
+ "rar15-comment-lock.rar": {
+  "status": "READ",
+  "members": {
+   "FILE1.TXT": {
+    "kind": "FILE",
+    "sha256": "d7bca5c38fa696e969cf7335ede13e715dddc0c9dc618a1743463f3f84f145b8",
+    "nbytes": 7
+   },
+   "FILE2.TXT": {
+    "kind": "FILE",
+    "sha256": "42c3ccb0c4f1b28eb2fbc62d9fb14aa04befd076183284bc82c3819478da5f94",
+    "nbytes": 8
+   }
+  },
+  "error": null
+ },
+ "rar15-comment.rar": {
+  "status": "READ",
+  "members": {
+   "FILE1.TXT": {
+    "kind": "FILE",
+    "sha256": "d7bca5c38fa696e969cf7335ede13e715dddc0c9dc618a1743463f3f84f145b8",
+    "nbytes": 7
+   },
+   "FILE2.TXT": {
+    "kind": "FILE",
+    "sha256": "42c3ccb0c4f1b28eb2fbc62d9fb14aa04befd076183284bc82c3819478da5f94",
+    "nbytes": 8
+   }
+  },
+  "error": null
+ },
+ "rar2-unix-owner.rar": {
+  "status": "READ",
+  "members": {
+   "file.txt": {
+    "kind": "FILE",
+    "sha256": "b5bb9d8014a0f9b1d61e21e796d78dccdf1352f23cd32812f4850b878ae4944c",
+    "nbytes": 4
+   }
+  },
+  "error": null
+ },
+ "rar202-comment-nopsw.rar": {
+  "status": "READ",
+  "members": {
+   "FILE1.TXT": {
+    "kind": "FILE",
+    "sha256": "2b69a7f7ba9698a49a49a33d4857610b4408109ff096e5d5ec2a1394cf33314a",
+    "nbytes": 7
+   },
+   "FILE2.TXT": {
+    "kind": "FILE",
+    "sha256": "24040d7b811b76bf0b32993100e66d4d2dadd90ca3e5d250c17a0f20491a3531",
+    "nbytes": 7
+   }
+  },
+  "error": null
+ },
+ "rar202-comment-psw.rar": {
+  "status": "READ",
+  "members": {
+   "FILE1.TXT": {
+    "kind": "FILE",
+    "sha256": "2b69a7f7ba9698a49a49a33d4857610b4408109ff096e5d5ec2a1394cf33314a",
+    "nbytes": 7
+   },
+   "FILE2.TXT": {
+    "kind": "FILE",
+    "sha256": "24040d7b811b76bf0b32993100e66d4d2dadd90ca3e5d250c17a0f20491a3531",
+    "nbytes": 7
+   }
+  },
+  "error": null
+ },
+ "rar3-comment-hpsw.rar": {
+  "status": "UNREAD",
+  "members": {},
+  "error": "NoCrypto: Cannot parse encrypted headers - no crypto"
+ },
+ "rar3-comment-plain.rar": {
+  "status": "READ",
+  "members": {
+   "file1.txt": {
+    "kind": "FILE",
+    "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "nbytes": 0
+   },
+   "file2.txt": {
+    "kind": "FILE",
+    "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "nbytes": 0
+   }
+  },
+  "error": null
+ },
+ "rar3-comment-psw.rar": {
+  "status": "READ",
+  "members": {
+   "file1.txt": {
+    "kind": "FILE",
+    "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "nbytes": 0
+   },
+   "file2.txt": {
+    "kind": "FILE",
+    "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "nbytes": 0
+   }
+  },
+  "error": null
+ },
+ "rar3-old.r00": {
+  "status": "READ",
+  "members": {},
+  "error": null
+ },
+ "rar3-old.r01": {
+  "status": "READ",
+  "members": {
+   "vols/smallfile.txt": {
+    "kind": "FILE",
+    "sha256": "6805973b24128edda3148235c77a7f7b5a7a9be6272bc882a6e030871b2b18d1",
+    "nbytes": 2050
+   }
+  },
+  "error": null
+ },
+ "rar3-old.rar": {
+  "status": "READ",
+  "members": {
+   "vols/bigfile.txt": {
+    "kind": "FILE",
+    "sha256": "57613b4a0d18b31472c9abe90780dcaf834f4edf48e79008f027a99710cf3632",
+    "nbytes": 205000
+   },
+   "vols/smallfile.txt": {
+    "kind": "FILE",
+    "sha256": "6805973b24128edda3148235c77a7f7b5a7a9be6272bc882a6e030871b2b18d1",
+    "nbytes": 2050
+   }
+  },
+  "error": null
+ },
+ "rar3-owner.rar": {
+  "status": "READ",
+  "members": {
+   "owner1.txt": {
+    "kind": "FILE",
+    "sha256": "4355a46b19d348dc2f57c046f8ef63d4538ebb936000f3c9ee954a27460dd865",
+    "nbytes": 2
+   },
+   "owner2.txt": {
+    "kind": "FILE",
+    "sha256": "53c234e5e8472b6ac51c1ae1cab3fe06fad053beb8ebfd8977b010655bfdd3c3",
+    "nbytes": 2
+   }
+  },
+  "error": null
+ },
+ "rar3-readonly-unix.rar": {
+  "status": "READ",
+  "members": {
+   "ro_dir/ro_file.txt": {
+    "kind": "FILE",
+    "sha256": "e8556b2a4c237957175ab9e9f63a67b39feb54b8d33b2b27f7e3c9af0d323900",
+    "nbytes": 9
+   },
+   "ro_dir/": {
+    "kind": "DIR"
+   }
+  },
+  "error": null
+ },
+ "rar3-readonly-win.rar": {
+  "status": "READ",
+  "members": {
+   "ro_dir/ro_file.txt": {
+    "kind": "FILE",
+    "sha256": "e8556b2a4c237957175ab9e9f63a67b39feb54b8d33b2b27f7e3c9af0d323900",
+    "nbytes": 9
+   },
+   "ro_dir/": {
+    "kind": "DIR"
+   }
+  },
+  "error": null
+ },
+ "rar3-seektest.sfx": {
+  "status": "READ",
+  "members": {
+   "stest1.txt": {
+    "kind": "FILE",
+    "sha256": "2eaebb4c18cdef7f20089f8a2fa3475bc59c2a193f66e2f1513609a4bef13e22",
+    "nbytes": 2048
+   },
+   "stest2.txt": {
+    "kind": "FILE",
+    "sha256": "2eaebb4c18cdef7f20089f8a2fa3475bc59c2a193f66e2f1513609a4bef13e22",
+    "nbytes": 2048
+   }
+  },
+  "error": null
+ },
+ "rar3-solid.rar": {
+  "status": "READ",
+  "members": {
+   "stest1.txt": {
+    "kind": "FILE",
+    "sha256": "2eaebb4c18cdef7f20089f8a2fa3475bc59c2a193f66e2f1513609a4bef13e22",
+    "nbytes": 2048
+   },
+   "stest2.txt": {
+    "kind": "FILE",
+    "sha256": "2eaebb4c18cdef7f20089f8a2fa3475bc59c2a193f66e2f1513609a4bef13e22",
+    "nbytes": 2048
+   }
+  },
+  "error": null
+ },
+ "rar3-subdirs.rar": {
+  "status": "READ",
+  "members": {
+   "sub/dir2/file2.txt": {
+    "kind": "FILE",
+    "sha256": "67ee5478eaadb034ba59944eb977797b49ca6aa8d3574587f36ebcbeeb65f70e",
+    "nbytes": 6
+   },
+   "sub/with space/long fn.txt": {
+    "kind": "FILE",
+    "sha256": "e708f3c52269d19a8ac86b5934ff9cf2a80c696cb04a66a435e96f9ca44f7c18",
+    "nbytes": 8
+   },
+   "sub/üȵĩöḋè/file.txt": {
+    "kind": "FILE",
+    "sha256": "8b911a8716b94442f9ca3dff20584048536e4c2f47b8b5bb9096cbd43c3432d5",
+    "nbytes": 5
+   },
+   "sub/dir1/file1.txt": {
+    "kind": "FILE",
+    "sha256": "ecdc5536f73bdae8816f0ea40726ef5e9b810d914493075903bb90623d97b1d8",
+    "nbytes": 6
+   },
+   "sub/dir2/": {
+    "kind": "DIR"
+   },
+   "sub/with space/": {
+    "kind": "DIR"
+   },
+   "sub/empty/": {
+    "kind": "DIR"
+   },
+   "sub/üȵĩöḋè/": {
+    "kind": "DIR"
+   },
+   "sub/dir1/": {
+    "kind": "DIR"
+   },
+   "sub/": {
+    "kind": "DIR"
+   }
+  },
+  "error": null
+ },
+ "rar3-symlink-unix.rar": {
+  "status": "READ",
+  "members": {
+   "data_link": {
+    "kind": "LINK",
+    "target": "data.txt",
+    "sha256_target": "e52a380d24e82f4e2f7b03bb0e99bd26e874e5b46aad27e52b967e9cf468b7c4"
+   },
+   "data.txt": {
+    "kind": "FILE",
+    "sha256": "6667b2d1aab6a00caa5aee5af8ad9f1465e567abf1c209d15727d57b3e8f6e5f",
+    "nbytes": 5
+   },
+   "random_link": {
+    "kind": "LINK",
+    "target": "../random123",
+    "sha256_target": "71380391b64b5a5faefb389fadcc48a04dbf33c3863f13df80121382c92a9a76"
+   }
+  },
+  "error": null
+ },
+ "rar3-versions.rar": {
+  "status": "READ",
+  "members": {
+   "versioned.txt": {
+    "kind": "FILE",
+    "sha256": "1121cfccd5913f0a63fec40a6ffd44ea64f9dc135c66634ba001d10bcf4302a2",
+    "nbytes": 2
+   }
+  },
+  "error": null
+ },
+ "rar3-vols.part1.rar": {
+  "status": "READ",
+  "members": {
+   "vols/bigfile.txt": {
+    "kind": "FILE",
+    "sha256": "57613b4a0d18b31472c9abe90780dcaf834f4edf48e79008f027a99710cf3632",
+    "nbytes": 205000
+   },
+   "vols/smallfile.txt": {
+    "kind": "FILE",
+    "sha256": "6805973b24128edda3148235c77a7f7b5a7a9be6272bc882a6e030871b2b18d1",
+    "nbytes": 2050
+   }
+  },
+  "error": null
+ },
+ "rar3-vols.part2.rar": {
+  "status": "READ",
+  "members": {},
+  "error": null
+ },
+ "rar3-vols.part3.rar": {
+  "status": "READ",
+  "members": {
+   "vols/smallfile.txt": {
+    "kind": "FILE",
+    "sha256": "6805973b24128edda3148235c77a7f7b5a7a9be6272bc882a6e030871b2b18d1",
+    "nbytes": 2050
+   }
+  },
+  "error": null
+ },
+ "rar5-blake.rar": {
+  "status": "READ",
+  "members": {
+   "stest1.txt": {
+    "kind": "FILE",
+    "sha256": "2eaebb4c18cdef7f20089f8a2fa3475bc59c2a193f66e2f1513609a4bef13e22",
+    "nbytes": 2048
+   },
+   "stest2.txt": {
+    "kind": "FILE",
+    "sha256": "2eaebb4c18cdef7f20089f8a2fa3475bc59c2a193f66e2f1513609a4bef13e22",
+    "nbytes": 2048
+   }
+  },
+  "error": null
+ },
+ "rar5-crc.rar": {
+  "status": "READ",
+  "members": {
+   "stest1.txt": {
+    "kind": "FILE",
+    "sha256": "2eaebb4c18cdef7f20089f8a2fa3475bc59c2a193f66e2f1513609a4bef13e22",
+    "nbytes": 2048
+   },
+   "stest2.txt": {
+    "kind": "FILE",
+    "sha256": "2eaebb4c18cdef7f20089f8a2fa3475bc59c2a193f66e2f1513609a4bef13e22",
+    "nbytes": 2048
+   }
+  },
+  "error": null
+ },
+ "rar5-crc.sfx": {
+  "status": "READ",
+  "members": {
+   "stest1.txt": {
+    "kind": "FILE",
+    "sha256": "2eaebb4c18cdef7f20089f8a2fa3475bc59c2a193f66e2f1513609a4bef13e22",
+    "nbytes": 2048
+   },
+   "stest2.txt": {
+    "kind": "FILE",
+    "sha256": "2eaebb4c18cdef7f20089f8a2fa3475bc59c2a193f66e2f1513609a4bef13e22",
+    "nbytes": 2048
+   }
+  },
+  "error": null
+ },
+ "rar5-dups.rar": {
+  "status": "READ",
+  "members": {
+   "stest1.txt": {
+    "kind": "FILE",
+    "sha256": "2eaebb4c18cdef7f20089f8a2fa3475bc59c2a193f66e2f1513609a4bef13e22",
+    "nbytes": 2048
+   },
+   "stest2.txt": {
+    "kind": "REDIR",
+    "rtype": 5,
+    "target": "stest1.txt"
+   },
+   "stest3.txt": {
+    "kind": "REDIR",
+    "rtype": 5,
+    "target": "stest1.txt"
+   },
+   "stest4.txt": {
+    "kind": "REDIR",
+    "rtype": 5,
+    "target": "stest1.txt"
+   },
+   "stest5.txt": {
+    "kind": "REDIR",
+    "rtype": 5,
+    "target": "stest1.txt"
+   },
+   "stest6.txt": {
+    "kind": "REDIR",
+    "rtype": 5,
+    "target": "stest1.txt"
+   },
+   "stest7.txt": {
+    "kind": "REDIR",
+    "rtype": 5,
+    "target": "stest1.txt"
+   },
+   "stest8.txt": {
+    "kind": "REDIR",
+    "rtype": 5,
+    "target": "stest1.txt"
+   },
+   "stest9.txt": {
+    "kind": "REDIR",
+    "rtype": 5,
+    "target": "stest1.txt"
+   }
+  },
+  "error": null
+ },
+ "rar5-evil-symlink-traversal.rar": {
+  "status": "READ",
+  "members": {
+   "up": {
+    "kind": "REDIR",
+    "rtype": 1,
+    "target": ".."
+   },
+   "up/pwned.txt": {
+    "kind": "FILE",
+    "sha256": "e17a996f7f8f472e8a4c410c86ac4239425c0f4831f6528b3bb998b1b96f211f",
+    "nbytes": 23
+   }
+  },
+  "error": null
+ },
+ "rar5-hlink.rar": {
+  "status": "READ",
+  "members": {
+   "stest1.txt": {
+    "kind": "FILE",
+    "sha256": "2eaebb4c18cdef7f20089f8a2fa3475bc59c2a193f66e2f1513609a4bef13e22",
+    "nbytes": 2048
+   },
+   "stest2.txt": {
+    "kind": "REDIR",
+    "rtype": 4,
+    "target": "stest1.txt"
+   },
+   "stest3.txt": {
+    "kind": "REDIR",
+    "rtype": 4,
+    "target": "stest1.txt"
+   }
+  },
+  "error": null
+ },
+ "rar5-hpsw.rar": {
+  "status": "UNREAD",
+  "members": {},
+  "error": "NoCrypto: Cannot parse encrypted headers - no crypto"
+ },
+ "rar5-owner.rar": {
+  "status": "READ",
+  "members": {
+   "owner1.txt": {
+    "kind": "FILE",
+    "sha256": "4355a46b19d348dc2f57c046f8ef63d4538ebb936000f3c9ee954a27460dd865",
+    "nbytes": 2
+   },
+   "owner2.txt": {
+    "kind": "FILE",
+    "sha256": "53c234e5e8472b6ac51c1ae1cab3fe06fad053beb8ebfd8977b010655bfdd3c3",
+    "nbytes": 2
+   }
+  },
+  "error": null
+ },
+ "rar5-psw-blake.rar": {
+  "status": "READ",
+  "members": {
+   "stest1.txt": {
+    "kind": "FILE",
+    "sha256": "2eaebb4c18cdef7f20089f8a2fa3475bc59c2a193f66e2f1513609a4bef13e22",
+    "nbytes": 2048
+   },
+   "stest2.txt": {
+    "kind": "FILE",
+    "sha256": "2eaebb4c18cdef7f20089f8a2fa3475bc59c2a193f66e2f1513609a4bef13e22",
+    "nbytes": 2048
+   }
+  },
+  "error": null
+ },
+ "rar5-psw.rar": {
+  "status": "READ",
+  "members": {
+   "stest1.txt": {
+    "kind": "FILE",
+    "sha256": "2eaebb4c18cdef7f20089f8a2fa3475bc59c2a193f66e2f1513609a4bef13e22",
+    "nbytes": 2048
+   },
+   "stest2.txt": {
+    "kind": "FILE",
+    "sha256": "2eaebb4c18cdef7f20089f8a2fa3475bc59c2a193f66e2f1513609a4bef13e22",
+    "nbytes": 2048
+   }
+  },
+  "error": null
+ },
+ "rar5-quick-open.rar": {
+  "status": "READ",
+  "members": {
+   "stest1.txt": {
+    "kind": "FILE",
+    "sha256": "2eaebb4c18cdef7f20089f8a2fa3475bc59c2a193f66e2f1513609a4bef13e22",
+    "nbytes": 2048
+   },
+   "stest2.txt": {
+    "kind": "FILE",
+    "sha256": "2eaebb4c18cdef7f20089f8a2fa3475bc59c2a193f66e2f1513609a4bef13e22",
+    "nbytes": 2048
+   }
+  },
+  "error": null
+ },
+ "rar5-readonly-unix.rar": {
+  "status": "READ",
+  "members": {
+   "ro_dir/ro_file.txt": {
+    "kind": "FILE",
+    "sha256": "e8556b2a4c237957175ab9e9f63a67b39feb54b8d33b2b27f7e3c9af0d323900",
+    "nbytes": 9
+   },
+   "ro_dir/": {
+    "kind": "DIR"
+   }
+  },
+  "error": null
+ },
+ "rar5-readonly-win.rar": {
+  "status": "READ",
+  "members": {
+   "ro_dir/ro_file.txt": {
+    "kind": "FILE",
+    "sha256": "e8556b2a4c237957175ab9e9f63a67b39feb54b8d33b2b27f7e3c9af0d323900",
+    "nbytes": 9
+   },
+   "ro_dir/": {
+    "kind": "DIR"
+   }
+  },
+  "error": null
+ },
+ "rar5-solid-qo.rar": {
+  "status": "READ",
+  "members": {
+   "somedir/stest1.txt": {
+    "kind": "FILE",
+    "sha256": "2eaebb4c18cdef7f20089f8a2fa3475bc59c2a193f66e2f1513609a4bef13e22",
+    "nbytes": 2048
+   },
+   "stest1.txt": {
+    "kind": "FILE",
+    "sha256": "2eaebb4c18cdef7f20089f8a2fa3475bc59c2a193f66e2f1513609a4bef13e22",
+    "nbytes": 2048
+   },
+   "somedir/stest2.txt": {
+    "kind": "FILE",
+    "sha256": "2eaebb4c18cdef7f20089f8a2fa3475bc59c2a193f66e2f1513609a4bef13e22",
+    "nbytes": 2048
+   },
+   "stest2.txt": {
+    "kind": "FILE",
+    "sha256": "2eaebb4c18cdef7f20089f8a2fa3475bc59c2a193f66e2f1513609a4bef13e22",
+    "nbytes": 2048
+   }
+  },
+  "error": null
+ },
+ "rar5-solid.rar": {
+  "status": "READ",
+  "members": {
+   "stest1.txt": {
+    "kind": "FILE",
+    "sha256": "2eaebb4c18cdef7f20089f8a2fa3475bc59c2a193f66e2f1513609a4bef13e22",
+    "nbytes": 2048
+   },
+   "stest2.txt": {
+    "kind": "FILE",
+    "sha256": "2eaebb4c18cdef7f20089f8a2fa3475bc59c2a193f66e2f1513609a4bef13e22",
+    "nbytes": 2048
+   }
+  },
+  "error": null
+ },
+ "rar5-subdirs.rar": {
+  "status": "READ",
+  "members": {
+   "sub/dir2/file2.txt": {
+    "kind": "FILE",
+    "sha256": "67ee5478eaadb034ba59944eb977797b49ca6aa8d3574587f36ebcbeeb65f70e",
+    "nbytes": 6
+   },
+   "sub/with space/long fn.txt": {
+    "kind": "FILE",
+    "sha256": "e708f3c52269d19a8ac86b5934ff9cf2a80c696cb04a66a435e96f9ca44f7c18",
+    "nbytes": 8
+   },
+   "sub/üȵĩöḋè/file.txt": {
+    "kind": "FILE",
+    "sha256": "8b911a8716b94442f9ca3dff20584048536e4c2f47b8b5bb9096cbd43c3432d5",
+    "nbytes": 5
+   },
+   "sub/dir1/file1.txt": {
+    "kind": "FILE",
+    "sha256": "ecdc5536f73bdae8816f0ea40726ef5e9b810d914493075903bb90623d97b1d8",
+    "nbytes": 6
+   },
+   "sub/dir2/": {
+    "kind": "DIR"
+   },
+   "sub/with space/": {
+    "kind": "DIR"
+   },
+   "sub/empty/": {
+    "kind": "DIR"
+   },
+   "sub/üȵĩöḋè/": {
+    "kind": "DIR"
+   },
+   "sub/dir1/": {
+    "kind": "DIR"
+   },
+   "sub/": {
+    "kind": "DIR"
+   }
+  },
+  "error": null
+ },
+ "rar5-symlink-unix.rar": {
+  "status": "READ",
+  "members": {
+   "data_link": {
+    "kind": "REDIR",
+    "rtype": 1,
+    "target": "data.txt"
+   },
+   "data.txt": {
+    "kind": "FILE",
+    "sha256": "6667b2d1aab6a00caa5aee5af8ad9f1465e567abf1c209d15727d57b3e8f6e5f",
+    "nbytes": 5
+   },
+   "random_link": {
+    "kind": "REDIR",
+    "rtype": 1,
+    "target": "../random123"
+   }
+  },
+  "error": null
+ },
+ "rar5-symlink-win.rar": {
+  "status": "READ",
+  "members": {
+   "content/file.txt": {
+    "kind": "FILE",
+    "sha256": "0743bcde888f7850d063579501c234b33769bf3b857f73331aaf9167adcaece1",
+    "nbytes": 9
+   },
+   "links/bad_link": {
+    "kind": "REDIR",
+    "rtype": 2,
+    "target": "../../missing"
+   },
+   "links/file_link": {
+    "kind": "REDIR",
+    "rtype": 2,
+    "target": "../content/file.txt"
+   },
+   "content/dir1/": {
+    "kind": "DIR"
+   },
+   "content/dir2/": {
+    "kind": "DIR"
+   },
+   "links/dir_junction": {
+    "kind": "REDIR",
+    "rtype": 3,
+    "target": "/??/C:/Users/User/stuff/content/dir2"
+   },
+   "links/dir_link": {
+    "kind": "REDIR",
+    "rtype": 2,
+    "target": "../content/dir1"
+   },
+   "content/": {
+    "kind": "DIR"
+   },
+   "links/": {
+    "kind": "DIR"
+   }
+  },
+  "error": null
+ },
+ "rar5-times.rar": {
+  "status": "READ",
+  "members": {
+   "stest1.txt": {
+    "kind": "FILE",
+    "sha256": "2eaebb4c18cdef7f20089f8a2fa3475bc59c2a193f66e2f1513609a4bef13e22",
+    "nbytes": 2048
+   }
+  },
+  "error": null
+ },
+ "rar5-times2.rar": {
+  "status": "READ",
+  "members": {
+   "afile.txt": {
+    "kind": "FILE",
+    "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "nbytes": 0
+   }
+  },
+  "error": null
+ },
+ "rar5-versions.rar": {
+  "status": "READ",
+  "members": {
+   "versioned.txt": {
+    "kind": "FILE",
+    "sha256": "1121cfccd5913f0a63fec40a6ffd44ea64f9dc135c66634ba001d10bcf4302a2",
+    "nbytes": 2
+   }
+  },
+  "error": null
+ },
+ "rar5-vols.part1.rar": {
+  "status": "READ",
+  "members": {
+   "vols/bigfile.txt": {
+    "kind": "FILE",
+    "sha256": "57613b4a0d18b31472c9abe90780dcaf834f4edf48e79008f027a99710cf3632",
+    "nbytes": 205000
+   },
+   "vols/smallfile.txt": {
+    "kind": "FILE",
+    "sha256": "6805973b24128edda3148235c77a7f7b5a7a9be6272bc882a6e030871b2b18d1",
+    "nbytes": 2050
+   }
+  },
+  "error": null
+ },
+ "rar5-vols.part2.rar": {
+  "status": "READ",
+  "members": {},
+  "error": null
+ },
+ "rar5-vols.part3.rar": {
+  "status": "READ",
+  "members": {
+   "vols/smallfile.txt": {
+    "kind": "FILE",
+    "sha256": "6805973b24128edda3148235c77a7f7b5a7a9be6272bc882a6e030871b2b18d1",
+    "nbytes": 2050
+   }
+  },
+  "error": null
+ },
+ "seektest.rar": {
+  "status": "READ",
+  "members": {
+   "stest1.txt": {
+    "kind": "FILE",
+    "sha256": "2eaebb4c18cdef7f20089f8a2fa3475bc59c2a193f66e2f1513609a4bef13e22",
+    "nbytes": 2048
+   },
+   "stest2.txt": {
+    "kind": "FILE",
+    "sha256": "2eaebb4c18cdef7f20089f8a2fa3475bc59c2a193f66e2f1513609a4bef13e22",
+    "nbytes": 2048
+   }
+  },
+  "error": null
+ },
+ "unicode.rar": {
+  "status": "READ",
+  "members": {
+   "уииоотивл.txt": {
+    "kind": "FILE",
+    "sha256": "4355a46b19d348dc2f57c046f8ef63d4538ebb936000f3c9ee954a27460dd865",
+    "nbytes": 2
+   },
+   "𝐀𝐁𝐁𝐂.txt": {
+    "kind": "FILE",
+    "sha256": "4355a46b19d348dc2f57c046f8ef63d4538ebb936000f3c9ee954a27460dd865",
+    "nbytes": 2
+   }
+  },
+  "error": null
+ },
+ "unicode2.rar": {
+  "status": "READ",
+  "members": {
+   "𝐀𝐁𝐁𝐂.txt": {
+    "kind": "FILE",
+    "sha256": "4355a46b19d348dc2f57c046f8ef63d4538ebb936000f3c9ee954a27460dd865",
+    "nbytes": 2
+   },
+   "уииоотивл.txt": {
+    "kind": "FILE",
+    "sha256": "4355a46b19d348dc2f57c046f8ef63d4538ebb936000f3c9ee954a27460dd865",
+    "nbytes": 2
+   }
+  },
+  "error": null
+ }
+}

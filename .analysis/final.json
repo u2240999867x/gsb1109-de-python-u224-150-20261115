@@ -1,0 +1,1180 @@
+{
+ "pair_count": 94,
+ "pair_verdicts": {
+  "IDENTICAL": 90,
+  "DIFFERENT": 4
+ },
+ "attribute_field_changes": {
+  "compress_type": 37,
+  "mode": 14,
+  "host_os": 5,
+  "mtime_epoch": 43,
+  "ctime_epoch": 39,
+  "representation": 1
+ },
+ "pairs": [
+  {
+   "pair": "unicode.rar  ||  unicode2.rar",
+   "verdict": "IDENTICAL",
+   "n_identical": 2,
+   "n_different": 0,
+   "n_insufficient": 0,
+   "attr_fields": [
+    "compress_type",
+    "host_os",
+    "mode"
+   ],
+   "order_changed": true
+  },
+  {
+   "pair": "rar3-readonly-unix.rar  ||  rar3-readonly-win.rar",
+   "verdict": "IDENTICAL",
+   "n_identical": 2,
+   "n_different": 0,
+   "n_insufficient": 0,
+   "attr_fields": [
+    "host_os",
+    "mode"
+   ],
+   "order_changed": false
+  },
+  {
+   "pair": "rar3-readonly-unix.rar  ||  rar5-readonly-unix.rar",
+   "verdict": "IDENTICAL",
+   "n_identical": 2,
+   "n_different": 0,
+   "n_insufficient": 0,
+   "attr_fields": [
+    "mtime_epoch"
+   ],
+   "order_changed": false
+  },
+  {
+   "pair": "rar3-readonly-unix.rar  ||  rar5-readonly-win.rar",
+   "verdict": "IDENTICAL",
+   "n_identical": 2,
+   "n_different": 0,
+   "n_insufficient": 0,
+   "attr_fields": [
+    "host_os",
+    "mode"
+   ],
+   "order_changed": false
+  },
+  {
+   "pair": "rar3-readonly-win.rar  ||  rar5-readonly-unix.rar",
+   "verdict": "IDENTICAL",
+   "n_identical": 2,
+   "n_different": 0,
+   "n_insufficient": 0,
+   "attr_fields": [
+    "host_os",
+    "mode",
+    "mtime_epoch"
+   ],
+   "order_changed": false
+  },
+  {
+   "pair": "rar3-readonly-win.rar  ||  rar5-readonly-win.rar",
+   "verdict": "IDENTICAL",
+   "n_identical": 2,
+   "n_different": 0,
+   "n_insufficient": 0,
+   "attr_fields": [],
+   "order_changed": false
+  },
+  {
+   "pair": "rar5-readonly-unix.rar  ||  rar5-readonly-win.rar",
+   "verdict": "IDENTICAL",
+   "n_identical": 2,
+   "n_different": 0,
+   "n_insufficient": 0,
+   "attr_fields": [
+    "host_os",
+    "mode",
+    "mtime_epoch"
+   ],
+   "order_changed": false
+  },
+  {
+   "pair": "rar15-comment-lock.rar  ||  rar15-comment.rar",
+   "verdict": "IDENTICAL",
+   "n_identical": 2,
+   "n_different": 0,
+   "n_insufficient": 0,
+   "attr_fields": [],
+   "order_changed": false
+  },
+  {
+   "pair": "rar15-comment-lock.rar  ||  rar202-comment-nopsw.rar",
+   "verdict": "DIFFERENT",
+   "n_identical": 0,
+   "n_different": 2,
+   "n_insufficient": 0,
+   "attr_fields": [
+    "compress_type"
+   ],
+   "order_changed": false
+  },
+  {
+   "pair": "rar15-comment-lock.rar  ||  rar202-comment-psw.rar",
+   "verdict": "DIFFERENT",
+   "n_identical": 0,
+   "n_different": 2,
+   "n_insufficient": 0,
+   "attr_fields": [
+    "compress_type"
+   ],
+   "order_changed": false
+  },
+  {
+   "pair": "rar15-comment.rar  ||  rar202-comment-nopsw.rar",
+   "verdict": "DIFFERENT",
+   "n_identical": 0,
+   "n_different": 2,
+   "n_insufficient": 0,
+   "attr_fields": [
+    "compress_type"
+   ],
+   "order_changed": false
+  },
+  {
+   "pair": "rar15-comment.rar  ||  rar202-comment-psw.rar",
+   "verdict": "DIFFERENT",
+   "n_identical": 0,
+   "n_different": 2,
+   "n_insufficient": 0,
+   "attr_fields": [
+    "compress_type"
+   ],
+   "order_changed": false
+  },
+  {
+   "pair": "rar202-comment-nopsw.rar  ||  rar202-comment-psw.rar",
+   "verdict": "IDENTICAL",
+   "n_identical": 2,
+   "n_different": 0,
+   "n_insufficient": 0,
+   "attr_fields": [
+    "compress_type"
+   ],
+   "order_changed": false
+  },
+  {
+   "pair": "rar3-versions.rar  ||  rar5-versions.rar",
+   "verdict": "IDENTICAL",
+   "n_identical": 1,
+   "n_different": 0,
+   "n_insufficient": 0,
+   "attr_fields": [
+    "mtime_epoch"
+   ],
+   "order_changed": false
+  },
+  {
+   "pair": "rar3-old.rar  ||  rar3-vols.part1.rar",
+   "verdict": "IDENTICAL",
+   "n_identical": 2,
+   "n_different": 0,
+   "n_insufficient": 0,
+   "attr_fields": [],
+   "order_changed": false
+  },
+  {
+   "pair": "rar3-old.rar  ||  rar5-vols.part1.rar",
+   "verdict": "IDENTICAL",
+   "n_identical": 2,
+   "n_different": 0,
+   "n_insufficient": 0,
+   "attr_fields": [
+    "mtime_epoch"
+   ],
+   "order_changed": false
+  },
+  {
+   "pair": "rar3-vols.part1.rar  ||  rar5-vols.part1.rar",
+   "verdict": "IDENTICAL",
+   "n_identical": 2,
+   "n_different": 0,
+   "n_insufficient": 0,
+   "attr_fields": [
+    "mtime_epoch"
+   ],
+   "order_changed": false
+  },
+  {
+   "pair": "rar3-seektest.sfx  ||  rar3-solid.rar",
+   "verdict": "IDENTICAL",
+   "n_identical": 2,
+   "n_different": 0,
+   "n_insufficient": 0,
+   "attr_fields": [
+    "compress_type"
+   ],
+   "order_changed": false
+  },
+  {
+   "pair": "rar3-seektest.sfx  ||  rar5-blake.rar",
+   "verdict": "IDENTICAL",
+   "n_identical": 2,
+   "n_different": 0,
+   "n_insufficient": 0,
+   "attr_fields": [
+    "compress_type",
+    "ctime_epoch",
+    "mtime_epoch"
+   ],
+   "order_changed": false
+  },
+  {
+   "pair": "rar3-seektest.sfx  ||  rar5-crc.rar",
+   "verdict": "IDENTICAL",
+   "n_identical": 2,
+   "n_different": 0,
+   "n_insufficient": 0,
+   "attr_fields": [
+    "compress_type",
+    "ctime_epoch",
+    "mtime_epoch"
+   ],
+   "order_changed": false
+  },
+  {
+   "pair": "rar3-seektest.sfx  ||  rar5-crc.sfx",
+   "verdict": "IDENTICAL",
+   "n_identical": 2,
+   "n_different": 0,
+   "n_insufficient": 0,
+   "attr_fields": [
+    "compress_type",
+    "ctime_epoch",
+    "mtime_epoch"
+   ],
+   "order_changed": false
+  },
+  {
+   "pair": "rar3-seektest.sfx  ||  rar5-psw-blake.rar",
+   "verdict": "IDENTICAL",
+   "n_identical": 2,
+   "n_different": 0,
+   "n_insufficient": 0,
+   "attr_fields": [
+    "compress_type",
+    "ctime_epoch",
+    "mtime_epoch"
+   ],
+   "order_changed": false
+  },
+  {
+   "pair": "rar3-seektest.sfx  ||  rar5-psw.rar",
+   "verdict": "IDENTICAL",
+   "n_identical": 2,
+   "n_different": 0,
+   "n_insufficient": 0,
+   "attr_fields": [
+    "compress_type",
+    "ctime_epoch",
+    "mtime_epoch"
+   ],
+   "order_changed": false
+  },
+  {
+   "pair": "rar3-seektest.sfx  ||  rar5-quick-open.rar",
+   "verdict": "IDENTICAL",
+   "n_identical": 2,
+   "n_different": 0,
+   "n_insufficient": 0,
+   "attr_fields": [
+    "compress_type",
+    "mtime_epoch"
+   ],
+   "order_changed": false
+  },
+  {
+   "pair": "rar3-seektest.sfx  ||  rar5-solid.rar",
+   "verdict": "IDENTICAL",
+   "n_identical": 2,
+   "n_different": 0,
+   "n_insufficient": 0,
+   "attr_fields": [
+    "compress_type",
+    "mode",
+    "mtime_epoch"
+   ],
+   "order_changed": false
+  },
+  {
+   "pair": "rar3-seektest.sfx  ||  seektest.rar",
+   "verdict": "IDENTICAL",
+   "n_identical": 2,
+   "n_different": 0,
+   "n_insufficient": 0,
+   "attr_fields": [],
+   "order_changed": false
+  },
+  {
+   "pair": "rar3-solid.rar  ||  rar5-blake.rar",
+   "verdict": "IDENTICAL",
+   "n_identical": 2,
+   "n_different": 0,
+   "n_insufficient": 0,
+   "attr_fields": [
+    "compress_type",
+    "ctime_epoch",
+    "mtime_epoch"
+   ],
+   "order_changed": false
+  },
+  {
+   "pair": "rar3-solid.rar  ||  rar5-crc.rar",
+   "verdict": "IDENTICAL",
+   "n_identical": 2,
+   "n_different": 0,
+   "n_insufficient": 0,
+   "attr_fields": [
+    "compress_type",
+    "ctime_epoch",
+    "mtime_epoch"
+   ],
+   "order_changed": false
+  },
+  {
+   "pair": "rar3-solid.rar  ||  rar5-crc.sfx",
+   "verdict": "IDENTICAL",
+   "n_identical": 2,
+   "n_different": 0,
+   "n_insufficient": 0,
+   "attr_fields": [
+    "compress_type",
+    "ctime_epoch",
+    "mtime_epoch"
+   ],
+   "order_changed": false
+  },
+  {
+   "pair": "rar3-solid.rar  ||  rar5-psw-blake.rar",
+   "verdict": "IDENTICAL",
+   "n_identical": 2,
+   "n_different": 0,
+   "n_insufficient": 0,
+   "attr_fields": [
+    "compress_type",
+    "ctime_epoch",
+    "mtime_epoch"
+   ],
+   "order_changed": false
+  },
+  {
+   "pair": "rar3-solid.rar  ||  rar5-psw.rar",
+   "verdict": "IDENTICAL",
+   "n_identical": 2,
+   "n_different": 0,
+   "n_insufficient": 0,
+   "attr_fields": [
+    "compress_type",
+    "ctime_epoch",
+    "mtime_epoch"
+   ],
+   "order_changed": false
+  },
+  {
+   "pair": "rar3-solid.rar  ||  rar5-quick-open.rar",
+   "verdict": "IDENTICAL",
+   "n_identical": 2,
+   "n_different": 0,
+   "n_insufficient": 0,
+   "attr_fields": [
+    "mtime_epoch"
+   ],
+   "order_changed": false
+  },
+  {
+   "pair": "rar3-solid.rar  ||  rar5-solid.rar",
+   "verdict": "IDENTICAL",
+   "n_identical": 2,
+   "n_different": 0,
+   "n_insufficient": 0,
+   "attr_fields": [
+    "mode",
+    "mtime_epoch"
+   ],
+   "order_changed": false
+  },
+  {
+   "pair": "rar3-solid.rar  ||  seektest.rar",
+   "verdict": "IDENTICAL",
+   "n_identical": 2,
+   "n_different": 0,
+   "n_insufficient": 0,
+   "attr_fields": [
+    "compress_type"
+   ],
+   "order_changed": false
+  },
+  {
+   "pair": "rar5-blake.rar  ||  rar5-crc.rar",
+   "verdict": "IDENTICAL",
+   "n_identical": 2,
+   "n_different": 0,
+   "n_insufficient": 0,
+   "attr_fields": [],
+   "order_changed": false
+  },
+  {
+   "pair": "rar5-blake.rar  ||  rar5-crc.sfx",
+   "verdict": "IDENTICAL",
+   "n_identical": 2,
+   "n_different": 0,
+   "n_insufficient": 0,
+   "attr_fields": [],
+   "order_changed": false
+  },
+  {
+   "pair": "rar5-blake.rar  ||  rar5-psw-blake.rar",
+   "verdict": "IDENTICAL",
+   "n_identical": 2,
+   "n_different": 0,
+   "n_insufficient": 0,
+   "attr_fields": [],
+   "order_changed": false
+  },
+  {
+   "pair": "rar5-blake.rar  ||  rar5-psw.rar",
+   "verdict": "IDENTICAL",
+   "n_identical": 2,
+   "n_different": 0,
+   "n_insufficient": 0,
+   "attr_fields": [],
+   "order_changed": false
+  },
+  {
+   "pair": "rar5-blake.rar  ||  rar5-quick-open.rar",
+   "verdict": "IDENTICAL",
+   "n_identical": 2,
+   "n_different": 0,
+   "n_insufficient": 0,
+   "attr_fields": [
+    "compress_type",
+    "ctime_epoch"
+   ],
+   "order_changed": false
+  },
+  {
+   "pair": "rar5-blake.rar  ||  rar5-solid.rar",
+   "verdict": "IDENTICAL",
+   "n_identical": 2,
+   "n_different": 0,
+   "n_insufficient": 0,
+   "attr_fields": [
+    "compress_type",
+    "ctime_epoch",
+    "mode",
+    "mtime_epoch"
+   ],
+   "order_changed": false
+  },
+  {
+   "pair": "rar5-blake.rar  ||  seektest.rar",
+   "verdict": "IDENTICAL",
+   "n_identical": 2,
+   "n_different": 0,
+   "n_insufficient": 0,
+   "attr_fields": [
+    "compress_type",
+    "ctime_epoch",
+    "mtime_epoch"
+   ],
+   "order_changed": false
+  },
+  {
+   "pair": "rar5-crc.rar  ||  rar5-crc.sfx",
+   "verdict": "IDENTICAL",
+   "n_identical": 2,
+   "n_different": 0,
+   "n_insufficient": 0,
+   "attr_fields": [],
+   "order_changed": false
+  },
+  {
+   "pair": "rar5-crc.rar  ||  rar5-psw-blake.rar",
+   "verdict": "IDENTICAL",
+   "n_identical": 2,
+   "n_different": 0,
+   "n_insufficient": 0,
+   "attr_fields": [],
+   "order_changed": false
+  },
+  {
+   "pair": "rar5-crc.rar  ||  rar5-psw.rar",
+   "verdict": "IDENTICAL",
+   "n_identical": 2,
+   "n_different": 0,
+   "n_insufficient": 0,
+   "attr_fields": [],
+   "order_changed": false
+  },
+  {
+   "pair": "rar5-crc.rar  ||  rar5-quick-open.rar",
+   "verdict": "IDENTICAL",
+   "n_identical": 2,
+   "n_different": 0,
+   "n_insufficient": 0,
+   "attr_fields": [
+    "compress_type",
+    "ctime_epoch"
+   ],
+   "order_changed": false
+  },
+  {
+   "pair": "rar5-crc.rar  ||  rar5-solid.rar",
+   "verdict": "IDENTICAL",
+   "n_identical": 2,
+   "n_different": 0,
+   "n_insufficient": 0,
+   "attr_fields": [
+    "compress_type",
+    "ctime_epoch",
+    "mode",
+    "mtime_epoch"
+   ],
+   "order_changed": false
+  },
+  {
+   "pair": "rar5-crc.rar  ||  seektest.rar",
+   "verdict": "IDENTICAL",
+   "n_identical": 2,
+   "n_different": 0,
+   "n_insufficient": 0,
+   "attr_fields": [
+    "compress_type",
+    "ctime_epoch",
+    "mtime_epoch"
+   ],
+   "order_changed": false
+  },
+  {
+   "pair": "rar5-crc.sfx  ||  rar5-psw-blake.rar",
+   "verdict": "IDENTICAL",
+   "n_identical": 2,
+   "n_different": 0,
+   "n_insufficient": 0,
+   "attr_fields": [],
+   "order_changed": false
+  },
+  {
+   "pair": "rar5-crc.sfx  ||  rar5-psw.rar",
+   "verdict": "IDENTICAL",
+   "n_identical": 2,
+   "n_different": 0,
+   "n_insufficient": 0,
+   "attr_fields": [],
+   "order_changed": false
+  },
+  {
+   "pair": "rar5-crc.sfx  ||  rar5-quick-open.rar",
+   "verdict": "IDENTICAL",
+   "n_identical": 2,
+   "n_different": 0,
+   "n_insufficient": 0,
+   "attr_fields": [
+    "compress_type",
+    "ctime_epoch"
+   ],
+   "order_changed": false
+  },
+  {
+   "pair": "rar5-crc.sfx  ||  rar5-solid.rar",
+   "verdict": "IDENTICAL",
+   "n_identical": 2,
+   "n_different": 0,
+   "n_insufficient": 0,
+   "attr_fields": [
+    "compress_type",
+    "ctime_epoch",
+    "mode",
+    "mtime_epoch"
+   ],
+   "order_changed": false
+  },
+  {
+   "pair": "rar5-crc.sfx  ||  seektest.rar",
+   "verdict": "IDENTICAL",
+   "n_identical": 2,
+   "n_different": 0,
+   "n_insufficient": 0,
+   "attr_fields": [
+    "compress_type",
+    "ctime_epoch",
+    "mtime_epoch"
+   ],
+   "order_changed": false
+  },
+  {
+   "pair": "rar5-psw-blake.rar  ||  rar5-psw.rar",
+   "verdict": "IDENTICAL",
+   "n_identical": 2,
+   "n_different": 0,
+   "n_insufficient": 0,
+   "attr_fields": [],
+   "order_changed": false
+  },
+  {
+   "pair": "rar5-psw-blake.rar  ||  rar5-quick-open.rar",
+   "verdict": "IDENTICAL",
+   "n_identical": 2,
+   "n_different": 0,
+   "n_insufficient": 0,
+   "attr_fields": [
+    "compress_type",
+    "ctime_epoch"
+   ],
+   "order_changed": false
+  },
+  {
+   "pair": "rar5-psw-blake.rar  ||  rar5-solid.rar",
+   "verdict": "IDENTICAL",
+   "n_identical": 2,
+   "n_different": 0,
+   "n_insufficient": 0,
+   "attr_fields": [
+    "compress_type",
+    "ctime_epoch",
+    "mode",
+    "mtime_epoch"
+   ],
+   "order_changed": false
+  },
+  {
+   "pair": "rar5-psw-blake.rar  ||  seektest.rar",
+   "verdict": "IDENTICAL",
+   "n_identical": 2,
+   "n_different": 0,
+   "n_insufficient": 0,
+   "attr_fields": [
+    "compress_type",
+    "ctime_epoch",
+    "mtime_epoch"
+   ],
+   "order_changed": false
+  },
+  {
+   "pair": "rar5-psw.rar  ||  rar5-quick-open.rar",
+   "verdict": "IDENTICAL",
+   "n_identical": 2,
+   "n_different": 0,
+   "n_insufficient": 0,
+   "attr_fields": [
+    "compress_type",
+    "ctime_epoch"
+   ],
+   "order_changed": false
+  },
+  {
+   "pair": "rar5-psw.rar  ||  rar5-solid.rar",
+   "verdict": "IDENTICAL",
+   "n_identical": 2,
+   "n_different": 0,
+   "n_insufficient": 0,
+   "attr_fields": [
+    "compress_type",
+    "ctime_epoch",
+    "mode",
+    "mtime_epoch"
+   ],
+   "order_changed": false
+  },
+  {
+   "pair": "rar5-psw.rar  ||  seektest.rar",
+   "verdict": "IDENTICAL",
+   "n_identical": 2,
+   "n_different": 0,
+   "n_insufficient": 0,
+   "attr_fields": [
+    "compress_type",
+    "ctime_epoch",
+    "mtime_epoch"
+   ],
+   "order_changed": false
+  },
+  {
+   "pair": "rar5-quick-open.rar  ||  rar5-solid.rar",
+   "verdict": "IDENTICAL",
+   "n_identical": 2,
+   "n_different": 0,
+   "n_insufficient": 0,
+   "attr_fields": [
+    "mode",
+    "mtime_epoch"
+   ],
+   "order_changed": false
+  },
+  {
+   "pair": "rar5-quick-open.rar  ||  seektest.rar",
+   "verdict": "IDENTICAL",
+   "n_identical": 2,
+   "n_different": 0,
+   "n_insufficient": 0,
+   "attr_fields": [
+    "compress_type",
+    "mtime_epoch"
+   ],
+   "order_changed": false
+  },
+  {
+   "pair": "rar5-solid.rar  ||  seektest.rar",
+   "verdict": "IDENTICAL",
+   "n_identical": 2,
+   "n_different": 0,
+   "n_insufficient": 0,
+   "attr_fields": [
+    "compress_type",
+    "mode",
+    "mtime_epoch"
+   ],
+   "order_changed": false
+  },
+  {
+   "pair": "rar3-old.r01  ||  rar3-vols.part3.rar",
+   "verdict": "IDENTICAL",
+   "n_identical": 1,
+   "n_different": 0,
+   "n_insufficient": 0,
+   "attr_fields": [],
+   "order_changed": false
+  },
+  {
+   "pair": "rar3-old.r01  ||  rar5-vols.part3.rar",
+   "verdict": "IDENTICAL",
+   "n_identical": 1,
+   "n_different": 0,
+   "n_insufficient": 0,
+   "attr_fields": [
+    "mtime_epoch"
+   ],
+   "order_changed": false
+  },
+  {
+   "pair": "rar3-vols.part3.rar  ||  rar5-vols.part3.rar",
+   "verdict": "IDENTICAL",
+   "n_identical": 1,
+   "n_different": 0,
+   "n_insufficient": 0,
+   "attr_fields": [
+    "mtime_epoch"
+   ],
+   "order_changed": false
+  },
+  {
+   "pair": "rar3-owner.rar  ||  rar5-owner.rar",
+   "verdict": "IDENTICAL",
+   "n_identical": 2,
+   "n_different": 0,
+   "n_insufficient": 0,
+   "attr_fields": [
+    "mtime_epoch"
+   ],
+   "order_changed": false
+  },
+  {
+   "pair": "rar3-comment-plain.rar  ||  rar3-comment-psw.rar",
+   "verdict": "IDENTICAL",
+   "n_identical": 2,
+   "n_different": 0,
+   "n_insufficient": 0,
+   "attr_fields": [],
+   "order_changed": false
+  },
+  {
+   "pair": "rar3-subdirs.rar  ||  rar5-subdirs.rar",
+   "verdict": "IDENTICAL",
+   "n_identical": 10,
+   "n_different": 0,
+   "n_insufficient": 0,
+   "attr_fields": [
+    "mtime_epoch"
+   ],
+   "order_changed": false
+  },
+  {
+   "pair": "rar3-symlink-unix.rar  ||  rar5-symlink-unix.rar",
+   "verdict": "IDENTICAL",
+   "n_identical": 3,
+   "n_different": 0,
+   "n_insufficient": 0,
+   "attr_fields": [
+    "mtime_epoch",
+    "representation"
+   ],
+   "order_changed": false
+  },
+  {
+   "pair": "rar3-comment-hpsw.rar  ||  rar3-old.r00",
+   "verdict": "IDENTICAL",
+   "n_identical": 0,
+   "n_different": 0,
+   "n_insufficient": 0,
+   "attr_fields": [],
+   "order_changed": false
+  },
+  {
+   "pair": "rar3-comment-hpsw.rar  ||  rar3-vols.part2.rar",
+   "verdict": "IDENTICAL",
+   "n_identical": 0,
+   "n_different": 0,
+   "n_insufficient": 0,
+   "attr_fields": [],
+   "order_changed": false
+  },
+  {
+   "pair": "rar3-comment-hpsw.rar  ||  rar5-hpsw.rar",
+   "verdict": "IDENTICAL",
+   "n_identical": 0,
+   "n_different": 0,
+   "n_insufficient": 0,
+   "attr_fields": [],
+   "order_changed": false
+  },
+  {
+   "pair": "rar3-comment-hpsw.rar  ||  rar5-vols.part2.rar",
+   "verdict": "IDENTICAL",
+   "n_identical": 0,
+   "n_different": 0,
+   "n_insufficient": 0,
+   "attr_fields": [],
+   "order_changed": false
+  },
+  {
+   "pair": "rar3-old.r00  ||  rar3-vols.part2.rar",
+   "verdict": "IDENTICAL",
+   "n_identical": 0,
+   "n_different": 0,
+   "n_insufficient": 0,
+   "attr_fields": [],
+   "order_changed": false
+  },
+  {
+   "pair": "rar3-old.r00  ||  rar5-hpsw.rar",
+   "verdict": "IDENTICAL",
+   "n_identical": 0,
+   "n_different": 0,
+   "n_insufficient": 0,
+   "attr_fields": [],
+   "order_changed": false
+  },
+  {
+   "pair": "rar3-old.r00  ||  rar5-vols.part2.rar",
+   "verdict": "IDENTICAL",
+   "n_identical": 0,
+   "n_different": 0,
+   "n_insufficient": 0,
+   "attr_fields": [],
+   "order_changed": false
+  },
+  {
+   "pair": "rar3-vols.part2.rar  ||  rar5-hpsw.rar",
+   "verdict": "IDENTICAL",
+   "n_identical": 0,
+   "n_different": 0,
+   "n_insufficient": 0,
+   "attr_fields": [],
+   "order_changed": false
+  },
+  {
+   "pair": "rar3-vols.part2.rar  ||  rar5-vols.part2.rar",
+   "verdict": "IDENTICAL",
+   "n_identical": 0,
+   "n_different": 0,
+   "n_insufficient": 0,
+   "attr_fields": [],
+   "order_changed": false
+  },
+  {
+   "pair": "rar5-hpsw.rar  ||  rar5-vols.part2.rar",
+   "verdict": "IDENTICAL",
+   "n_identical": 0,
+   "n_different": 0,
+   "n_insufficient": 0,
+   "attr_fields": [],
+   "order_changed": false
+  },
+  {
+   "pair": "ctime0.rar  ||  ctime1.rar",
+   "verdict": "IDENTICAL",
+   "n_identical": 1,
+   "n_different": 0,
+   "n_insufficient": 0,
+   "attr_fields": [
+    "ctime_epoch"
+   ],
+   "order_changed": false
+  },
+  {
+   "pair": "ctime0.rar  ||  ctime2.rar",
+   "verdict": "IDENTICAL",
+   "n_identical": 1,
+   "n_different": 0,
+   "n_insufficient": 0,
+   "attr_fields": [
+    "ctime_epoch"
+   ],
+   "order_changed": false
+  },
+  {
+   "pair": "ctime0.rar  ||  ctime3.rar",
+   "verdict": "IDENTICAL",
+   "n_identical": 1,
+   "n_different": 0,
+   "n_insufficient": 0,
+   "attr_fields": [
+    "ctime_epoch"
+   ],
+   "order_changed": false
+  },
+  {
+   "pair": "ctime0.rar  ||  ctime4.rar",
+   "verdict": "IDENTICAL",
+   "n_identical": 1,
+   "n_different": 0,
+   "n_insufficient": 0,
+   "attr_fields": [
+    "ctime_epoch"
+   ],
+   "order_changed": false
+  },
+  {
+   "pair": "ctime0.rar  ||  rar5-times2.rar",
+   "verdict": "IDENTICAL",
+   "n_identical": 1,
+   "n_different": 0,
+   "n_insufficient": 0,
+   "attr_fields": [
+    "mtime_epoch"
+   ],
+   "order_changed": false
+  },
+  {
+   "pair": "ctime1.rar  ||  ctime2.rar",
+   "verdict": "IDENTICAL",
+   "n_identical": 1,
+   "n_different": 0,
+   "n_insufficient": 0,
+   "attr_fields": [
+    "ctime_epoch"
+   ],
+   "order_changed": false
+  },
+  {
+   "pair": "ctime1.rar  ||  ctime3.rar",
+   "verdict": "IDENTICAL",
+   "n_identical": 1,
+   "n_different": 0,
+   "n_insufficient": 0,
+   "attr_fields": [
+    "ctime_epoch"
+   ],
+   "order_changed": false
+  },
+  {
+   "pair": "ctime1.rar  ||  ctime4.rar",
+   "verdict": "IDENTICAL",
+   "n_identical": 1,
+   "n_different": 0,
+   "n_insufficient": 0,
+   "attr_fields": [
+    "ctime_epoch"
+   ],
+   "order_changed": false
+  },
+  {
+   "pair": "ctime1.rar  ||  rar5-times2.rar",
+   "verdict": "IDENTICAL",
+   "n_identical": 1,
+   "n_different": 0,
+   "n_insufficient": 0,
+   "attr_fields": [
+    "ctime_epoch",
+    "mtime_epoch"
+   ],
+   "order_changed": false
+  },
+  {
+   "pair": "ctime2.rar  ||  ctime3.rar",
+   "verdict": "IDENTICAL",
+   "n_identical": 1,
+   "n_different": 0,
+   "n_insufficient": 0,
+   "attr_fields": [
+    "ctime_epoch"
+   ],
+   "order_changed": false
+  },
+  {
+   "pair": "ctime2.rar  ||  ctime4.rar",
+   "verdict": "IDENTICAL",
+   "n_identical": 1,
+   "n_different": 0,
+   "n_insufficient": 0,
+   "attr_fields": [
+    "ctime_epoch"
+   ],
+   "order_changed": false
+  },
+  {
+   "pair": "ctime2.rar  ||  rar5-times2.rar",
+   "verdict": "IDENTICAL",
+   "n_identical": 1,
+   "n_different": 0,
+   "n_insufficient": 0,
+   "attr_fields": [
+    "ctime_epoch",
+    "mtime_epoch"
+   ],
+   "order_changed": false
+  },
+  {
+   "pair": "ctime3.rar  ||  ctime4.rar",
+   "verdict": "IDENTICAL",
+   "n_identical": 1,
+   "n_different": 0,
+   "n_insufficient": 0,
+   "attr_fields": [
+    "ctime_epoch"
+   ],
+   "order_changed": false
+  },
+  {
+   "pair": "ctime3.rar  ||  rar5-times2.rar",
+   "verdict": "IDENTICAL",
+   "n_identical": 1,
+   "n_different": 0,
+   "n_insufficient": 0,
+   "attr_fields": [
+    "ctime_epoch",
+    "mtime_epoch"
+   ],
+   "order_changed": false
+  },
+  {
+   "pair": "ctime4.rar  ||  rar5-times2.rar",
+   "verdict": "IDENTICAL",
+   "n_identical": 1,
+   "n_different": 0,
+   "n_insufficient": 0,
+   "attr_fields": [
+    "ctime_epoch",
+    "mtime_epoch"
+   ],
+   "order_changed": false
+  }
+ ],
+ "verified_different_entries": [
+  {
+   "pair": "rar15-comment-lock.rar  ||  rar202-comment-nopsw.rar",
+   "name": "FILE1.TXT",
+   "key_a": [
+    "FILE",
+    "d7bca5c38fa696e969cf7335ede13e715dddc0c9dc618a1743463f3f84f145b8"
+   ],
+   "key_b": [
+    "FILE",
+    "2b69a7f7ba9698a49a49a33d4857610b4408109ff096e5d5ec2a1394cf33314a"
+   ]
+  },
+  {
+   "pair": "rar15-comment-lock.rar  ||  rar202-comment-nopsw.rar",
+   "name": "FILE2.TXT",
+   "key_a": [
+    "FILE",
+    "42c3ccb0c4f1b28eb2fbc62d9fb14aa04befd076183284bc82c3819478da5f94"
+   ],
+   "key_b": [
+    "FILE",
+    "24040d7b811b76bf0b32993100e66d4d2dadd90ca3e5d250c17a0f20491a3531"
+   ]
+  },
+  {
+   "pair": "rar15-comment-lock.rar  ||  rar202-comment-psw.rar",
+   "name": "FILE1.TXT",
+   "key_a": [
+    "FILE",
+    "d7bca5c38fa696e969cf7335ede13e715dddc0c9dc618a1743463f3f84f145b8"
+   ],
+   "key_b": [
+    "FILE",
+    "2b69a7f7ba9698a49a49a33d4857610b4408109ff096e5d5ec2a1394cf33314a"
+   ]
+  },
+  {
+   "pair": "rar15-comment-lock.rar  ||  rar202-comment-psw.rar",
+   "name": "FILE2.TXT",
+   "key_a": [
+    "FILE",
+    "42c3ccb0c4f1b28eb2fbc62d9fb14aa04befd076183284bc82c3819478da5f94"
+   ],
+   "key_b": [
+    "FILE",
+    "24040d7b811b76bf0b32993100e66d4d2dadd90ca3e5d250c17a0f20491a3531"
+   ]
+  },
+  {
+   "pair": "rar15-comment.rar  ||  rar202-comment-nopsw.rar",
+   "name": "FILE1.TXT",
+   "key_a": [
+    "FILE",
+    "d7bca5c38fa696e969cf7335ede13e715dddc0c9dc618a1743463f3f84f145b8"
+   ],
+   "key_b": [
+    "FILE",
+    "2b69a7f7ba9698a49a49a33d4857610b4408109ff096e5d5ec2a1394cf33314a"
+   ]
+  },
+  {
+   "pair": "rar15-comment.rar  ||  rar202-comment-nopsw.rar",
+   "name": "FILE2.TXT",
+   "key_a": [
+    "FILE",
+    "42c3ccb0c4f1b28eb2fbc62d9fb14aa04befd076183284bc82c3819478da5f94"
+   ],
+   "key_b": [
+    "FILE",
+    "24040d7b811b76bf0b32993100e66d4d2dadd90ca3e5d250c17a0f20491a3531"
+   ]
+  },
+  {
+   "pair": "rar15-comment.rar  ||  rar202-comment-psw.rar",
+   "name": "FILE1.TXT",
+   "key_a": [
+    "FILE",
+    "d7bca5c38fa696e969cf7335ede13e715dddc0c9dc618a1743463f3f84f145b8"
+   ],
+   "key_b": [
+    "FILE",
+    "2b69a7f7ba9698a49a49a33d4857610b4408109ff096e5d5ec2a1394cf33314a"
+   ]
+  },
+  {
+   "pair": "rar15-comment.rar  ||  rar202-comment-psw.rar",
+   "name": "FILE2.TXT",
+   "key_a": [
+    "FILE",
+    "42c3ccb0c4f1b28eb2fbc62d9fb14aa04befd076183284bc82c3819478da5f94"
+   ],
+   "key_b": [
+    "FILE",
+    "24040d7b811b76bf0b32993100e66d4d2dadd90ca3e5d250c17a0f20491a3531"
+   ]
+  }
+ ],
+ "insufficient_archives": [
+  {
+   "archive": "rar3-comment-hpsw.rar",
+   "reason": "NoCrypto: Cannot parse encrypted headers - no crypto",
+   "entries_visible": 0
+  },
+  {
+   "archive": "rar5-hpsw.rar",
+   "reason": "NoCrypto: Cannot parse encrypted headers - no crypto",
+   "entries_visible": 0
+  }
+ ]
+}
