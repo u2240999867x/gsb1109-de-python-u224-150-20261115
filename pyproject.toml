@@ -52,6 +52,7 @@ test = [
 ]
 
 [project.scripts]
+evtx_correlate = "evtx_scripts.evtx_correlate:main"
 evtx_dump = "evtx_scripts.evtx_dump:main"
 evtx_dump_json = "evtx_scripts.evtx_dump_json:main"
 evtx_dump_chunk_slack = "evtx_scripts.evtx_dump_chunk_slack:main"
