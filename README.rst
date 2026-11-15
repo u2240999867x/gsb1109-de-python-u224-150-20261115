@@ -79,6 +79,24 @@ For binary representation
     d = vdf.vbkv_loads(vbkv_bytes)
     b = vdf.vbkv_dumps(d)
 
+Read-only VBKV audit (no checksum repair)
+
+.. code:: python
+
+    # header, checksum and body structure are reported separately;
+    # a structurally complete but unverified payload stays quarantined
+    from vdf.vbkv_audit import audit_file
+
+    result = audit_file('backup.vbkv')
+    result['trusted']        # True only when magic, CRC32 and structure all verify
+    result['catalog_action'] # "accept" or "quarantine" (never auto-fixed)
+
+CLI form, with independently recomputable CRC32::
+
+    python -m vdf.vbkv_audit backup.vbkv            # text report
+    python -m vdf.vbkv_audit backup.vbkv --json     # machine readable
+    python -c "import zlib; d=open('backup.vbkv','rb').read(); print(hex(zlib.crc32(d[8:])))"
+
 Using an alternative mapper
 
 .. code:: python
