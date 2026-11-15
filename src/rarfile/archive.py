@@ -24,6 +24,7 @@ from .errors import (
 )
 from .format import RAR3Parser, RAR5Parser
 from .info import RarEntry, RarInfo
+from .plan import ExtractPlan, OverwritePolicy, plan_members
 from .stream import RarExtFile
 from .utils import (
     FileLike, PathLike, XFile, is_filelike, sanitize_filename, to_nsecs,
@@ -368,6 +369,38 @@ class RarFile:
 
         for inf in symlinks:
             self._extract_one(inf, path, pwd, not inf.is_dir())
+
+    def plan_extractall(self, members: Iterable[str | Path | RarInfo] | None = None,
+                        pwd: str | None = None,
+                        overwrite: OverwritePolicy = "rename",
+                        case_sensitive: bool = False) -> ExtractPlan:
+        """Plan extraction of members into an empty directory.
+
+        Returns an :class:`ExtractPlan` assigning each member a
+        destination relative to the extraction root, with collisions
+        (duplicate names, case-folded names) resolved according to
+        the caller-chosen ``overwrite`` policy.  Symlink targets are
+        validated to stay inside the root, and no planned entry can
+        escape the root through a previously planned link.
+
+        Nothing is written to disk; inspect :attr:`ExtractPlan.conflicts`
+        before applying the plan.
+
+        Parameters:
+
+            members
+                optional filename or :class:`RarInfo` instance list to plan for
+            pwd
+                optional password to use
+            overwrite
+                collision policy: "rename" (default, keeps all copies),
+                "skip", "overwrite" or "error"
+            case_sensitive
+                set to True if the destination filesystem is case-sensitive
+
+        .. versionadded:: 5.0
+        """
+        return plan_members(self, members, pwd, overwrite, case_sensitive)
 
     def testrar(self, pwd: str | None = None) -> None:
         """Read all files and test CRC.

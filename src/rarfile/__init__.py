@@ -42,9 +42,11 @@ from .crypto import *
 from .errors import *
 from .format import *
 from .info import *
+from .plan import ExtractPlan, PlanConflict, PlanEntry, plan_members
 from .stream import *
 from .utils import *
 
-__all__ = ("get_rar_version", "is_rarfile", "is_rarfile_sfx", "RarInfo", "RarFile", "RarExtFile")
+__all__ = ("get_rar_version", "is_rarfile", "is_rarfile_sfx", "RarInfo", "RarFile", "RarExtFile",
+           "ExtractPlan", "PlanConflict", "PlanEntry", "plan_members")
 
 __version__ = "5.0.dev1"

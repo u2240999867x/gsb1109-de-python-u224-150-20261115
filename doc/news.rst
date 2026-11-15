@@ -38,6 +38,11 @@ Features:
 * Delay symlink creation in :meth:`RarFile.extractall`
   [`#148 <https://github.com/markokr/rarfile/pull/148>`_]
 
+* Add :meth:`RarFile.plan_extractall` and :func:`rarfile.plan_members`
+  to plan extraction into an empty directory: duplicate names,
+  case-folded collisions and symlink targets are reported as
+  conflicts up front, with caller-chosen overwrite policy.
+
 Version 4.5 (2026-08-02)
 ------------------------
 

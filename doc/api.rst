@@ -38,6 +38,20 @@ RarExtFile class
    :inherited-members:
    :exclude-members: truncate, flush
 
+Extraction planning
+-------------------
+
+.. autofunction:: plan_members
+
+.. autoclass:: ExtractPlan
+   :members:
+
+.. autoclass:: PlanEntry
+   :members:
+
+.. autoclass:: PlanConflict
+   :members:
+
 nsdatetime class
 ----------------
 
