@@ -79,6 +79,42 @@ For binary representation
     d = vdf.vbkv_loads(vbkv_bytes)
     b = vdf.vbkv_dumps(d)
 
+Offline package expansion
+-------------------------
+
+``vdf.packages`` expands an offline package directory into a flat resource
+catalog. An external index (``index.vdf`` or ``index.json``) points at the
+root manifest, and each manifest may reference further sub-manifests and
+declare resources.
+
+.. code:: python
+
+    from vdf.packages import build_catalog
+
+    # strict=False collects every problem instead of raising on the first
+    catalog = build_catalog('/path/to/package', strict=False)
+
+    catalog.ok                 # True when no errors were found
+    catalog.manifests          # root-relative manifest -> ManifestNode
+    catalog.resources          # root-relative file -> ResourceEntry
+    catalog.manifests_parsed   # shared manifests are parsed only once
+    catalog.manifest_visits    # ...but every visit is counted
+    catalog.errors             # cycle / missing / boundary / conflicts
+
+The expander:
+
+- parses a shared sub-manifest only once while retaining every reference path
+  on ``ManifestNode.referenced_by`` and ``ResourceEntry.references``;
+- detects reference cycles (``ManifestCycleError``) and terminates them;
+- reports missing manifests and resources (``MissingManifestError``,
+  ``MissingResourceError``);
+- stops references that resolve outside the package root, including
+  ``..`` and symlink escapes (``BoundaryViolationError``);
+- reports the same resource name contributed with different versions as a
+  ``VersionConflictError`` instead of merging the entries.
+
+The expected key names can be customized by passing a custom ``Schema``.
+
 Using an alternative mapper
 
 .. code:: python
