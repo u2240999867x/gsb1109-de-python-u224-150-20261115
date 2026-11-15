@@ -22,7 +22,7 @@ from collections.abc import Callable, Iterator
 from functools import cached_property
 from operator import attrgetter
 from pathlib import Path
-from typing import Any, cast, Optional, Union
+from typing import Any, cast, Optional, Union, TYPE_CHECKING
 from urllib.request import OpenerDirector
 from xml.etree import ElementTree
 from xml.etree.ElementTree import Element
@@ -70,6 +70,9 @@ from .elements import XsdElement
 from .wildcards import XsdAnyElement, XsdDefaultOpenContent
 from .builders import XsdBuilders
 from .xsd_globals import XsdGlobals
+
+if TYPE_CHECKING:
+    from xmlschema.relational import RelationalExport
 
 logger = logging.getLogger('xmlschema')
 
@@ -1079,6 +1082,24 @@ class XMLSchemaBase(XsdValidator, ElementPathMixin[Union[SchemaType, XsdElement]
             exclude_locations=exclude_locations,
             loglevel=loglevel
         )
+
+    def export_relational_tables(self, source: Union[XMLSourceType, Any],
+                                 strict: bool = False, **kwargs: Any) -> 'RelationalExport':
+        """
+        Decode XML instance data and export it to relational tables, using the
+        XSD identity constraints (keys, uniques and keyrefs) declared by this
+        schema. Each constraint keeps its declaration scope and keys are
+        compared as typed values, including composite keys.
+
+        :param source: the XML data (path, string, file-like or parsed element).
+        :param strict: if `True` raise a `RelationalReferenceError` when a
+            keyref cannot be resolved within its own scope; otherwise the
+            failures are collected in the returned `RelationalExport`.
+        :param kwargs: extra keyword arguments forwarded to the decoding call.
+        :return: a `RelationalExport` with one table per constraint and scope.
+        """
+        from xmlschema.relational import export_relational_tables
+        return export_relational_tables(self, source, strict=strict, **kwargs)
 
     def version_check(self, elem: Element) -> bool:
         """

@@ -1,0 +1,57 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<xs:schema xmlns:xs="http://www.w3.org/2001/XMLSchema">
+    <xs:element name="orders">
+        <xs:complexType>
+            <xs:sequence>
+                <xs:element name="order" maxOccurs="unbounded">
+                    <xs:complexType>
+                        <xs:sequence>
+                            <xs:element name="customer" type="xs:string"/>
+                            <xs:element name="line" maxOccurs="unbounded">
+                                <xs:complexType>
+                                    <xs:sequence>
+                                        <xs:element name="product" type="xs:string"/>
+                                        <xs:element name="qty" type="xs:integer"/>
+                                    </xs:sequence>
+                                    <xs:attribute name="lineNo" type="xs:integer" use="required"/>
+                                    <xs:attribute name="warehouse" type="xs:string" use="required"/>
+                                </xs:complexType>
+                            </xs:element>
+                            <xs:element name="part" maxOccurs="unbounded">
+                                <xs:complexType>
+                                    <xs:attribute name="code" type="xs:string" use="required"/>
+                                </xs:complexType>
+                            </xs:element>
+                            <xs:element name="allocation" maxOccurs="unbounded">
+                                <xs:complexType>
+                                    <xs:attribute name="lineNo" type="xs:integer" use="required"/>
+                                    <xs:attribute name="warehouse" type="xs:string" use="required"/>
+                                    <xs:attribute name="partCode" type="xs:string" use="required"/>
+                                </xs:complexType>
+                            </xs:element>
+                        </xs:sequence>
+                        <xs:attribute name="id" type="xs:string" use="required"/>
+                    </xs:complexType>
+                    <xs:key name="line_key">
+                        <xs:selector xpath="line"/>
+                        <xs:field xpath="@lineNo"/>
+                        <xs:field xpath="@warehouse"/>
+                    </xs:key>
+                    <xs:key name="part_key">
+                        <xs:selector xpath="part"/>
+                        <xs:field xpath="@code"/>
+                    </xs:key>
+                    <xs:keyref name="line_ref" refer="line_key">
+                        <xs:selector xpath="allocation"/>
+                        <xs:field xpath="@lineNo"/>
+                        <xs:field xpath="@warehouse"/>
+                    </xs:keyref>
+                    <xs:keyref name="part_ref" refer="part_key">
+                        <xs:selector xpath="allocation"/>
+                        <xs:field xpath="@partCode"/>
+                    </xs:keyref>
+                </xs:element>
+            </xs:sequence>
+        </xs:complexType>
+    </xs:element>
+</xs:schema>

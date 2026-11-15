@@ -1,0 +1,52 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<xs:schema xmlns:xs="http://www.w3.org/2001/XMLSchema">
+    <xs:element name="typecheck">
+        <xs:complexType>
+            <xs:sequence>
+                <xs:element name="entity" maxOccurs="unbounded">
+                    <xs:complexType>
+                        <xs:sequence>
+                            <xs:element name="code" type="xs:integer"/>
+                            <xs:element name="active" type="xs:boolean"/>
+                        </xs:sequence>
+                    </xs:complexType>
+                </xs:element>
+                <xs:element name="pointer" maxOccurs="unbounded">
+                    <xs:complexType>
+                        <xs:sequence>
+                            <xs:element name="code" type="xs:string"/>
+                            <xs:element name="active" type="xs:string"/>
+                        </xs:sequence>
+                    </xs:complexType>
+                </xs:element>
+                <xs:element name="link" maxOccurs="unbounded">
+                    <xs:complexType>
+                        <xs:sequence>
+                            <xs:element name="code" type="xs:integer"/>
+                        </xs:sequence>
+                    </xs:complexType>
+                </xs:element>
+            </xs:sequence>
+        </xs:complexType>
+        <xs:key name="entity_code_key">
+            <xs:selector xpath="entity"/>
+            <xs:field xpath="code"/>
+        </xs:key>
+        <xs:key name="entity_active_key">
+            <xs:selector xpath="entity"/>
+            <xs:field xpath="active"/>
+        </xs:key>
+        <xs:keyref name="pointer_code_ref" refer="entity_code_key">
+            <xs:selector xpath="pointer"/>
+            <xs:field xpath="code"/>
+        </xs:keyref>
+        <xs:keyref name="pointer_active_ref" refer="entity_active_key">
+            <xs:selector xpath="pointer"/>
+            <xs:field xpath="active"/>
+        </xs:keyref>
+        <xs:keyref name="link_code_ref" refer="entity_code_key">
+            <xs:selector xpath="link"/>
+            <xs:field xpath="code"/>
+        </xs:keyref>
+    </xs:element>
+</xs:schema>

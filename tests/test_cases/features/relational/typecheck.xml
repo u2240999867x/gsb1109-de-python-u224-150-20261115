@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<typecheck>
+    <entity>
+        <code>1</code>
+        <active>true</active>
+    </entity>
+    <entity>
+        <code>2</code>
+        <active>1</active>
+    </entity>
+    <pointer>
+        <code>1</code>
+        <active>true</active>
+    </pointer>
+    <link>
+        <code>01</code>
+    </link>
+</typecheck>

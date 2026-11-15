@@ -2,6 +2,14 @@
 CHANGELOG
 *********
 
+Unreleased
+==========
+* Add relational export of XML instance data (``export_relational_tables()``
+  and ``XMLSchema.export_relational_tables()``): builds one table per XSD
+  identity constraint and declaration scope, compares keys as typed values
+  (including composite keys) and reports keyref failures with the owning
+  scope and the missing key.
+
 `v4.3.2`_ (2026-06-30)
 ======================
 * Fix for issues #473, #474 and #475

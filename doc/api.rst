@@ -267,6 +267,48 @@ XML resources API
 .. autoclass:: xmlschema.XmlDocument
 
 
+.. _relational-export-api:
+
+Relational export API
+=====================
+
+The relational export builds tables from the XSD identity constraints
+(``xs:key``, ``xs:unique`` and ``xs:keyref``) of a schema. Every constraint
+keeps its declaration scope, so a key re-numbered inside sibling elements
+(for example line numbers restarted inside each order) is collected in a
+separate table and a reference is only resolved within its own scope. Keys,
+including composite keys, are compared as typed values rather than as raw
+strings.
+
+.. autofunction:: xmlschema.export_relational_tables
+
+.. autoclass:: xmlschema.RelationalExport
+
+    .. autoattribute:: tables
+    .. autoattribute:: failures
+    .. autoattribute:: decode_errors
+    .. automethod:: tables_for
+    .. automethod:: check_references
+    .. automethod:: as_dict
+    .. automethod:: write_csv
+
+.. autoclass:: xmlschema.RelationalTable
+
+    .. autoattribute:: identity
+    .. autoattribute:: scope
+    .. autoattribute:: scope_label
+    .. autoattribute:: rows
+    .. autoattribute:: duplicates
+    .. autoattribute:: name
+    .. autoattribute:: kind
+    .. autoattribute:: field_paths
+
+.. autoclass:: xmlschema.RelationalRow
+.. autoclass:: xmlschema.ReferenceFailure
+.. autoclass:: xmlschema.TypedKey
+.. autoclass:: xmlschema.RelationalReferenceError
+
+
 .. _loaders-api:
 
 Loaders API

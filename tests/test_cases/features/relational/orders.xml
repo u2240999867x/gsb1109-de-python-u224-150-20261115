@@ -1,0 +1,33 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<orders>
+    <order id="A">
+        <customer>Acme</customer>
+        <line lineNo="1" warehouse="WH1">
+            <product>pencil</product>
+            <qty>10</qty>
+        </line>
+        <line lineNo="2" warehouse="WH1">
+            <product>eraser</product>
+            <qty>5</qty>
+        </line>
+        <line lineNo="2" warehouse="WH2">
+            <product>eraser</product>
+            <qty>2</qty>
+        </line>
+        <part code="P1"/>
+        <part code="P2"/>
+        <allocation lineNo="1" warehouse="WH1" partCode="P1"/>
+        <allocation lineNo="2" warehouse="WH2" partCode="P2"/>
+    </order>
+    <order id="B">
+        <customer>Globex</customer>
+        <line lineNo="1" warehouse="WH1">
+            <product>notebook</product>
+            <qty>3</qty>
+        </line>
+        <part code="P1"/>
+        <allocation lineNo="1" warehouse="WH1" partCode="P1"/>
+        <allocation lineNo="2" warehouse="WH1" partCode="P1"/>
+        <allocation lineNo="1" warehouse="WH1" partCode="P2"/>
+    </order>
+</orders>
