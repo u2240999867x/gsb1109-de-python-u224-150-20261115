@@ -87,6 +87,63 @@ Latex to Text Converter Class
 
 
 
+Tracing rendered text back to the TeX source
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+When the rendered text is used to index a document for full-text searching, a
+search hit has to lead back to the place in the original ``.tex`` file that
+produced it.  :py:meth:`LatexNodes2Text.latex_to_text_with_source_info()` (and
+the node-list variant
+:py:meth:`LatexNodes2Text.nodelist_to_text_with_source_info()`) return a
+:py:class:`~pylatexenc.latex2text.TextSourceInfo` object instead of a bare
+string.  It carries the rendered text in its `text` attribute — identical to
+what :py:meth:`LatexNodes2Text.latex_to_text()` returns — together with the
+mapping between regions of that text and ranges of the original LaTeX source.
+
+The mapping is many-to-many.  One output position is usually covered by
+several spans: an outer macro invocation, the nested macro arguments and the
+verbatim characters of an argument all show up.  Conversely, one source range
+can feed several output regions, for instance when a replacement string
+embeds the same argument more than once.
+
+Three kinds of origins are kept apart on purpose:
+
+- Text copied verbatim from a characters node is a *source* span: those
+  characters really occur, in the same order, in the TeX.
+- Text produced by a macro, an environment or a specials conversion is a
+  *macro* span over the **whole invocation**.  Hitting only part of an
+  expansion — a bracket inserted by the replacement string, or the “/” of a
+  rendered fraction — still reports the whole invocation, so that the index
+  never claims the original source contains an independent fragment that is in
+  fact generated.  The rendered arguments nested inside the invocation remain
+  traceable on their own, including when they are themselves macro calls.
+- Comments dropped by the conversion are recorded separately in
+  `discarded_comments`, with no output position, so that a thrown-away comment
+  can be inspected but is never mistaken for the source of some output text.
+
+Use :py:meth:`TextSourceInfo.sources_at()` to jump from a position in the
+rendered text back to every relevant source range.
+
+.. autoclass:: pylatexenc.latex2text.TextSourceInfo
+   :members:
+
+.. autoclass:: pylatexenc.latex2text.TextSourceSpan
+   :members:
+
+.. autodata:: pylatexenc.latex2text.SOURCE_KIND_SOURCE
+   :annotation:
+
+.. autodata:: pylatexenc.latex2text.SOURCE_KIND_MACRO
+   :annotation:
+
+.. autodata:: pylatexenc.latex2text.SOURCE_KIND_SYNTHESIZED
+   :annotation:
+
+.. autodata:: pylatexenc.latex2text.SOURCE_KIND_COMMENT
+   :annotation:
+
+
+
 Define replacement texts
 ~~~~~~~~~~~~~~~~~~~~~~~~
 

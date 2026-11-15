@@ -87,6 +87,16 @@ from ..latexnodes import parsers as latexnodes_parsers
 from .. import macrospec
 from .. import _util
 
+from ._sourceinfo import (
+    TextSourceInfo,
+    TextSourceSpan,
+    TextSourceTracker,
+    SOURCE_KIND_SOURCE,
+    SOURCE_KIND_MACRO,
+    SOURCE_KIND_SYNTHESIZED,
+    SOURCE_KIND_COMMENT,
+)
+
 import logging
 logger = logging.getLogger(__name__)
 
@@ -2714,6 +2724,12 @@ class LatexNodes2Text(object):
         self.tex_input_directory = None
         self.strict_input = True
 
+        # The active source tracker, or None when the conversion is not
+        # collecting source information.  It is installed by
+        # nodelist_to_text_with_source_info() and lives for exactly one
+        # conversion, so the ordinary conversion path pays no bookkeeping cost.
+        self._source_tracker = None
+
         if 'keep_inline_math' in flags:
             if 'math_mode' in flags:
                 raise TypeError("Cannot specify both math_mode= and keep_inline_math= "
@@ -2933,6 +2949,44 @@ class LatexNodes2Text(object):
         return self.nodelist_to_text( nodelist )
 
 
+    def latex_to_text_with_source_info(self, latex, **parse_flags):
+        r"""
+        Like :py:meth:`latex_to_text()`, but return a
+        :py:class:`~pylatexenc.latex2text.TextSourceInfo` object instead of a
+        bare string.
+
+        The object holds the rendered text in its `text` attribute along with
+        the many-to-many mapping between regions of that text and ranges of the
+        original LaTeX source, so that an indexing tool can jump from a search
+        hit back to the TeX that produced it.  Comments dropped by the
+        conversion are listed separately, so that they are never taken for the
+        source of some output text.
+        """
+        lw = latexwalker.LatexWalker(latex, **parse_flags)
+        nodelist, _ = lw.parse_content(latexnodes_parsers.LatexGeneralNodesParser())
+        return self.nodelist_to_text_with_source_info(nodelist)
+
+
+    def nodelist_to_text_with_source_info(self, nodelist, state=None):
+        r"""
+        Like :py:meth:`nodelist_to_text()`, but return a
+        :py:class:`~pylatexenc.latex2text.TextSourceInfo` object with the source
+        mapping in addition to the rendered text.
+        """
+        tracker = TextSourceTracker()
+        with _util.PushPropOverride(self, '_source_tracker', tracker):
+            result = self.nodelist_to_text(nodelist, state=state)
+        if not isinstance(result, str):
+            # the fancy math engine hands back a math piece at the top level of
+            # a formula; its joined rendering cannot be aligned with the
+            # per-node chunks, so we attribute the whole text conservatively
+            text = str(result)
+            tracker.coerce_root_to_text(text)
+        else:
+            text = result
+        return tracker.build(expected_text=text)
+
+
     def nodelist_to_text(self, nodelist, state=None):
         """
         Extracts text from a node list. `nodelist` is a list of
@@ -3000,6 +3054,14 @@ class LatexNodes2Text(object):
                         # putting it back here would defeat the joiner --
                         # '$4 \pi c$' would come out as '4π 𝑐' instead of '4π𝑐'.
                         s += prev_node.macro_post_space
+                        if self._source_tracker is not None:
+                            # the macro node's source range includes this very
+                            # post-macro space, so attribute it to the invocation
+                            self._source_tracker.emit_text(
+                                prev_node.macro_post_space,
+                                node=prev_node,
+                                kind=SOURCE_KIND_MACRO,
+                            )
 
                 if fancy_math:
                     # the text filling never applies to a formula
@@ -3065,6 +3127,10 @@ class LatexNodes2Text(object):
         # ### It doesn't look like we use prev_node_hint at all.  Eliminate at
         # ### some point?
 
+        tracker = self._source_tracker
+        if tracker is not None:
+            tracker.begin_frame(node)
+
         with _util.PushPropOverride(self, 'state', state):
 
             if node.isNodeType(latexnodes_nodes.LatexCharsNode):
@@ -3093,6 +3159,9 @@ class LatexNodes2Text(object):
                                node)
                 # discard anything else.
                 result = ""
+
+        if tracker is not None:
+            tracker.end_frame(node, result)
 
         # returned after the `with` block, and not from inside it, for the
         # reason given in nodelist_to_text() above
@@ -3173,6 +3242,11 @@ class LatexNodes2Text(object):
                 # after the comment
                 return '%' + node.comment + node.comment_post_space
         else:
+            if self._source_tracker is not None:
+                # The comment does not appear in the rendered text.  It is
+                # recorded on its own so that the dropped text can still be
+                # inspected, but it never becomes the source of an output span.
+                self._source_tracker.record_discarded_comment(node)
             if self.strict_latex_spaces['after-comment']:
                 return ""
             else:
