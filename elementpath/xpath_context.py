@@ -41,8 +41,12 @@ class XPathContext:
 
     :param root: The root of the XML document, usually an ElementTree instance or an \
     Element. A schema or a schema element can also be provided, or a built node tree. \
-    For default is `None`, in which case no XML root is set, and you have to provide \
-    an *item* argument.
+    If the root is an element node that is still linked to a parent node of a shared \
+    node tree, the context is a *rooted subtree*: absolute paths, the parent axis and \
+    the root() function are interpreted with respect to the subtree root, so ancestor \
+    and sibling nodes outside the subtree are not reachable by XPath expressions, \
+    even if node identity with the original tree is preserved. For default is `None`, \
+    in which case no XML root is set, and you have to provide an *item* argument.
     :param namespaces: A dictionary with mapping from namespace prefixes into URIs, \
     used when namespace information is not available within document and element nodes. \
     This can be useful when the dynamic context has additional namespaces and root \
@@ -139,10 +143,13 @@ class XPathContext:
             self.document = self.root
         elif fragment is None and \
                 isinstance(self.root, ElementNode) and \
+                self.root.parent is None and \
                 is_etree_element_instance(self.root.value):
             # Creates a dummy document that will be not included in results
             self.document = self.root.get_document_node(as_parent=False)
         else:
+            # A rooted subtree is kept without a dummy document, so that
+            # ancestor, parent and sibling axes are confined to the subtree.
             self.document = None
 
         self.position = position
@@ -268,6 +275,7 @@ class XPathContext:
         return self.document is None and self.root is not None
 
     def is_rooted_subtree(self) -> bool:
+        """Returns `True` if the context root is a subtree of a shared node tree."""
         return self.root is not None and isinstance(self.root.parent, ElementNode)
 
     def is_principal_node_kind(self) -> bool:

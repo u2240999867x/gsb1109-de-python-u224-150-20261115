@@ -311,3 +311,36 @@ is set to `None`:
     True
     >>> context.document is None
     True
+
+Rooted subtrees
+---------------
+
+A dynamic context can also be rooted at a node of an already built node tree,
+for example when different subtrees of the same XML document are processed
+separately (e.g. each tenant of a service is authorized only for its own
+subtree). In this case the context is a *rooted subtree*: absolute paths, the
+parent axis and the *root()* function are interpreted with respect to the
+subtree root, so nodes outside the subtree cannot be reached by XPath
+expressions through the original parent references. The node identity with
+the original tree is preserved, because the context uses the same node tree.
+
+.. doctest::
+
+    >>> from elementpath import XPath2Parser, get_node_tree
+    >>> root = ElementTree.XML('<pkg><tenantA><a1/></tenantA><tenantB><b1/></tenantB></pkg>')
+    >>> node_tree = get_node_tree(root)
+    >>> subtree_a = node_tree[0]
+    >>> context = XPathContext(subtree_a)
+    >>> context.is_rooted_subtree()
+    True
+    >>> context.document is None
+    True
+    >>> parser = XPath2Parser()
+    >>> parser.parse('/a1').evaluate(context)
+    [EtreeElementNode(elem=<Element 'a1' at ...>)]
+    >>> parser.parse('..').evaluate(context)
+    []
+    >>> parser.parse('../tenantB').evaluate(context)
+    []
+    >>> parser.parse('name(root())').evaluate(context)
+    'tenantA'

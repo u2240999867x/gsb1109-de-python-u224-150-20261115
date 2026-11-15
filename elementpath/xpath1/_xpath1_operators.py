@@ -317,13 +317,15 @@ def select__child_path(self: XPathToken, context: ta.ContextType = None) \
     elif not self:
         if isinstance(context.root, DocumentNode):
             yield context.root
+        elif context.document is None and isinstance(context.root, ElementNode):
+            yield context.root  # A fragment or a rooted subtree: '/' is the context root
     elif len(self) == 1:
         if isinstance(context.document, DocumentNode):
             context.item = context.document
-        elif context.root is None or isinstance(context.root.parent, ElementNode):
-            return  # No root or a rooted subtree -> document root produce []
+        elif context.root is None:
+            return  # No root -> document root produce []
         else:
-            context.item = context.root  # A fragment or a schema node
+            context.item = context.root  # A fragment, a rooted subtree or a schema node
         yield from self[0].select(context)
     else:
         items: set[ta.ItemType] = set()
@@ -375,10 +377,10 @@ def select__descendant_path(self: XPathToken, context: ta.ContextType = None) \
     else:
         if isinstance(context.document, DocumentNode):
             context.item = context.document
-        elif context.root is None or isinstance(context.root.parent, ElementNode):
-            return  # No root or a rooted subtree -> document root produce []
+        elif context.root is None:
+            return  # No root -> document root produce []
         else:
-            context.item = context.root  # A fragment or a schema node
+            context.item = context.root  # A fragment, a rooted subtree or a schema node
 
         items = set()
         for _ in context.iter_descendants():

@@ -2,6 +2,12 @@
 CHANGELOG
 *********
 
+`v5.2.0`_ (unreleased)
+======================
+* Add the subtree query pattern for rooted subtrees: a dynamic context rooted \
+at a node of a shared node tree confines absolute paths, the parent axis and \
+the root() function to the subtree root, preserving the original node identity
+
 `v5.1.4`_ (2026-08-08)
 ======================
 * Add *allow_environment* and *allow_external_resources* arguments to XPath30Parser
@@ -555,3 +561,4 @@ CHANGELOG
 .. _v5.1.2: https://github.com/sissaschool/elementpath/compare/v5.1.1...v5.1.2
 .. _v5.1.3: https://github.com/sissaschool/elementpath/compare/v5.1.2...v5.1.3
 .. _v5.1.4: https://github.com/sissaschool/elementpath/compare/v5.1.3...v5.1.4
+.. _v5.2.0: https://github.com/sissaschool/elementpath/compare/v5.1.4...v5.2.0
