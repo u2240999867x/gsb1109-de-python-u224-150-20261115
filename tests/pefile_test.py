@@ -726,6 +726,183 @@ class TestPEFile(unittest.TestCase):
         self.assertEqual(pe.get_overlay(), overlay[:-100])
         self.assertEqual(pe.trim(), data)
 
+    def test_file_ranges_with_certificate_table(self):
+        """The certificate table is a separate file range, and data after it
+        must remain retrievable independently of the signature.
+        """
+
+        data = _create_pe(0x1004, 0x1004)
+        certificate = b"C" * 0x40
+        trailing_data = b"T" * 0x10
+        base = _set_security_directory(data, len(data), len(certificate))
+        signed_data = base + certificate + trailing_data
+
+        pe = pefile.PE(data=signed_data)
+
+        certificate_offset = len(data)
+        trailing_offset = certificate_offset + len(certificate)
+
+        self.assertEqual(pe.get_image_file_range(), (0, len(data)))
+        self.assertEqual(
+            pe.get_certificate_table_range(),
+            (certificate_offset, len(certificate)),
+        )
+        self.assertEqual(pe.get_certificate_table(), certificate)
+        self.assertEqual(
+            pe.get_overlay_ranges(),
+            [(trailing_offset, len(trailing_data))],
+        )
+        self.assertEqual(pe.get_overlay(), trailing_data)
+        self.assertEqual(pe.get_data_after_certificate_table(), trailing_data)
+        self.assertEqual(pe.trim(), base)
+
+        ranges = pe.get_file_ranges()
+        self.assertEqual(ranges["image"], [(0, len(data))])
+        self.assertEqual(
+            ranges["certificate_table"],
+            [(certificate_offset, len(certificate))],
+        )
+        self.assertEqual(
+            ranges["overlay"], [(trailing_offset, len(trailing_data))]
+        )
+        self.assertEqual(ranges["conflicts"], [])
+        self.assertEqual(ranges["out_of_bounds"], [])
+
+    def test_certificate_table_uses_file_offset_not_rva(self):
+        """The security directory's VirtualAddress is a file offset. It must
+        not be resolved through the section mapping as other directories are.
+        """
+
+        data = _create_pe(0x1004, 0x1004)
+        certificate = b"C" * 0x20
+        certificate_offset = len(data)
+        signed_data = (
+            _set_security_directory(data, certificate_offset, len(certificate))
+            + certificate
+        )
+
+        pe = pefile.PE(data=signed_data)
+
+        # Resolving the directory value as an RVA through the single section
+        # would yield a different offset, so the exact file offset and bytes
+        # below only hold when the security directory is treated as a file
+        # offset.
+        self.assertNotEqual(
+            pe.get_offset_from_rva(certificate_offset), certificate_offset
+        )
+        self.assertEqual(
+            pe.get_certificate_table_range(), (certificate_offset, 0x20)
+        )
+        self.assertEqual(pe.get_certificate_table(), certificate)
+
+    def test_file_ranges_preserve_overlaps_and_out_of_bounds(self):
+        """Overlapping and out-of-bounds ranges are reported, not repaired."""
+
+        data = _create_pe(0x1004, 0x1004)
+        certificate = b"C" * 0x100
+        signed_data = (
+            _set_security_directory(data, 0x1000, len(certificate)) + certificate
+        )
+
+        pe = pefile.PE(data=signed_data)
+        ranges = pe.get_file_ranges()
+
+        # The declared image range and certificate range overlap.
+        self.assertEqual(ranges["image"], [(0, len(data))])
+        self.assertEqual(ranges["certificate_table"], [(0x1000, 0x100)])
+        self.assertEqual(
+            ranges["conflicts"],
+            [
+                {
+                    "kinds": ("image", "certificate_table"),
+                    "offset": 0x1000,
+                    "size": 0x100,
+                }
+            ],
+        )
+        self.assertEqual(ranges["out_of_bounds"], [])
+
+        # A certificate table that extends past the file remains visible, while
+        # the bytes that are present are still retrievable.
+        certificate_offset = len(data)
+        present = b"C" * 0x20
+        signed_data = (
+            _set_security_directory(data, certificate_offset, 0x100) + present
+        )
+        pe = pefile.PE(data=signed_data)
+        ranges = pe.get_file_ranges()
+
+        self.assertEqual(
+            ranges["certificate_table"], [(certificate_offset, 0x100)]
+        )
+        self.assertEqual(
+            ranges["out_of_bounds"],
+            [
+                {
+                    "kind": "certificate_table",
+                    "offset": certificate_offset,
+                    "size": 0x100,
+                    "end": certificate_offset + 0x100,
+                }
+            ],
+        )
+        self.assertEqual(pe.get_certificate_table(), present)
+
+        # A certificate table entirely past the end of the file has no bytes.
+        signed_data = _set_security_directory(data, 0x2000, 0x100)
+        pe = pefile.PE(data=signed_data)
+        self.assertEqual(pe.get_certificate_table(), b"")
+
+    def test_certificate_table_entries(self):
+        """WIN_CERTIFICATE entries are parsed within the declared table."""
+
+        data = _create_pe(0x1004, 0x1004)
+        first = _make_certificate(b"X" * 8)
+        second = _make_certificate(b"Y" * 16)
+        table = first + second
+        base = _set_security_directory(data, len(data), len(table))
+        signed_data = base + table + b"T" * 0x10
+
+        pe = pefile.PE(data=signed_data)
+        entries = pe.get_certificate_table_entries()
+
+        self.assertEqual(len(entries), 2)
+        self.assertEqual(entries[0]["offset"], len(data))
+        self.assertEqual(entries[0]["length"], len(first))
+        self.assertEqual(entries[0]["certificate_type"], 0x0002)
+        self.assertEqual(entries[0]["revision"], 0x0200)
+        self.assertEqual(entries[0]["data"], b"X" * 8)
+        self.assertFalse(entries[0]["truncated"])
+        self.assertEqual(entries[1]["offset"], len(data) + len(first))
+        self.assertEqual(entries[1]["length"], len(second))
+        self.assertEqual(entries[1]["data"], b"Y" * 16)
+        self.assertFalse(entries[1]["truncated"])
+
+        # A declared length past the table marks the entry as truncated.
+        truncated = b"Z" * 8
+        header = struct.pack("<IHH", 0x100, 0x200, 0x0002)
+        base = _set_security_directory(data, len(data), len(header) + len(truncated))
+        pe = pefile.PE(data=base + header + truncated)
+        entries = pe.get_certificate_table_entries()
+        self.assertEqual(len(entries), 1)
+        self.assertTrue(entries[0]["truncated"])
+        self.assertEqual(entries[0]["length"], 0x100)
+        self.assertEqual(entries[0]["data"], truncated)
+
+    def test_no_certificate_table(self):
+        """Files without a security directory expose no certificate range."""
+
+        data = _create_pe(0x1004, 0x1004)
+        pe = pefile.PE(data=data + b"A" * 0x20)
+
+        self.assertIsNone(pe.get_certificate_table_range())
+        self.assertIsNone(pe.get_certificate_table())
+        ranges = pe.get_file_ranges()
+        self.assertEqual(ranges["certificate_table"], [])
+        self.assertEqual(ranges["overlay"], [(len(data), 0x20)])
+        self.assertEqual(ranges["conflicts"], [])
+        self.assertEqual(ranges["out_of_bounds"], [])
+
     def test_unable_to_read_file(self):
         """Attempting to open a file without read permission for the user
         should result in an error message.
@@ -854,6 +1031,28 @@ def _low_alignment_resource_pe():
         "<8sIIIIIIHHI", b".rsrc\x00\x00\x00", len(res), va, len(res), ptr_raw, 0, 0, 0, 0, 0x40000040
     )
     return dos + b"PE\x00\x00" + coff + opt + section + res
+
+
+def _set_security_directory(data, certificate_offset, certificate_size):
+    """Return ``data`` with its security data directory pointing at a
+    certificate table. The directory's VirtualAddress is a file offset.
+    """
+
+    data = bytearray(data)
+    optional_header_offset = struct.unpack_from("<I", data, 0x3C)[0] + 4 + 20
+    security_dir_offset = optional_header_offset + 0x60 + 4 * 8
+    struct.pack_into(
+        "<II", data, security_dir_offset, certificate_offset, certificate_size
+    )
+    return bytes(data)
+
+
+def _make_certificate(payload, certificate_type=0x0002, revision=0x0200):
+    """Build a padded WIN_CERTIFICATE entry."""
+
+    length = 8 + len(payload)
+    entry = struct.pack("<IHH", length, revision, certificate_type) + payload
+    return entry + b"\0" * (-len(entry) % 8)
 
 
 def _create_pe(virtual_size, size_of_raw_data):

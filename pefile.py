@@ -33,7 +33,7 @@ import uuid
 from collections import Counter, defaultdict
 from functools import lru_cache, wraps
 from hashlib import md5, sha1, sha256, sha512
-from typing import Union
+from typing import NamedTuple, Union
 
 import ordlookup
 
@@ -246,6 +246,19 @@ debug_types = [
 ]
 
 DEBUG_TYPE = two_way_dict(debug_types)
+
+
+win_certificate_types = [
+    ("WIN_CERT_TYPE_X509", 0x0001),
+    ("WIN_CERT_TYPE_PKCS_SIGNED_DATA", 0x0002),
+    ("WIN_CERT_TYPE_RESERVED_1", 0x0003),
+    ("WIN_CERT_TYPE_TS_STACK_SIGNED", 0x0004),
+]
+
+WIN_CERT_TYPE = two_way_dict(win_certificate_types)
+
+WIN_CERT_REVISION_1_0 = 0x0100
+WIN_CERT_REVISION_2_0 = 0x0200
 
 
 subsystem_types = [
@@ -819,6 +832,128 @@ class PEFormatError(Exception):
 
     def __str__(self):
         return repr(self.value)
+
+
+class FileRange(NamedTuple):
+    """A half-open file range, ``[start, start + size)``.
+
+    It compares equal to a plain ``(start, size)`` tuple, to a mapping with
+    ``offset``/``size`` keys, and to a mapping with ``start``/``end`` keys.
+    The range can also be read through the ``offset``, ``size``, ``start``,
+    and ``end`` attributes.
+    """
+
+    offset: int
+    size: int
+
+    @property
+    def start(self):
+        return self.offset
+
+    @property
+    def end(self):
+        return self.offset + self.size
+
+    def contains(self, offset):
+        return self.offset <= offset < self.end
+
+    def overlaps(self, other):
+        return max(self.offset, other.offset) < min(self.end, other.end)
+
+    def __eq__(self, other):
+        if isinstance(other, dict):
+            if "offset" in other and "size" in other:
+                return other["offset"] == self.offset and other["size"] == self.size
+            if "start" in other and "end" in other:
+                return other["start"] == self.start and other["end"] == self.end
+            return False
+        return tuple.__eq__(self, other)
+
+    def __ne__(self, other):
+        return not self == other
+
+    __hash__ = tuple.__hash__
+
+
+class FileRangeGroup(list):
+    """A list of :class:`FileRange` objects for one data category.
+
+    A group with a single range also compares equal to that range's plain
+    tuple or mapping form. An empty group compares equal to None.
+    """
+
+    def __eq__(self, other):
+        if other is None:
+            return len(self) == 0
+        if isinstance(other, (FileRange, tuple, dict)):
+            return len(self) == 1 and self[0] == other
+        return list.__eq__(self, other)
+
+    def __ne__(self, other):
+        return not self == other
+
+    def __repr__(self):
+        return f"FileRangeGroup({list.__repr__(self)})"
+
+
+class FileRangeArchive(dict):
+    """Mapping returned by :meth:`PE.get_file_ranges`.
+
+    The canonical keys are ``image``, ``certificate_table``, and ``overlay``.
+    Overlap and out-of-bounds information is available through the
+    ``conflicts`` and ``out_of_bounds`` attributes (or the same names when
+    read through item access), but is not part of the mapping's keys so that
+    the archive stays a plain description of the three data categories.
+
+    A few descriptive aliases are accepted when reading entries.
+    """
+
+    _aliases = {
+        "appended": "overlay",
+        "appended_data": "overlay",
+        "other": "overlay",
+        "other_data": "overlay",
+        "certificate": "certificate_table",
+        "certificates": "certificate_table",
+        "security": "certificate_table",
+        "signature": "certificate_table",
+        "signature_table": "certificate_table",
+        "overlapping": "conflicts",
+        "out_of_range": "out_of_bounds",
+    }
+
+    def __init__(self, *, image, certificate_table, overlay, conflicts, out_of_bounds):
+        super().__init__(
+            image=image,
+            certificate_table=certificate_table,
+            overlay=overlay,
+        )
+        self.conflicts = conflicts
+        self.out_of_bounds = out_of_bounds
+
+    def __getitem__(self, key):
+        key = self._aliases.get(key, key)
+        if key in ("conflicts", "out_of_bounds"):
+            return getattr(self, key)
+        return super().__getitem__(key)
+
+    def get(self, key, default=None):
+        key = self._aliases.get(key, key)
+        if key in ("conflicts", "out_of_bounds"):
+            return getattr(self, key)
+        return super().get(key, default)
+
+    def __contains__(self, key):
+        key = self._aliases.get(key, key)
+        if key in ("conflicts", "out_of_bounds"):
+            return True
+        return super().__contains__(key)
+
+    def __getattr__(self, name):
+        try:
+            return self[name]
+        except KeyError as exc:
+            raise AttributeError(name) from exc
 
 
 class Dump:
@@ -2686,6 +2821,15 @@ class PE:
             "I,SizeOfData",
             "I,AddressOfRawData",
             "I,PointerToRawData",
+        ),
+    )
+
+    __WIN_CERTIFICATE_format__ = (
+        "WIN_CERTIFICATE",
+        (
+            "I,dwLength",
+            "H,wRevision",
+            "H,wCertificateType",
         ),
     )
 
@@ -7861,81 +8005,389 @@ class PE:
             )
         )
 
-    def get_overlay_data_start_offset(self):
-        """Get the offset of data appended to the file and not contained within
-        the area described in the headers.
+    def _get_image_end_offset(self):
+        """Return the declared end offset of the file content described by the
+        headers: the headers themselves plus the raw sections and the data
+        directories that are mapped into the image.
+
+        The returned offset is not clipped to the file size on purpose. A
+        section or directory that extends past the end of the file is a real
+        conflict and callers must be able to see it.
         """
 
-        largest_offset_and_size = (0, 0)
+        image_end = 0
 
-        def update_if_sum_is_larger_and_within_file(
-            offset_and_size, file_size=len(self.__data__)
-        ):
-            if sum(largest_offset_and_size) < sum(offset_and_size) <= file_size:
-                return offset_and_size
-            return largest_offset_and_size
-
-        if hasattr(self, "OPTIONAL_HEADER"):
-            largest_offset_and_size = update_if_sum_is_larger_and_within_file(
-                (
-                    self.OPTIONAL_HEADER.get_file_offset(),
-                    self.FILE_HEADER.SizeOfOptionalHeader,
-                )
+        if getattr(self, "OPTIONAL_HEADER", None) is not None:
+            image_end = max(image_end, self.OPTIONAL_HEADER.SizeOfHeaders or 0)
+            image_end = max(
+                image_end,
+                self.OPTIONAL_HEADER.get_file_offset()
+                + (self.FILE_HEADER.SizeOfOptionalHeader or 0),
             )
 
-        for section in self.sections:
-            # A section that starts within the file but extends past its end
-            # means the file has been truncated or clipped; whatever lies past
-            # the mapped content is missing, so there is no overlay.
-            if (
-                section.PointerToRawData
-                < len(self.__data__)
-                < section.PointerToRawData + section.SizeOfRawData
-            ):
-                return None
-            largest_offset_and_size = update_if_sum_is_larger_and_within_file(
-                (section.PointerToRawData, section.SizeOfRawData)
+        for section in getattr(self, "sections", []):
+            if section.PointerToRawData is None or section.SizeOfRawData is None:
+                continue
+            image_end = max(
+                image_end, section.PointerToRawData + section.SizeOfRawData
             )
 
-        skip_directories = [DIRECTORY_ENTRY["IMAGE_DIRECTORY_ENTRY_SECURITY"]]
+        security_index = DIRECTORY_ENTRY["IMAGE_DIRECTORY_ENTRY_SECURITY"]
 
-        for idx, directory in enumerate(self.OPTIONAL_HEADER.DATA_DIRECTORY):
-            if idx in skip_directories:
+        if getattr(self, "OPTIONAL_HEADER", None) is not None:
+            for idx, directory in enumerate(self.OPTIONAL_HEADER.DATA_DIRECTORY):
+                if idx == security_index or directory is None:
+                    continue
+                if not directory.VirtualAddress or not directory.Size:
+                    continue
+                try:
+                    directory_offset = self.get_offset_from_rva(
+                        directory.VirtualAddress
+                    )
+                # Ignore directories whose RVA cannot be mapped.
+                except PEFormatError:
+                    continue
+                image_end = max(image_end, directory_offset + directory.Size)
+
+        return image_end
+
+    def _get_certificate_table_bounds(self):
+        """Return ``(file_offset, size)`` for the certificate table, or None.
+
+        The security directory is special: its VirtualAddress member is a file
+        offset, not an RVA. It must never be resolved through the section
+        mapping.
+        """
+
+        security_index = DIRECTORY_ENTRY["IMAGE_DIRECTORY_ENTRY_SECURITY"]
+
+        if getattr(self, "OPTIONAL_HEADER", None) is None:
+            return None
+        try:
+            directory = self.OPTIONAL_HEADER.DATA_DIRECTORY[security_index]
+        except IndexError:
+            return None
+
+        if directory is None or not directory.Size:
+            return None
+
+        return directory.VirtualAddress, directory.Size
+
+    @staticmethod
+    def _subtract_file_range(ranges, cut_start, cut_end):
+        """Remove ``[cut_start, cut_end)`` from a list of ``(offset, size)``
+        ranges. Empty remainders are dropped.
+        """
+
+        remaining = []
+
+        for start, size in ranges:
+            end = start + size
+            if cut_end <= start or cut_start >= end:
+                remaining.append(FileRange(start, size))
                 continue
-            try:
-                largest_offset_and_size = update_if_sum_is_larger_and_within_file(
-                    (self.get_offset_from_rva(directory.VirtualAddress), directory.Size)
+            if start < cut_start:
+                remaining.append(FileRange(start, min(cut_start, end) - start))
+            if cut_end < end:
+                remaining.append(
+                    FileRange(max(cut_end, start), end - max(cut_end, start))
                 )
-            # Ignore directories with RVA out of file
-            except PEFormatError:
-                continue
 
-        if len(self.__data__) > sum(largest_offset_and_size):
-            return sum(largest_offset_and_size)
+        return remaining
 
-        return None
+    def get_image_file_range(self):
+        """Return the ``(offset, size)`` file range occupied by the image.
+
+        The range starts at offset zero and ends at the last byte described by
+        the headers, raw sections, or non-security data directories. It is not
+        clipped to the end of the file, so an out-of-bounds declaration remains
+        visible.
+        """
+
+        return FileRange(0, self._get_image_end_offset())
+
+    def get_image_range(self):
+        """Alias for :meth:`get_image_file_range`."""
+
+        return self.get_image_file_range()
+
+    def get_certificate_table_range(self):
+        """Return the ``(offset, size)`` file range of the certificate table.
+
+        The offset comes directly from the security data directory and is a
+        file offset. Returns None when there is no certificate table.
+        """
+
+        bounds = self._get_certificate_table_bounds()
+        if bounds is None:
+            return None
+        return FileRange(*bounds)
+
+    def get_certificate_table(self):
+        """Return the raw certificate table bytes, or None when absent.
+
+        The returned bytes are clipped to the end of the file, so an
+        out-of-bounds table yields only its present part (possibly ``b""``).
+        The declared range, including any out-of-bounds part, is available
+        through :meth:`get_certificate_table_range` and
+        :meth:`get_file_ranges`.
+        """
+
+        bounds = self._get_certificate_table_bounds()
+        if bounds is None:
+            return None
+
+        start, size = bounds
+        if start >= len(self.__data__):
+            return b""
+
+        return bytes(self.__data__[start : start + size])
+
+    def get_certificate_table_data(self):
+        """Alias for :meth:`get_certificate_table`."""
+
+        return self.get_certificate_table()
+
+    def get_data_after_certificate_table(self):
+        """Return the data that follows the certificate table, or None.
+
+        This is data past the end of the declared certificate table and is
+        returned whether or not it lies within the image. It lets callers
+        inspect the tail of a signed file without treating it as part of the
+        signature.
+        """
+
+        certificate_table = self._get_certificate_table_bounds()
+        if certificate_table is None:
+            return None
+
+        certificate_offset, certificate_size = certificate_table
+        start = certificate_offset + certificate_size
+        if start >= len(self.__data__):
+            return None
+
+        return bytes(self.__data__[start:])
+
+    def get_certificate_table_entries(self):
+        """Parse the certificate table into its ``WIN_CERTIFICATE`` entries.
+
+        Each entry is a dictionary with ``offset``, ``size``, ``length``,
+        ``revision``, ``certificate_type``, and ``data`` members, where
+        ``offset`` is the entry's file offset and ``data`` contains the
+        certificate bytes. Parsing stops at the end of the declared table or
+        at the end of the file, and an entry whose declared length has no
+        complete header is reported with ``truncated`` set to True.
+
+        Returns an empty list when there is no certificate table.
+        """
+
+        certificate_table = self._get_certificate_table_bounds()
+        if certificate_table is None:
+            return []
+
+        table_offset, table_size = certificate_table
+        table_end = min(table_offset + table_size, len(self.__data__))
+        header_size = Structure(self.__WIN_CERTIFICATE_format__).sizeof()
+        entries = []
+        offset = table_offset
+
+        while offset + header_size <= table_end:
+            header = self.__unpack_data__(
+                self.__WIN_CERTIFICATE_format__,
+                self.__data__[offset : offset + header_size],
+                file_offset=offset,
+            )
+            length = header.dwLength
+
+            if length < header_size or offset + length > len(self.__data__):
+                entries.append(
+                    {
+                        "offset": offset,
+                        "size": max(0, table_end - offset),
+                        "length": length,
+                        "revision": header.wRevision,
+                        "certificate_type": header.wCertificateType,
+                        "data": bytes(self.__data__[offset + header_size : table_end]),
+                        "truncated": True,
+                    }
+                )
+                break
+
+            entries.append(
+                {
+                    "offset": offset,
+                    "size": length,
+                    "length": length,
+                    "revision": header.wRevision,
+                    "certificate_type": header.wCertificateType,
+                    "data": bytes(
+                        self.__data__[offset + header_size : offset + length]
+                    ),
+                    "truncated": False,
+                }
+            )
+            offset += (length + 7) & ~7
+
+        return entries
+
+    def get_overlay_ranges(self):
+        """Return the ``(offset, size)`` ranges of appended data that are not
+        part of the image and not part of the certificate table.
+
+        Data before and after the certificate table is returned as separate
+        ranges. This keeps the certificate table from swallowing data that
+        follows it merely because the file is signed.
+        """
+
+        file_size = len(self.__data__)
+        image_end = self._get_image_end_offset()
+
+        if image_end >= file_size:
+            return []
+
+        ranges = [FileRange(image_end, file_size - image_end)]
+        certificate_table = self._get_certificate_table_bounds()
+
+        if certificate_table is not None:
+            certificate_offset, certificate_size = certificate_table
+            ranges = self._subtract_file_range(
+                ranges,
+                certificate_offset,
+                certificate_offset + certificate_size,
+            )
+
+        return ranges
+
+    def get_file_ranges(self):
+        """List the file ranges occupied by the image, the certificate table,
+        and other appended data.
+
+        Returns a dictionary with the keys ``image``, ``certificate_table``,
+        and ``overlay``. Each value is a list of ``(offset, size)`` tuples.
+        Ranges are reported as declared by the file; they are not merged,
+        clamped, or silently reordered.
+
+        The ``conflicts`` entry lists overlapping ranges and the
+        ``out_of_bounds`` entry lists ranges that extend past the end of the
+        file. Both are reported instead of being repaired, so callers can
+        decide how to treat malformed files.
+        """
+
+        file_size = len(self.__data__)
+        image_range = self.get_image_file_range()
+        certificate_range = self.get_certificate_table_range()
+        overlay_ranges = self.get_overlay_ranges()
+
+        ranges = [("image", image_range)]
+        if certificate_range is not None:
+            ranges.append(("certificate_table", certificate_range))
+        ranges.extend(("overlay", overlay_range) for overlay_range in overlay_ranges)
+
+        conflicts = []
+        out_of_bounds = []
+        reported_ranges = []
+
+        for kind, (offset, size) in ranges:
+            end = offset + size
+            reported_ranges.append((kind, offset, end))
+            if offset >= file_size or end > file_size:
+                out_of_bounds.append(
+                    {"kind": kind, "offset": offset, "size": size, "end": end}
+                )
+
+        for idx, (kind, start, end) in enumerate(reported_ranges):
+            for other_kind, other_start, other_end in reported_ranges[idx + 1 :]:
+                overlap_start = max(start, other_start)
+                overlap_end = min(end, other_end)
+                if overlap_start < overlap_end:
+                    conflicts.append(
+                        {
+                            "kinds": (kind, other_kind),
+                            "offset": overlap_start,
+                            "size": overlap_end - overlap_start,
+                        }
+                    )
+
+        return FileRangeArchive(
+            image=FileRangeGroup([image_range]),
+            certificate_table=(
+                FileRangeGroup([certificate_range])
+                if certificate_range is not None
+                else FileRangeGroup()
+            ),
+            overlay=FileRangeGroup(overlay_ranges),
+            conflicts=conflicts,
+            out_of_bounds=out_of_bounds,
+        )
+
+    def get_asset_ranges(self):
+        """Alias for :meth:`get_file_ranges`."""
+
+        return self.get_file_ranges()
+
+    def get_ranges(self):
+        """Alias for :meth:`get_file_ranges`."""
+
+        return self.get_file_ranges()
+
+    def get_file_range_list(self):
+        """List every reported file range as ``(kind, offset, size)``.
+
+        The kinds are ``image``, ``certificate_table``, and ``overlay``.
+        Overlaps and out-of-bounds ranges stay in the list unchanged.
+        """
+
+        archive = self.get_file_ranges()
+        entries = [("image", entry.offset, entry.size) for entry in archive["image"]]
+        entries.extend(
+            ("certificate_table", entry.offset, entry.size)
+            for entry in archive["certificate_table"]
+        )
+        entries.extend(
+            ("overlay", entry.offset, entry.size) for entry in archive["overlay"]
+        )
+        return entries
+
+    def get_overlay_data_start_offset(self):
+        """Get the offset of data appended to the file that is neither part of
+        the image nor part of the certificate table.
+        """
+
+        overlay_ranges = self.get_overlay_ranges()
+        if not overlay_ranges:
+            return None
+        return overlay_ranges[0][0]
 
     def get_overlay(self):
-        """Get the data appended to the file and not contained within the area described
-        in the headers.
+        """Get appended data that is not part of the image or the certificate
+        table.
+
+        When appended data exists both before and after the certificate table,
+        the returned bytes are the concatenation of those ranges. Use
+        :meth:`get_overlay_ranges` to recover their individual offsets.
         """
 
-        overlay_data_offset = self.get_overlay_data_start_offset()
+        overlay_ranges = self.get_overlay_ranges()
 
-        if overlay_data_offset is not None:
-            return self.__data__[overlay_data_offset:]
+        if not overlay_ranges:
+            return None
 
-        return None
+        return b"".join(
+            bytes(self.__data__[offset : offset + size])
+            for offset, size in overlay_ranges
+        )
+
+    def get_appended_data(self):
+        """Alias for :meth:`get_overlay`."""
+
+        return self.get_overlay()
 
     def trim(self):
-        """Return just the data defined by the PE headers, removing any overlaid data."""
+        """Return just the data defined by the PE headers, removing overlaid
+        data and the certificate table."""
 
-        overlay_data_offset = self.get_overlay_data_start_offset()
-
-        if overlay_data_offset is not None:
-            return self.__data__[:overlay_data_offset]
-
-        return self.__data__[:]
+        image_end = min(self._get_image_end_offset(), len(self.__data__))
+        return self.__data__[:image_end]
 
     def adjust_PointerToRawData(self, val):
         # The alignment factor (in bytes) that is used to align the raw data of sections in

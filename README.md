@@ -59,6 +59,25 @@ Here are a few examples of what a dump produced with _pefile_ looks like for dif
 * [kernel32.dll](https://github.com/erocarrera/pefile/blob/wiki/FullDumpKernel32.md)
 * [TinyPE](https://github.com/erocarrera/pefile/blob/wiki/FullDumpTinyPE.md)
 
+## File ranges and appended data
+
+PE files do not only contain headers and sections: a signed binary stores its
+signature in the certificate table, and data can be appended before or after
+that table. The file ranges covered by each of them are available separately:
+
+* `PE.get_file_ranges()` describes the image, the certificate table, and other
+  appended data, together with any overlapping or out-of-bounds declarations.
+* `PE.get_certificate_table_range()` and `PE.get_certificate_table()` return the
+  certificate table's file range and bytes. The security data directory is read
+  as a file offset, not as an RVA.
+* `PE.get_overlay_ranges()` and `PE.get_overlay()` return appended data that is
+  neither image content nor certificate table. Data before and after the
+  certificate table stays separate, `PE.get_data_after_certificate_table()`
+  returns the tail on its own, and `PE.trim()` removes both.
+
+Overlaps and ranges that extend past the end of the file are reported rather
+than repaired, so malformed files keep their declared layout.
+
 To work with authenticated binaries, including **Authenticode signatures**, please check the project [verify-sigs](https://code.google.com/archive/p/verify-sigs/).
 
 _pefile_ runs in several pipelines scanning hundreds of thousands of new PE files every day, and, while not perfect, it has grown to be pretty robust over time. That being said, small glitches are found now and then. If you bump into a PE that does not appear to be processed correctly, do report it, please! It will help make pefile a tiny bit more powerful.
