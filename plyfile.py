@@ -213,6 +213,102 @@ class PlyData(object):
             if must_close:
                 stream.close()
 
+    def filter_vertices(self, keep, refs=None, on_dangling='drop',
+                        vertex_element='vertex'):
+        """
+        Filter vertices and migrate vertex-index references in other
+        elements accordingly.
+
+        Only the properties explicitly declared in `refs` are treated
+        as vertex indices and remapped; any other property, including
+        integer-valued ones, is left untouched.
+
+        Parameters
+        ----------
+        keep : array_like
+            Either a boolean mask of length equal to the vertex count,
+            or the integer indices of the vertices to keep.
+        refs : dict, optional
+            Mapping from element name to an iterable of property names
+            whose values are indices into the vertex element, e.g.
+            ``{'face': ['vertex_indices'],
+            'edge': ['vertex1', 'vertex2']}``.  Both scalar integer
+            properties and list properties with integer values are
+            supported.
+        on_dangling : {'drop', 'isolate'}, optional
+            Policy for records that reference at least one removed
+            vertex.  With `'drop'` (the default), such records are
+            deleted.  With `'isolate'`, they are moved verbatim (with
+            their original, un-remapped indices) into a new element
+            named ``'<element>_dangling'`` placed immediately after
+            the source element; the new element is only created if at
+            least one record is isolated.
+        vertex_element : str, optional
+            Name of the vertex element (default: `'vertex'`).
+
+        Returns
+        -------
+        PlyData
+            A new instance with the filtered vertices and migrated
+            references.  The current instance is not modified.
+        numpy.ndarray
+            The old-to-new vertex index mapping as an integer array of
+            length equal to the original vertex count; removed
+            vertices map to -1.
+
+        Raises
+        ------
+        ValueError
+            If `keep` is malformed, `on_dangling` is unknown, `refs`
+            names an unknown element or property or a non-integer
+            property, or a declared reference property contains an
+            out-of-range index.
+        """
+        if on_dangling not in ('drop', 'isolate'):
+            raise ValueError("on_dangling must be 'drop' or 'isolate'")
+
+        if vertex_element not in self._element_lookup:
+            raise ValueError("no element named %r" % vertex_element)
+        vertex = self._element_lookup[vertex_element]
+
+        keep_idx = _normalize_keep(keep, vertex.count)
+
+        index_map = _np.full(vertex.count, -1, dtype=_np.intp)
+        index_map[keep_idx] = _np.arange(len(keep_idx), dtype=_np.intp)
+
+        refs = dict(refs) if refs else {}
+        for (elt_name, prop_names) in refs.items():
+            if elt_name not in self._element_lookup:
+                raise ValueError("unknown element %r in refs" % elt_name)
+            elt = self._element_lookup[elt_name]
+            for prop_name in prop_names:
+                if prop_name not in elt:
+                    raise ValueError("element %r has no property %r" %
+                                     (elt_name, prop_name))
+                prop = elt.ply_property(prop_name)
+                if _np.dtype(prop.val_dtype).kind not in 'iu':
+                    raise ValueError(
+                        "reference property %r of element %r is not "
+                        "an integer property" % (prop_name, elt_name))
+
+        new_elements = []
+        for elt in self.elements:
+            if elt.name == vertex_element:
+                elt = _element_with_data(elt, elt.data[keep_idx])
+            if elt.name in refs:
+                (elt, dangling) = _remap_references(
+                    elt, refs[elt.name], index_map, on_dangling)
+                new_elements.append(elt)
+                if dangling is not None:
+                    new_elements.append(dangling)
+            else:
+                new_elements.append(elt)
+
+        new_ply = PlyData(new_elements, text=self.text,
+                          byte_order=self._byte_order,
+                          comments=self.comments, obj_info=self.obj_info)
+        return (new_ply, index_map)
+
     @property
     def header(self):
         """
@@ -846,7 +942,8 @@ class PlyProperty(object):
         stream : writeable open binary file
         byte_order : {'<', '>', '='}
         """
-        _write_array(stream, _np.dtype(self.dtype(byte_order)).type(data))
+        _write_array(stream, _np.asarray(data,
+                                         dtype=self.dtype(byte_order)))
 
     def __str__(self):
         val_str = _data_type_reverse[self.val_dtype]
@@ -1398,6 +1495,130 @@ def _check_comments(comments):
                 raise ValueError("non-ASCII character in comment")
             if char == '\n':
                 raise ValueError("embedded newline in comment")
+
+
+def _normalize_keep(keep, count):
+    """
+    Normalize a vertex filter specification to an array of indices.
+
+    Parameters
+    ----------
+    keep : array_like
+        Boolean mask of length `count` or integer indices.
+    count : int
+        Number of vertices before filtering.
+
+    Returns
+    -------
+    numpy.ndarray
+        Sorted unique indices of the vertices to keep.
+
+    Raises
+    ------
+    ValueError
+    """
+    keep = _np.asarray(keep)
+    if keep.dtype == bool:
+        if keep.shape != (count,):
+            raise ValueError("boolean keep mask has length %d, "
+                             "expected %d" % (keep.size, count))
+        keep_idx = _np.flatnonzero(keep)
+    elif keep.dtype.kind in 'iu':
+        keep_idx = keep.astype(_np.intp).ravel()
+    else:
+        raise ValueError("keep must be a boolean mask or an array "
+                         "of integer indices")
+    if keep_idx.size:
+        if keep_idx.min() < 0 or keep_idx.max() >= count:
+            raise ValueError("keep index out of range for %d "
+                             "vertices" % count)
+        if len(_np.unique(keep_idx)) != len(keep_idx):
+            raise ValueError("duplicate indices in keep")
+    return keep_idx
+
+
+def _element_with_data(elt, data, name=None):
+    """
+    Create a new `PlyElement` with the metadata of `elt` and the given
+    data (and optionally a different name).
+    """
+    new_elt = PlyElement(elt.name if name is None else name,
+                         elt.properties, len(data), elt.comments)
+    new_elt.data = data
+    return new_elt
+
+
+def _remap_references(elt, prop_names, index_map, on_dangling):
+    """
+    Remap vertex-index references in the given properties of an
+    element and handle records that reference removed vertices.
+
+    Parameters
+    ----------
+    elt : PlyElement
+    prop_names : iterable of str
+        Names of properties holding vertex indices.
+    index_map : numpy.ndarray
+        Old-to-new vertex index mapping (-1 for removed vertices).
+    on_dangling : {'drop', 'isolate'}
+
+    Returns
+    -------
+    PlyElement
+        The element with remapped references and no dangling records.
+    PlyElement or None
+        For `on_dangling` == 'isolate', the element containing the
+        unmodified dangling records, or None if there are none.
+    """
+    data = elt.data
+    dangling = _np.zeros(len(data), dtype=bool)
+    for prop_name in prop_names:
+        prop = elt.ply_property(prop_name)
+        if isinstance(prop, PlyListProperty):
+            for k in range(len(data)):
+                vals = _np.asarray(data[prop_name][k])
+                _check_ref_bounds(vals, len(index_map), elt, prop_name)
+                if vals.size:
+                    dangling[k] |= (index_map[vals] < 0).any()
+        else:
+            vals = _np.asarray(data[prop_name])
+            _check_ref_bounds(vals, len(index_map), elt, prop_name)
+            dangling |= index_map[vals] < 0
+
+    new_data = data[~dangling].copy()
+    for prop_name in prop_names:
+        prop = elt.ply_property(prop_name)
+        if isinstance(prop, PlyListProperty):
+            val_dtype = _np.dtype(prop.val_dtype)
+            for k in range(len(new_data)):
+                vals = _np.asarray(new_data[prop_name][k])
+                new_data[prop_name][k] = \
+                    index_map[vals].astype(val_dtype, copy=False)
+        else:
+            col = new_data[prop_name]
+            new_data[prop_name] = \
+                index_map[col].astype(col.dtype, copy=False)
+
+    dangling_elt = None
+    if on_dangling == 'isolate' and dangling.any():
+        dangling_elt = _element_with_data(elt, data[dangling].copy(),
+                                          name=elt.name + '_dangling')
+
+    return (_element_with_data(elt, new_data), dangling_elt)
+
+
+def _check_ref_bounds(vals, count, elt, prop_name):
+    """
+    Check that all vertex indices in `vals` are in [0, count).
+
+    Raises
+    ------
+    ValueError
+    """
+    if vals.size and (vals.min() < 0 or vals.max() >= count):
+        raise ValueError("property %r of element %r contains "
+                         "out-of-range vertex indices" %
+                         (prop_name, elt.name))
 
 
 def _read_array(stream, dtype, n):

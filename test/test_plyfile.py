@@ -1016,3 +1016,204 @@ def test_text_io_bad_read(tet_ply_txt):
     with Raises(ValueError) as e:
         PlyData.read(stream1)
     assert str(e) == "can't read binary-format PLY from text stream"
+
+
+def cloud_ply(text=True, byte_order='='):
+    """
+    Point cloud with faces and a custom edge element.  The 'material'
+    and 'stamp' integer properties are not vertex references and must
+    never be remapped.
+    """
+    vertex = numpy.array(
+        [(0, 0, 0, 10), (1, 0, 0, 11), (0, 1, 0, 12),
+         (0, 0, 1, 13), (1, 1, 1, 14)],
+        dtype=[('x', 'f4'), ('y', 'f4'), ('z', 'f4'), ('label', 'i4')])
+    face = numpy.array(
+        [([0, 1, 2], 0), ([1, 2, 3], 1), ([2, 3, 4], 2)],
+        dtype=[('vertex_indices', 'i4', (3,)), ('material', 'i4')])
+    edge = numpy.array(
+        [(0, 4, 100), (3, 4, 200), (1, 3, 300)],
+        dtype=[('vertex1', 'i4'), ('vertex2', 'i4'), ('stamp', 'i4')])
+    return PlyData(
+        [
+            PlyElement.describe(vertex, 'vertex'),
+            PlyElement.describe(face, 'face'),
+            PlyElement.describe(edge, 'edge'),
+        ],
+        text=text, byte_order=byte_order
+    )
+
+
+cloud_refs = {'face': ['vertex_indices'], 'edge': ['vertex1', 'vertex2']}
+
+# Remove vertex 1.
+cloud_mask = numpy.array([True, False, True, True, True])
+
+
+def test_filter_vertices_drop():
+    ply0 = cloud_ply()
+    (ply1, index_map) = ply0.filter_vertices(cloud_mask,
+                                             refs=cloud_refs)
+
+    assert (index_map == [0, -1, 1, 2, 3]).all()
+
+    assert len(ply1['vertex']) == 4
+    assert (ply1['vertex']['label'] == [10, 12, 13, 14]).all()
+
+    # Faces 0 and 1 reference the removed vertex and are dropped.
+    assert len(ply1['face']) == 1
+    assert (ply1['face']['vertex_indices'][0] == [1, 2, 3]).all()
+    # 'material' is not a declared reference and stays untouched,
+    # even though 2 is a valid vertex index.
+    assert ply1['face']['material'][0] == 2
+
+    # Edge (1, 3) references the removed vertex and is dropped.
+    assert len(ply1['edge']) == 2
+    assert (ply1['edge']['vertex1'] == [0, 2]).all()
+    assert (ply1['edge']['vertex2'] == [3, 3]).all()
+    # Out-of-range-looking integer data is left alone.
+    assert (ply1['edge']['stamp'] == [100, 200]).all()
+
+    assert 'face_dangling' not in ply1
+    assert 'edge_dangling' not in ply1
+
+    # The original instance is not modified.
+    assert len(ply0['vertex']) == 5
+    assert len(ply0['face']) == 3
+    assert len(ply0['edge']) == 3
+
+
+def test_filter_vertices_isolate():
+    ply0 = cloud_ply()
+    (ply1, index_map) = ply0.filter_vertices(cloud_mask,
+                                             refs=cloud_refs,
+                                             on_dangling='isolate')
+
+    assert (index_map == [0, -1, 1, 2, 3]).all()
+    assert len(ply1['vertex']) == 4
+
+    assert len(ply1['face']) == 1
+    assert (ply1['face']['vertex_indices'][0] == [1, 2, 3]).all()
+
+    # Isolated records keep their original, un-remapped indices.
+    assert 'face_dangling' in ply1
+    assert len(ply1['face_dangling']) == 2
+    assert (ply1['face_dangling']['vertex_indices'][0] ==
+            [0, 1, 2]).all()
+    assert (ply1['face_dangling']['vertex_indices'][1] ==
+            [1, 2, 3]).all()
+    assert (ply1['face_dangling']['material'] == [0, 1]).all()
+
+    assert 'edge_dangling' in ply1
+    assert len(ply1['edge_dangling']) == 1
+    assert ply1['edge_dangling']['vertex1'][0] == 1
+    assert ply1['edge_dangling']['vertex2'][0] == 3
+    assert ply1['edge_dangling']['stamp'][0] == 300
+
+
+def test_filter_vertices_isolate_no_dangling():
+    ply0 = cloud_ply()
+    keep = numpy.array([True, True, True, True, True])
+    (ply1, index_map) = ply0.filter_vertices(keep, refs=cloud_refs,
+                                             on_dangling='isolate')
+    assert (index_map == [0, 1, 2, 3, 4]).all()
+    assert len(ply1['face']) == 3
+    assert len(ply1['edge']) == 3
+    # No dangling records: no isolation elements are created.
+    assert 'face_dangling' not in ply1
+    assert 'edge_dangling' not in ply1
+
+
+def test_filter_vertices_indices_input():
+    ply0 = cloud_ply()
+    (ply1, index_map) = ply0.filter_vertices([0, 2, 3, 4],
+                                             refs=cloud_refs)
+    assert (index_map == [0, -1, 1, 2, 3]).all()
+    assert (ply1['vertex']['label'] == [10, 12, 13, 14]).all()
+    assert len(ply1['face']) == 1
+    assert len(ply1['edge']) == 2
+
+
+def test_filter_vertices_no_refs():
+    ply0 = cloud_ply()
+    (ply1, index_map) = ply0.filter_vertices(cloud_mask)
+    assert (index_map == [0, -1, 1, 2, 3]).all()
+    assert len(ply1['vertex']) == 4
+    # Without reference rules, other elements pass through untouched.
+    assert len(ply1['face']) == 3
+    assert (ply1['face']['vertex_indices'][0] == [0, 1, 2]).all()
+    assert len(ply1['edge']) == 3
+
+
+def test_filter_vertices_remove_all():
+    ply0 = cloud_ply()
+    keep = numpy.zeros(5, dtype=bool)
+    (ply1, index_map) = ply0.filter_vertices(keep, refs=cloud_refs)
+    assert (index_map == [-1] * 5).all()
+    assert len(ply1['vertex']) == 0
+    assert len(ply1['face']) == 0
+    assert len(ply1['edge']) == 0
+
+
+@pytest.mark.parametrize('text,byte_order',
+                         [(True, '='), (False, '<'), (False, '>')])
+def test_filter_vertices_roundtrip(tmpdir, text, byte_order):
+    ply0 = cloud_ply(text=text, byte_order=byte_order)
+    (ply1, _) = ply0.filter_vertices(cloud_mask, refs=cloud_refs,
+                                     on_dangling='isolate')
+    ply2 = write_read(ply1, tmpdir)
+    verify(ply1, ply2)
+
+
+def test_filter_vertices_bad_policy():
+    ply0 = cloud_ply()
+    with Raises(ValueError):
+        ply0.filter_vertices(cloud_mask, refs=cloud_refs,
+                             on_dangling='keep')
+
+
+def test_filter_vertices_unknown_element():
+    ply0 = cloud_ply()
+    with Raises(ValueError):
+        ply0.filter_vertices(cloud_mask, refs={'triangle': ['indices']})
+
+
+def test_filter_vertices_unknown_property():
+    ply0 = cloud_ply()
+    with Raises(ValueError):
+        ply0.filter_vertices(cloud_mask, refs={'face': ['indices']})
+
+
+def test_filter_vertices_non_integer_property():
+    ply0 = cloud_ply()
+    with Raises(ValueError):
+        ply0.filter_vertices(cloud_mask, refs={'vertex': ['x']})
+
+
+def test_filter_vertices_missing_vertex_element():
+    ply0 = cloud_ply()
+    with Raises(ValueError):
+        ply0.filter_vertices(cloud_mask, vertex_element='point')
+
+
+def test_filter_vertices_out_of_range_reference():
+    ply0 = cloud_ply()
+    ply0['edge']['vertex2'] = [4, 99, 3]
+    with Raises(ValueError):
+        ply0.filter_vertices(cloud_mask, refs=cloud_refs)
+
+
+def test_filter_vertices_bad_keep():
+    ply0 = cloud_ply()
+    # Mask of the wrong length.
+    with Raises(ValueError):
+        ply0.filter_vertices(numpy.array([True, False]))
+    # Duplicate indices.
+    with Raises(ValueError):
+        ply0.filter_vertices([0, 1, 1])
+    # Out-of-range index.
+    with Raises(ValueError):
+        ply0.filter_vertices([0, 5])
+    # Non-integer, non-boolean input.
+    with Raises(ValueError):
+        ply0.filter_vertices([0.5, 1.5])

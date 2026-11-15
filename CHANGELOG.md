@@ -3,6 +3,19 @@
 All notable changes to this project will be documented here.
 
 ## [Unreleased]
+### Added
+- `PlyData.filter_vertices`: filter vertices of a point cloud while
+  migrating vertex-index references in other elements (e.g. faces and
+  custom edge elements) according to caller-declared reference
+  fields.  Records referencing removed vertices can be dropped or
+  isolated into `<element>_dangling` elements, and the old-to-new
+  vertex index mapping is returned.  Only explicitly declared
+  reference properties are remapped; other integer properties are
+  left untouched.
+
+### Fixed
+- Byte order was lost when writing scalar properties of elements that
+  also contain list properties to a non-native-endian binary file.
 
 ## [1.1.5] - 2026-07-25
 ### Fixed
