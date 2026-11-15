@@ -1571,6 +1571,52 @@ for long strings. DER's remaining decoder overrides are inventoried under
 is the one DER restriction that applies on every decode path
 ([Registration and import order](#registration-and-import-order)).
 
+### BIT STRING fragment and padding rules
+
+`BitStringPayloadDecoder` turns a BER BIT STRING into a reconstructable bit
+sequence: every significant bit, including leading and trailing zeros, is
+kept. A BIT STRING encodes the unused-bit count in its first octet and the
+bits in the following octets, MSB first, so the stored object's bit length is
+`contentOctets * 8 - unusedBits`. Two surface-level details are deliberate:
+
+- **The empty string is `03 00`.** A zero-length primitive encoding has
+  neither an unused-bits octet nor content octets and decodes to the empty
+  `BitString` (length 0); a zero-length *constructed* encoding and an
+  indefinite container with no fragments do the same. On the schemaless path
+  DER still rejects a zero-length *constructed* encoding, because its
+  `BitStringPayloadDecoder.supportConstructedForm = False` gate runs before
+  the empty branch; on the schema-driven path that gate is the documented
+  inert wart ([Known warts (intentional)](#known-warts-intentional)), so the
+  same bytes decode to the empty string there. The encoder represents an
+  empty value as `03 01 00`, the zero-bit string with an explicit
+  unused-bits octet; both forms decode to length 0.
+- **Constructed fragments have one mid-octet boundary, the last.** Each inner
+  BIT STRING TLV carries its own unused-bits octet. `_checkFragmentBoundary`
+  rejects any non-final fragment whose unused-bits count is non-zero, since
+  bits between fragments would otherwise be lost on concatenation; only the
+  final fragment may end in the middle of an octet. In the definite path the
+  final fragment is known from the byte count, so the check runs inline. The
+  indefinite path cannot know a fragment is non-final until the next TLV
+  arrives, so `indefLenValueDecoder` holds one fragment in `pending` and
+  validates its boundary a frame late, while `_checkPaddingBitsZero`, which
+  needs no lookahead, runs immediately.
+
+`_checkPaddingBitsZero` enforces X.690's padding rule on every fragment
+(including the single primitive fragment, which is treated as fragment 0):
+the unused trailing bits must be zero. A non-zero padding byte, an unused
+count above 7, or a content-less fragment that still declares unused bits
+raises `PyAsn1Error` rather than being shifted away. The message names the
+zero-based fragment index (`fragment 0`, `fragment 1`, ...) so the offending
+source TLV is locatable; the decoder never silently repairs and stores a
+malformed encoding. The same boundary and padding checks live only in
+`ber/decoder.py` and are inherited unchanged by CER and DER through their
+`TAG_MAP`/`TYPE_MAP` copies, so they fire on the schema-driven path even
+where DER's `supportConstructedForm` does not. The type-layer backstop is
+`BitString.fromOctetString`, which rejects `padding` outside 0..7 and any
+padding on a zero-octet value. Pinned by `BitStringDecoderTestCase` in
+`tests/codec/ber/test_decoder.py` and its mirrors in
+`tests/codec/cer/test_decoder.py` and `tests/codec/der/test_decoder.py`.
+
 ### Deferred typing: ANY and open types
 
 An `ANY` value is the complete encoding, header included, but by the time

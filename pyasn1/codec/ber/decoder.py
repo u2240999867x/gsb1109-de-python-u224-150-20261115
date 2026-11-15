@@ -175,17 +175,51 @@ class BitStringPayloadDecoder(AbstractSimplePayloadDecoder):
     supportConstructedForm = True
 
     @staticmethod
-    def _appendFragment(assembled, component, bitLength):
-        trailingBits = component[0]
-        if trailingBits > 7:
+    def _checkPaddingBitsZero(component, fragmentIndex):
+        # component is the raw fragment: unused-bits octet followed by payload
+        unusedBits = component[0]
+        payload = component[1:]
+
+        if unusedBits > 7:
             raise error.PyAsn1Error(
-                'Trailing bits overflow %s' % trailingBits
+                'BIT STRING fragment %s has invalid unused-bits count %s'
+                % (fragmentIndex, unusedBits)
             )
 
+        if not payload:
+            if unusedBits:
+                raise error.PyAsn1Error(
+                    'BIT STRING fragment %s declares %s unused bit(s) but '
+                    'carries no content octet' % (fragmentIndex, unusedBits)
+            )
+            return
+
+        if unusedBits:
+            paddingMask = (1 << unusedBits) - 1
+            if payload[-1] & paddingMask:
+                raise error.PyAsn1Error(
+                    'BIT STRING fragment %s has %s non-zero unused trailing '
+                    'bit(s); unused padding bits must be zero'
+                    % (fragmentIndex, unusedBits)
+                )
+
+    @staticmethod
+    def _checkFragmentBoundary(component, fragmentIndex, isFinal):
+        # Only the final fragment of a constructed BIT STRING may end in the
+        # middle of an octet; earlier fragments must be octet-aligned so the
+        # bits concatenate without discarding anything.
+        if not isFinal and component[0]:
+            raise error.PyAsn1Error(
+                'Non-final BIT STRING fragment %s carries %s unused bit(s); '
+                'only the final fragment may end mid-octet'
+                % (fragmentIndex, component[0])
+            )
+
+    @staticmethod
+    def _appendFragment(assembled, component, bitLength):
+        trailingBits = component[0]
         payload = component[1:]
         if not payload:
-            if trailingBits:
-                raise error.PyAsn1Error('Trailing bits overflow %s' % trailingBits)
             return bitLength
 
         if not trailingBits and not bitLength % 8:
@@ -225,15 +259,16 @@ class BitStringPayloadDecoder(AbstractSimplePayloadDecoder):
 
             return
 
-        if not length:
-            raise error.PyAsn1Error('Empty BIT STRING substrate')
+        # A zero-length primitive BIT STRING has neither an unused-bits octet
+        # nor any content octets; it is the empty bit sequence. Constructed
+        # form is still gated by supportConstructedForm below.
+        if not length and tagSet[0].tagFormat == tag.tagFormatSimple:
+            value = self.protoComponent.fromOctetString(
+                b'', internalFormat=True
+            )
+            yield self._createComponent(asn1Spec, tagSet, value, **options)
 
-        for chunk in isEndOfStream(substrate):
-            if isinstance(chunk, SubstrateUnderrunError):
-                yield chunk
-
-        if chunk:
-            raise error.PyAsn1Error('Empty BIT STRING substrate')
+            return
 
         if tagSet[0].tagFormat == tag.tagFormatSimple:  # XXX what tag to check?
 
@@ -250,6 +285,13 @@ class BitStringPayloadDecoder(AbstractSimplePayloadDecoder):
             for chunk in readFromStream(substrate, length - 1, options):
                 if isinstance(chunk, SubstrateUnderrunError):
                     yield chunk
+
+            if trailingBits:
+                # The single primitive fragment is also the final one; reject
+                # non-zero padding rather than silently dropping the bits.
+                self._checkPaddingBitsZero(
+                    bytes((trailingBits,)) + chunk, 0
+                )
 
             value = self.protoComponent.fromOctetString(
                 chunk, internalFormat=True, padding=trailingBits)
@@ -270,6 +312,7 @@ class BitStringPayloadDecoder(AbstractSimplePayloadDecoder):
 
         assembled = bytearray()
         bitLength = 0
+        fragmentIndex = 0
 
         current_position = substrate.tell()
 
@@ -280,7 +323,13 @@ class BitStringPayloadDecoder(AbstractSimplePayloadDecoder):
                 if isinstance(component, SubstrateUnderrunError):
                     yield component
 
+            isFinal = substrate.tell() - current_position >= length
+
+            self._checkPaddingBitsZero(component, fragmentIndex)
+            self._checkFragmentBoundary(component, fragmentIndex, isFinal)
+
             bitLength = self._appendFragment(assembled, component, bitLength)
+            fragmentIndex += 1
 
         bitString = self.protoComponent.fromOctetString(
             assembled, internalFormat=True, padding=(-bitLength) % 8
@@ -306,6 +355,11 @@ class BitStringPayloadDecoder(AbstractSimplePayloadDecoder):
 
         assembled = bytearray()
         bitLength = 0
+        fragmentIndex = 0
+
+        # A fragment is known to be non-final only once another fragment
+        # follows it, so boundary validation lags by one fragment.
+        pending = None
 
         while True:  # loop over fragments
 
@@ -322,7 +376,26 @@ class BitStringPayloadDecoder(AbstractSimplePayloadDecoder):
             if component is eoo.endOfOctets:
                 break
 
-            bitLength = self._appendFragment(assembled, component, bitLength)
+            self._checkPaddingBitsZero(component, fragmentIndex)
+
+            if pending is not None:
+                previousComponent, previousIndex = pending
+                self._checkFragmentBoundary(
+                    previousComponent, previousIndex, False
+                )
+                bitLength = self._appendFragment(
+                    assembled, previousComponent, bitLength
+                )
+
+            pending = (component, fragmentIndex)
+            fragmentIndex += 1
+
+        if pending is not None:
+            finalComponent, finalIndex = pending
+            self._checkFragmentBoundary(finalComponent, finalIndex, True)
+            bitLength = self._appendFragment(
+                assembled, finalComponent, bitLength
+            )
 
         bitString = self.protoComponent.fromOctetString(
             assembled, internalFormat=True, padding=(-bitLength) % 8

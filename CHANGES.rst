@@ -21,6 +21,16 @@ Revision 0.7.0, released XX-XX-2026
   qualifies for a private advisory and a CVE versus what is handled
   as an ordinary public bug report
   [issue #96](https://github.com/pyasn1/pyasn1/issues/96)
+- Tightened BER/CER/DER BIT STRING decoding so every significant bit,
+  including leading and trailing zeros, is stored in a reconstructable bit
+  sequence. A zero-length encoding now decodes to the empty bit string
+  instead of raising. Constructed (fragmented) encodings reject a non-final
+  fragment that carries unused bits and any fragment whose unused padding
+  bits are non-zero, naming the offending fragment in the error rather than
+  silently discarding the bits; only the final fragment may end mid-octet.
+- ``BitString.fromOctetString`` now rejects a ``padding`` value outside the
+  0..7 range and any non-zero padding on an empty value, instead of
+  normalising it away
 
 Revision 0.6.5, released 26-10-2026
 ---------------------------------------

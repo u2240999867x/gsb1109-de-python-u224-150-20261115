@@ -618,7 +618,24 @@ class BitString(base.SimpleAsn1Type):
         ----------
         value: :class:`bytes`
             Text string like b'\\\\x01\\\\xff'
+
+        padding: :class:`int`
+            Number of trailing unused bits in *value* (0..7). It must be zero
+            when *value* carries no octets, since an empty BIT STRING has no
+            unused bits.
         """
+        if not 0 <= padding <= 7:
+            raise error.PyAsn1Error(
+                '%s.fromOctetString() error: padding %s is outside the 0..7 '
+                'range' % (cls.__name__, padding)
+            )
+
+        if not value and padding:
+            raise error.PyAsn1Error(
+                '%s.fromOctetString() error: empty BIT STRING cannot carry '
+                '%s unused bit(s)' % (cls.__name__, padding)
+            )
+
         value = SizedInteger(int.from_bytes(bytes(value), 'big') >> padding).setBitLength(len(value) * 8 - padding)
 
         if prepend is not None:

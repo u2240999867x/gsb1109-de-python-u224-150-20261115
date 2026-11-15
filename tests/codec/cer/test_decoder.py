@@ -49,16 +49,42 @@ class BitStringDecoderTestCase(BaseTestCase):
             bytes((3, 127, 6) + (170,) * 125 + (128,))
         ) == (((1, 0) * 501), b'')
 
-    def testChunkedWithIntermediatePadding(self):
-        fragments = b'\x03\x02\x03\x10\x03\x02\x00\xa5'
-        expected = univ.BitString(binValue='0001010100101')
+    def testChunkedReassemblyPreservesAllBits(self):
+        # Non-final fragments are octet-aligned; the final fragment ends
+        # mid-octet with zero padding. All significant bits, including leading
+        # and trailing zeros, must round-trip.
+        fragments = b'\x03\x02\x00\x15\x03\x02\x01\x80'
+        expected = univ.BitString(binValue='000101011000000')
 
         for substrate in (b'\x23\x08' + fragments,
                           b'\x23\x80' + fragments + b'\x00\x00'):
             value, rest = decoder.decode(substrate, asn1Spec=univ.BitString())
             assert value == expected
+            assert value.asBinary() == expected.asBinary()
             assert len(value) == len(expected)
             assert rest == b''
+
+    def testNonFinalFragmentUnusedBitsRejected(self):
+        # Fragment 0 ends mid-octet although fragment 1 follows it.
+        fragments = b'\x03\x02\x03\x10\x03\x02\x00\xa5'
+        for substrate in (b'\x23\x08' + fragments,
+                          b'\x23\x80' + fragments + b'\x00\x00'):
+            try:
+                decoder.decode(substrate, asn1Spec=univ.BitString())
+            except PyAsn1Error as exc:
+                assert 'fragment 0' in str(exc)
+            else:
+                assert 0, 'non-final fragment with unused bits tolerated'
+
+    def testNonZeroPaddingRejected(self):
+        # The final fragment sets its single unused padding bit.
+        fragments = b'\x03\x02\x00\xa9\x03\x02\x01\x8b'
+        try:
+            decoder.decode(b'\x23\x08' + fragments, asn1Spec=univ.BitString())
+        except PyAsn1Error as exc:
+            assert 'fragment 1' in str(exc)
+        else:
+            assert 0, 'non-zero padding bits tolerated'
 
     # TODO: test failures on short chunked and long unchunked substrate samples
 

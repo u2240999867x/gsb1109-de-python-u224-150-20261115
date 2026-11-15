@@ -440,6 +440,37 @@ class BitStringTestCase(BaseTestCase):
 
         assert BitString('11000000011001').asInteger() == 12313
 
+    def testFromOctetStringPreservesZeros(self):
+        # Significant leading and trailing zeros survive the conversion.
+        value = univ.BitString.fromOctetString(b'\x0f')
+        assert value.asBinary() == '00001111'
+
+        value = univ.BitString.fromOctetString(b'\x08', padding=2)
+        assert value.asBinary() == '000010'
+        assert len(value) == 6
+
+    def testFromOctetStringEmpty(self):
+        value = univ.BitString.fromOctetString(b'')
+        assert len(value) == 0
+        assert value == univ.BitString(())
+
+    def testFromOctetStringBadPadding(self):
+        for padding in (-1, 8, 9):
+            try:
+                univ.BitString.fromOctetString(b'\x00', padding=padding)
+            except error.PyAsn1Error:
+                pass
+            else:
+                assert 0, 'padding %s tolerated' % padding
+
+    def testFromOctetStringEmptyWithPadding(self):
+        try:
+            univ.BitString.fromOctetString(b'', padding=1)
+        except error.PyAsn1Error:
+            pass
+        else:
+            assert 0, 'empty bit string with padding tolerated'
+
 
 class BitStringPicklingTestCase(unittest.TestCase):
 

@@ -45,14 +45,49 @@ class BitStringDecoderTestCase(BaseTestCase):
         else:
             assert 0, 'chunked encoding tolerated'
 
-    def testSchemaDrivenChunkedWithIntermediatePadding(self):
-        fragments = b'\x03\x02\x03\x10\x03\x02\x00\xa5'
+    def testSchemaDrivenChunkedReassembly(self):
+        # Non-final fragments are octet-aligned; the final fragment ends
+        # mid-octet with zero padding.
+        fragments = b'\x03\x02\x00\xa9\x03\x02\x01\x80'
         value, rest = decoder.decode(b'\x23\x08' + fragments,
                                      asn1Spec=univ.BitString())
 
-        assert value == univ.BitString(binValue='0001010100101')
-        assert len(value) == 13
+        assert value == univ.BitString(binValue='101010011000000')
+        assert len(value) == 15
         assert rest == b''
+
+    def testSchemaDrivenNonFinalFragmentUnusedBitsRejected(self):
+        # Fragment 0 ends mid-octet although fragment 1 follows it; the
+        # offending fragment index must appear in the error.
+        fragments = b'\x03\x02\x03\x10\x03\x02\x00\xa5'
+        try:
+            decoder.decode(b'\x23\x08' + fragments, asn1Spec=univ.BitString())
+        except PyAsn1Error as exc:
+            assert 'fragment 0' in str(exc)
+        else:
+            assert 0, 'non-final fragment with unused bits tolerated'
+
+    def testSchemaDrivenNonZeroPaddingRejected(self):
+        fragments = b'\x03\x02\x00\xa9\x03\x02\x01\x8b'
+        try:
+            decoder.decode(b'\x23\x08' + fragments, asn1Spec=univ.BitString())
+        except PyAsn1Error as exc:
+            assert 'fragment 1' in str(exc)
+        else:
+            assert 0, 'non-zero padding bits tolerated'
+
+    def testEmptyBitString(self):
+        value, rest = decoder.decode(b'\x03\x00')
+        assert len(value) == 0
+        assert rest == b''
+
+    def testPrimitiveNonZeroPaddingRejected(self):
+        try:
+            decoder.decode(b'\x03\x02\x01\x01')
+        except PyAsn1Error:
+            pass
+        else:
+            assert 0, 'non-zero primitive padding bits tolerated'
 
 
 class OctetStringDecoderTestCase(BaseTestCase):

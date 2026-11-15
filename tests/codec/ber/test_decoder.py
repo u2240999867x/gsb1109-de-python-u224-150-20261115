@@ -168,18 +168,100 @@ class BitStringDecoderTestCase(BaseTestCase):
             bytes((35, 128, 3, 2, 0, 169, 3, 2, 1, 138, 0, 0))
         ) == ((1, 0, 1, 0, 1, 0, 0, 1, 1, 0, 0, 0, 1, 0, 1), b'')
 
-    def testChunkedWithIntermediatePadding(self):
-        fragments = (b'\x03\x02\x03\x10' + b'\x03\x01\x00' +
-                     b'\x03\x02\x05\xa0' + b'\x03\x02\x01\x81')
-        expected = univ.BitString(binValue='000101011000000')
+    def testChunkedReassemblyPreservesAllBits(self):
+        # Every decoded bit, including leading and trailing significant zeros,
+        # must survive constructed-form reassembly. Non-final fragments are
+        # octet-aligned; only the final fragment may end mid-octet.
+        fragments = (b'\x03\x02\x00\x15' +  # 00010101, leading zeros kept
+                     b'\x03\x02\x00\xa9' +  # 10101001
+                     b'\x03\x02\x01\x80')   # 1000000, final 7-bit fragment
+        expected = univ.BitString(binValue='00010101101010011000000')
 
         for substrate in (b'\x23' + encode_length(len(fragments)) + fragments,
                           b'\x23\x80' + fragments + b'\x00\x00'):
             for asn1Spec in (None, univ.BitString()):
                 value, rest = decoder.decode(substrate, asn1Spec=asn1Spec)
                 assert value == expected
+                assert value.asBinary() == expected.asBinary()
                 assert len(value) == len(expected)
                 assert rest == b''
+
+    def testLeadingAndTrailingZerosPreserved(self):
+        # 00 0F -> 00001111 keeps the four leading significant zeros
+        leading, _ = decoder.decode(b'\x03\x02\x00\x0f')
+        assert leading.asBinary() == '00001111'
+        assert len(leading) == 8
+
+        # 02 08 -> six significant bits 000010, trailing significant zero and
+        # zero padding both retained
+        trailing, _ = decoder.decode(b'\x03\x02\x02\x08')
+        assert trailing.asBinary() == '000010'
+        assert len(trailing) == 6
+
+    def testEmptyBitString(self):
+        for substrate in (b'\x03\x00', b'\x23\x00', b'\x23\x80\x00\x00'):
+            value, rest = decoder.decode(substrate)
+            assert len(value) == 0
+            assert value == univ.BitString(())
+            assert rest == b''
+
+        # An empty inner fragment (unused-bits octet only, value 0) is legal
+        # and contributes no bits.
+        value, rest = decoder.decode(b'\x23\x06\x03\x01\x00\x03\x01\x00')
+        assert len(value) == 0
+        assert rest == b''
+
+    def testPrimitiveNonZeroPaddingRejected(self):
+        try:
+            decoder.decode(b'\x03\x02\x01\x01')
+        except error.PyAsn1Error:
+            pass
+        else:
+            assert 0, 'non-zero primitive padding bits tolerated'
+
+    def testNonFinalFragmentUnusedBitsRejected(self):
+        # Fragment 0 ends mid-octet (3 unused bits) although another fragment
+        # follows it; the error must name the offending fragment.
+        for substrate in (b'\x23\x08\x03\x02\x03\x10\x03\x02\x00\xa5',
+                          b'\x23\x80\x03\x02\x03\x10\x03\x02\x00\xa5\x00\x00'):
+            try:
+                decoder.decode(substrate)
+            except error.PyAsn1Error as exc:
+                assert 'fragment 0' in str(exc)
+            else:
+                assert 0, 'non-final fragment with unused bits tolerated'
+
+    def testNonFinalFragmentNonZeroPaddingRejected(self):
+        # Fragment 0 declares 3 unused bits and sets them (0x11 low bits 001).
+        for substrate in (b'\x23\x08\x03\x02\x03\x11\x03\x02\x00\xa5',
+                          b'\x23\x80\x03\x02\x03\x11\x03\x02\x00\xa5\x00\x00'):
+            try:
+                decoder.decode(substrate)
+            except error.PyAsn1Error as exc:
+                assert 'fragment 0' in str(exc)
+            else:
+                assert 0, 'non-zero non-final padding bits tolerated'
+
+    def testFinalFragmentNonZeroPaddingRejected(self):
+        # Final fragment 1 declares one unused bit and sets it (0x8B).
+        for substrate in (b'\x23\x08\x03\x02\x00\xa9\x03\x02\x01\x8b',
+                          b'\x23\x80\x03\x02\x00\xa9\x03\x02\x01\x8b\x00\x00'):
+            try:
+                decoder.decode(substrate)
+            except error.PyAsn1Error as exc:
+                assert 'fragment 1' in str(exc)
+            else:
+                assert 0, 'non-zero final padding bits tolerated'
+
+    def testEmptyFragmentWithUnusedBitsRejected(self):
+        # Fragment 0 has an unused-bits octet but no content octet.
+        substrate = b'\x23\x06\x03\x01\x03\x03\x02\x00\xa5'
+        try:
+            decoder.decode(substrate)
+        except error.PyAsn1Error as exc:
+            assert 'fragment 0' in str(exc)
+        else:
+            assert 0, 'content-less fragment with unused bits tolerated'
 
     def testManyDefModeFragments(self):
         fragments = b'\x03\x02\x00\x81' * 256
