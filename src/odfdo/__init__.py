@@ -174,6 +174,7 @@ __all__ = [  # noqa: RUF022
     "SizeMix",
     "Spacer",
     "Span",
+    "SpanInfo",
     "Spreadsheet",
     "Style",
     "StyleFooter",
@@ -421,6 +422,7 @@ from .styles import Styles
 from .svg import SvgDescription, SvgMixin, SvgTitle
 from .tab import Tab
 from .table import Table
+from .table_span import SpanInfo
 from .toc import (
     TOC,
     IndexBody,

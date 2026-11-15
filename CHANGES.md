@@ -1,5 +1,23 @@
 # Odfdo Release Notes
 
+## Unreleased
+
+### Added
+
+-   Added span (merged cells) export helpers to `Table`:
+    -   `Table.get_spans()` returns the list of spanned areas as `SpanInfo`
+        objects, each exposing the anchor cell range, the covered cells and
+        the actual anchor value.
+    -   `Table.get_span_coverage()` maps every covered cell coordinates to
+        the coordinates of its anchor cell.
+    -   `Table.get_span_anchor()` locates the anchor cell of a covered cell,
+        so a selection limited to covered cells still resolves to the
+        original master cell.
+    -   `Table.get_spanned_values()` exports a value matrix with only master
+        cells carrying a value (safe for summation), or with covered cells
+        filled with the anchor value for display (`fill=True`).
+-   Exported the new `SpanInfo` dataclass.
+
 ## [3.27.3] - 2026-10-24
 
 -   Improve the filter for parasite files (`.DS_Store` and others) when savving the document.

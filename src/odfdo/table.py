@@ -56,6 +56,7 @@ from .office_forms import OfficeFormsMixin
 from .row import Row
 from .table_cache import _XP_COLUMN_IDX, _XP_ROW_IDX, TableCache
 from .table_serializer import serialize_table
+from .table_span import SpanInfo, scan_spans
 from .utils import (
     NameUnifyer,
     convert_coordinates,
@@ -3099,6 +3100,116 @@ class Table(MDTable, FormMixin, OfficeFormsMixin, Element):
         # replace cells in table
         self.set_cells(cells, coord=start, clone=False)
         return True
+
+    def get_spans(self) -> list[SpanInfo]:
+        """List the spanned (merged) areas of the table.
+
+        Each returned `SpanInfo` describes one anchor cell (the "master"
+        cell holding the actual value), its full area, the covered cells
+        hidden behind it and its actual value.
+
+        Returns:
+            list[SpanInfo]: One entry per spanned area, in reading order.
+
+        """
+        anchors, _covered_map = scan_spans(self)
+        return anchors
+
+    def get_span_coverage(self) -> dict[tuple[int, int], tuple[int, int]]:
+        """Map every covered cell to its anchor cell.
+
+        The keys are the 0-based (column, row) coordinates of covered
+        cells; the values are the coordinates of the anchor cell of the
+        spanned area. Anchor cells themselves are not part of the mapping.
+
+        Returns:
+            dict[tuple[int, int], tuple[int, int]]: The coverage mapping.
+
+        """
+        _anchors, covered_map = scan_spans(self)
+        return covered_map
+
+    def get_span_anchor(
+        self,
+        coord: tuple | list | str,
+    ) -> tuple[int, int] | None:
+        """Return the anchor cell coordinates governing a given cell.
+
+        If `coord` points to a covered cell, the coordinates of its anchor
+        cell are returned. If it points to an anchor cell, its own
+        coordinates are returned. Otherwise, None is returned.
+
+        Args:
+            coord: The cell coordinates (e.g., "C4" or (2, 3)).
+
+        Returns:
+            tuple[int, int] | None: The 0-based (column, row) coordinates
+            of the anchor cell, or None if the cell is not spanned.
+
+        """
+        x, y = self._translate_cell_coordinates(coord)
+        if x is None or y is None:
+            raise ValueError
+        position = (x, y)
+        anchors, covered_map = scan_spans(self)
+        anchor = covered_map.get(position)
+        if anchor is not None:
+            return anchor
+        anchor_positions = {span.anchor for span in anchors}
+        if position in anchor_positions:
+            return position
+        return None
+
+    def get_spanned_values(
+        self,
+        coord: tuple | list | str | None = None,
+        *,
+        fill: bool = False,
+    ) -> list[list[CellValue | None]]:
+        """Export the values of a table area, aware of spanned cells.
+
+        With `fill=False` (default), only anchor cells carry a value and
+        every covered cell is None: the export contains one value per real
+        record, so summing the matrix never counts a merged value several
+        times. With `fill=True`, covered cells display the value of their
+        anchor, as a spreadsheet renders the merge. The filled values are
+        display duplicates and must not be used for aggregation.
+
+        Args:
+            coord: The coordinates of the area to parse (e.g., "A1:C3").
+                If None, the entire table is parsed.
+            fill: If True, fill covered cells with the anchor value.
+                Defaults to False.
+
+        Returns:
+            list[list[CellValue | None]]: A matrix of Python values.
+
+        """
+        values = self.get_values(coord)
+        if not fill:
+            return values
+        if coord:
+            x, y, _z, _t = self._translate_table_coordinates(coord)
+            offset_x = x or 0
+            offset_y = y or 0
+        else:
+            offset_x = 0
+            offset_y = 0
+        anchors, covered_map = scan_spans(self)
+        anchor_values = {span.anchor: span.value for span in anchors}
+        for position, anchor in covered_map.items():
+            col, row = position
+            local_col = col - offset_x
+            local_row = row - offset_y
+            if local_row < 0 or local_col < 0:
+                continue
+            if local_row >= len(values):
+                continue
+            row_values = values[local_row]
+            if local_col >= len(row_values):
+                continue
+            row_values[local_col] = anchor_values.get(anchor)
+        return values
 
     #
     # Import/export API
