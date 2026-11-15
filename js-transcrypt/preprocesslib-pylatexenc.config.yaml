@@ -12,6 +12,7 @@ module_list:
   - 'pylatexenc.latexwalker'
   - 'pylatexenc.latexencode'
   - 'pylatexenc.latex2text'
+  - 'pylatexenc.latex2text._ruleprofiles'
   - 'pylatexenc.latex2text._get_defaultspecs'
   - 'pylatexenc.latexwalker._get_defaultspecs'
   - 'pylatexenc.latexencode.get_builtin_rules'

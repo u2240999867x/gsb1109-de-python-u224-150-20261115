@@ -2057,6 +2057,14 @@ from ._get_defaultspecs import get_default_latex_context_db
 ### END_PYLATEXENC_GET_DEFAULT_SPECS_FN
 
 
+from ._ruleprofiles import (
+    RuleProfile,
+    RuleProfileDb,
+    RuleResolution,
+    ShadowedRule,
+)
+
+
 
 
 

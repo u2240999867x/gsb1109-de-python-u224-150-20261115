@@ -135,6 +135,15 @@ The `latex2text` module was improved:
   and ``$\sum_{i=1}^n x_i$`` gives ``∑ᵢ₌₁ⁿ xᵢ``.  Same for ``\sqrt``, which
   gives ``√`` and ``∛``.
 
+- Extraction rules can now be organized into named, prioritized groups with the
+  new :py:class:`RuleProfile` and :py:class:`RuleProfileDb` classes.  A profile
+  typically overrides only a handful of names and leaves the default rules in
+  place; macros, environments and specials stay three separate naming domains;
+  and disabling or removing a higher-priority profile restores the rule that
+  it used to shadow.  Each document builds its own context database from a
+  profile selection, so parallel documents do not share any state.  See
+  :doc:`latex2text` for a worked example.
+
 
 The `latexencode` module has barely changed.
 
