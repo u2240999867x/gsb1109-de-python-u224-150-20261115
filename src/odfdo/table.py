@@ -39,7 +39,11 @@ from warnings import warn
 
 from .cell import Cell
 from .column import Column
-from .const import BODY_ALLOW_NAMED_RANGE_TAGS, CellValue
+from .const import (
+    BODY_ALLOW_NAMED_RANGE_TAGS,
+    CellValue,
+    CellValueAndDisplay,
+)
 from .datatype import Boolean, Date, DateTime, Duration
 from .element import (
     Element,
@@ -1023,6 +1027,78 @@ class Table(MDTable, FormMixin, OfficeFormsMixin, Element):
                 else:
                     values.extend([None] * (width - len(values)))
             yield values
+
+    def iter_values_and_display(
+        self,
+        coord: tuple | list | str | None = None,
+    ) -> Iterator[list[CellValueAndDisplay]]:
+        """Yield rows of ``(typed value, display text)`` pairs.
+
+        Each yielded list contains one :meth:`Cell.get_value_and_display`
+        pair per cell of the row. The typed value and the display text are read
+        independently: the display text is never parsed to infer a type, so a
+        text shaped like a date, a time or a number keeps the type declared in
+        the cell.
+
+        Dates keep the exact wall-clock value stored in the file, without any
+        local timezone conversion. Durations keep their sign and their full
+        length, including negative and multi-day (cross-day) durations. Empty
+        cells are reported as ``(None, None)``.
+
+        Args:
+            coord: Optional coordinates of the area to parse (e.g.,
+                ``"A1:C3"`` or ``(0, 0, 2, 2)``). If None, the whole table is
+                parsed.
+
+        Yields:
+            list[tuple[CellValue | None, str | None]]: One row at a time, each
+                cell being a ``(typed value, display text)`` pair.
+
+        """
+        if coord:
+            x, y, z, t = self._translate_table_coordinates(coord)
+            row_coord = (x, z)
+        else:
+            y = t = None
+            row_coord = None
+        for row in self.iter_rows(start=y, end=t):
+            yield row.get_values_and_display(row_coord)
+
+    def get_values_and_display(
+        self,
+        coord: tuple | list | str | None = None,
+    ) -> list[list[CellValueAndDisplay]]:
+        """Return a matrix of ``(typed value, display text)`` pairs.
+
+        This is the eager counterpart of :meth:`iter_values_and_display`,
+        meant for warehouse ingestion where each source column lands in two
+        target columns: one holding the real typed value and one holding the
+        source display text.
+
+        Args:
+            coord: Optional coordinates of the area to parse (e.g.,
+                ``"A1:C3"`` or ``(0, 0, 2, 2)``). If None, the whole table is
+                parsed.
+
+        Returns:
+            list[list[tuple[CellValue | None, str | None]]]: A 2D matrix where
+                each cell is a ``(typed value, display text)`` pair.
+
+        """
+        return list(self.iter_values_and_display(coord=coord))
+
+    @property
+    def values_and_display(self) -> list[list[CellValueAndDisplay]]:
+        """Matrix of ``(typed value, display text)`` pairs of the table.
+
+        See :meth:`get_values_and_display` for the semantics of each pair.
+
+        Returns:
+            list[list[tuple[CellValue | None, str | None]]]: A 2D matrix where
+                each cell is a ``(typed value, display text)`` pair.
+
+        """
+        return self.get_values_and_display()
 
     def set_values(
         self,

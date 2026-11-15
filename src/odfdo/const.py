@@ -37,6 +37,21 @@ MAX_MD_COLUMNS: int = 8048
 CellValue = str | bytes | bool | int | float | Decimal | date | datetime | timedelta
 """Union of Python types accepted as a cell value."""
 
+CellDisplay = str | None
+"""Display value of a cell: the human-readable text shown by the spreadsheet
+(an empty string for an empty cell), or ``None`` when the cell has no display
+text at all.
+
+The display text reflects the source application formatting and may differ
+from the canonical representation of the typed :data:`CellValue`. It must
+never be used to infer the cell type: a text that merely looks like a date or
+a number is not necessarily one."""
+
+CellValueAndDisplay = tuple[CellValue | None, CellDisplay]
+"""Pair of ``(typed value, display value)`` for a cell, as needed when
+loading a spreadsheet into a warehouse that keeps both the real typed value
+and its source display text."""
+
 ODF_TEMPLATES = {
     "text": "text.ott",
     "texte": "text.ott",

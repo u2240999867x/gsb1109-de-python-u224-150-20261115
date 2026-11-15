@@ -46,7 +46,7 @@ _int = builtins.int
 _float = builtins.float
 _bool = builtins.bool
 if TYPE_CHECKING:
-    from .const import CellValue
+    from .const import CellDisplay, CellValue, CellValueAndDisplay
     from .style import Style
 
 
@@ -227,6 +227,55 @@ class Cell(ListMixin, TocMixin, SectionMixin, AnnotationMixin, ElementTyped):
             case _:
                 msg = f"Unknown value type, try with set_value() : {value!r}"
                 raise TypeError(msg)
+
+    @property
+    def display_value(self) -> CellDisplay:
+        """Return the display text of the cell as written by the source
+        application.
+
+        The display value is the human-readable text stored in the cell
+        paragraphs, i.e. the content actually shown in the spreadsheet. It is
+        independent of the typed :attr:`value`: a single number, date, time or
+        duration can be displayed in several ways (decimal separator,
+        currency symbol, localized date format, ...) while keeping one
+        canonical typed value.
+
+        The display text is never parsed to guess a type. A string that merely
+        looks like a date or a number stays a string; use :attr:`type` and
+        :attr:`value` for the real, type-driven content.
+
+        Returns:
+            str | None: The concatenated text of the cell paragraphs. Returns
+                an empty string for a cell with an empty paragraph and ``None``
+                when the cell has no paragraph at all (e.g. an empty cell).
+
+        """
+        paragraphs = self.get_elements("text:p")
+        if not paragraphs:
+            return None
+        return "\n".join(para.inner_text for para in paragraphs)
+
+    def get_value_and_display(self) -> CellValueAndDisplay:
+        """Return both the real typed value and the source display text.
+
+        The first item is the Python value inferred from the
+        ``office:value-type`` attribute (see :attr:`value`); the second item is
+        the display text stored in the cell paragraphs (see
+        :attr:`display_value`). Both are read independently: the display text
+        is never used to determine the type, so a text shaped like a date or a
+        number does not turn the cell into that type.
+
+        Dates and date-times keep the exact wall-clock value stored in the
+        file, without any local timezone conversion. Durations keep their sign
+        and their full length, including negative and multi-day (cross-day)
+        durations.
+
+        Returns:
+            tuple[CellValue | None, str | None]: The ``(typed value, display
+                text)`` pair.
+
+        """
+        return self.value, self.display_value
 
     @property
     def _bool_string(self) -> str:

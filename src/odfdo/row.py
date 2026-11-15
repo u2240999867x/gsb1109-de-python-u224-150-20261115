@@ -43,7 +43,7 @@ if TYPE_CHECKING:
 
     from lxml.etree import XPath  # ty: ignore[unresolved-import]
 
-    from .const import CellValue
+    from .const import CellValue, CellValueAndDisplay
     from .style import Style
 
 
@@ -689,6 +689,41 @@ class Row(Element):
             for cell in self.iter_cells(start=x, end=z)
         ]
 
+    def get_values_and_display(
+        self,
+        coord: str | tuple | None = None,
+    ) -> list[CellValueAndDisplay]:
+        """Return, for each cell of the row, its real typed value and its
+        source display text.
+
+        Each item is a ``(value, display_value)`` pair as returned by
+        :meth:`Cell.get_value_and_display`. The typed value and the display
+        text are read independently: the display text is never parsed to infer
+        a type, so a text shaped like a date, a time or a number keeps the
+        type declared in the cell. Dates keep their wall-clock value without
+        local timezone conversion, and durations keep their sign and full
+        length (including negative and cross-day durations).
+
+        Empty cells are included as ``(None, None)`` so the length of the
+        returned list matches the row width.
+
+        Args:
+            coord: Optional coordinates restricting the parsed area of the
+                row.
+
+        Returns:
+            list[tuple[CellValue | None, str | None]]: One
+                ``(typed value, display text)`` pair per cell.
+
+        """
+        if coord:
+            x, z = self._translate_row_coordinates(coord)
+        else:
+            x = z = None
+        return [
+            cell.get_value_and_display() for cell in self.iter_cells(start=x, end=z)
+        ]
+
     def get_sub_elements(
         self,
     ) -> list[list[Element]]:
@@ -838,6 +873,21 @@ class Row(Element):
     @values.setter
     def values(self, values: Iterable[CellValue | None]) -> None:
         self.set_values(values)
+
+    @property
+    def values_and_display(self) -> list[CellValueAndDisplay]:
+        """Get the list of ``(typed value, display text)`` pairs of the row.
+
+        See :meth:`get_values_and_display` for the semantics of each pair.
+        Empty cells are reported as ``(None, None)`` and the list length equals
+        the row width.
+
+        Returns:
+            list[tuple[CellValue | None, str | None]]: One
+                ``(typed value, display text)`` pair per cell.
+
+        """
+        return self.get_values_and_display()
 
     def rstrip(self, aggressive: bool = False) -> None:
         """Remove empty cells at the right of the row, in-place.
