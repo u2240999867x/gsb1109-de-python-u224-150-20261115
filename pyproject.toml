@@ -54,6 +54,7 @@ test = [
 [project.scripts]
 evtx_dump = "evtx_scripts.evtx_dump:main"
 evtx_dump_json = "evtx_scripts.evtx_dump_json:main"
+evtx_anonymize = "evtx_scripts.evtx_anonymize:main"
 evtx_dump_chunk_slack = "evtx_scripts.evtx_dump_chunk_slack:main"
 evtx_eid_record_numbers = "evtx_scripts.evtx_eid_record_numbers:main"
 evtx_extract_record = "evtx_scripts.evtx_extract_record:main"

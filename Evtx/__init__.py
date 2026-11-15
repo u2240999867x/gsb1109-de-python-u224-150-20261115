@@ -16,6 +16,7 @@
 #   limitations under the License.
 __all__ = [
     "Evtx",
+    "Anonymize",
     "BinaryParser",
     "Nodes",
     "Views",

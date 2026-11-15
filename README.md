@@ -41,6 +41,50 @@ Note the length of the `evtx_dump.py` script: its only 20 lines.  Now, review th
 
 Working with python-evtx is really easy!
 
+Anonymizing events
+------------------
+`evtx_anonymize.py` (also `Evtx.Anonymize`) exports events after replacing only
+the user identifiers selected by an explicit path policy. It is not a text
+search: the same string in an unselected field, such as `Provider/@Name`,
+`Computer` or another `Data` entry, is left untouched. A sample policy:
+
+```json
+{
+  "namespaces": {"e": "http://schemas.microsoft.com/win/2004/08/events/event"},
+  "paths": [
+    "/e:Event/e:System/e:Security/@UserID",
+    "/e:Event/e:EventData/e:Data[@Name='SubjectUserName']/text()",
+    "/e:Event/e:EventData/e:Data[@Name='TargetUserName']/text()"
+  ],
+  "mapping": {"S-1-5-18": "USER-0001", "SYSTEM": "USER-0001"}
+}
+```
+
+```console
+evtx_anonymize security.evtx --policy policy.json -o events.json
+evtx_anonymize security.evtx --path "/Event/System/Security/@UserID" -o events.xml
+```
+
+Paths support a small XPath subset: element and `@attribute` steps, `text()`,
+an element's own text, `//` descendants, `*` wildcards, namespace prefixes and
+Clark notation (`{uri}name`), plus `[n]`, `[last()]`, `[position()=n]`,
+`[@name]`, `[@name='value']` and `[text()='value']` predicates. Positions are
+per parent, so duplicate entries are addressed by occurrence rather than by
+value.
+
+The same identifier always receives the same pseudonym across events and
+selected paths. Unmapped values are replaced deterministically from a salted
+SHA-256 digest, so runs are reproducible without a state database. `mapping`
+may send several related originals (for example a SID and its account name) to
+one pseudonym, and `relations` groups can bind paths together. Note that
+`skip_values` defaults to `""` and `"-"` because these are sentinels, not
+identifiers; override it when they must be replaced too.
+
+The exporter verifies every event before writing: tags, attributes and child
+shape must be unchanged, so the result still parses and keeps the same
+structure. `xmltodict`-style JSON (`--format json` or `jsonl`) retains the full
+element hierarchy.
+
 
 Installation
 ------------
