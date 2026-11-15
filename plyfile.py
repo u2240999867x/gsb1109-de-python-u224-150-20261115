@@ -276,6 +276,298 @@ class PlyData(object):
         """
         return self._element_lookup[name]
 
+    def normalize_colors(self, elements=None, properties=None,
+                         source_units=None, target='uchar',
+                         ambiguous='error', clamp=False):
+        """
+        Return a copy with color properties normalized to one unit.
+
+        Only scalar color properties are touched.  Every other element,
+        property, comment, `obj_info` line, data type, field order and
+        value is carried over unchanged.  Custom element and property
+        names are preserved exactly.
+
+        Parameters
+        ----------
+        elements : iterable of str, optional
+            Element names to consider.  Defaults to all elements.
+        properties : mapping or iterable of (str, str), optional
+            Explicit ``(element, property)`` pairs to normalize.  By
+            default, properties named ``red``, ``green``, ``blue``,
+            ``alpha``, ``diffuse_*``, ``ambient_*``, ``specular_*`` or
+            ``emissive_*`` are considered.  Single-letter ``r``, ``g``,
+            ``b``, ``a`` are considered only when ``r``, ``g`` and ``b``
+            all occur in the same element.
+        source_units : str or mapping, optional
+            Unit of floating-point color values.  ``'unit'`` means the
+            range [0, 1]; ``'byte'`` means the range [0, 255].  This can
+            be a single string, a mapping from ``(element, property)``
+            pairs to units, or a nested mapping keyed by element and
+            property name.  Integer properties are always interpreted as
+            byte-range values.
+        target : {'uchar', 'float'}, optional
+            ``'uchar'`` (default) normalizes to 8-bit values in
+            [0, 255].  ``'float'`` normalizes to 32-bit values in
+            [0, 1].
+        ambiguous : {'error', 'unit', 'byte'}, optional
+            How to treat floating-point colors whose observed range is
+            compatible with both units (for example, only 0.0 and 1.0).
+            The default is to raise `AmbiguousColorUnitError`; pass
+            ``'unit'`` or ``'byte'`` to choose for the ambiguous group.
+        clamp : bool, optional
+            If True, clamp out-of-range values instead of raising
+            `PlyTransformError`.  The number of clamped values is
+            recorded in the conversion report.
+
+        Returns
+        -------
+        ColorNormalizationResult
+            The normalized `PlyData` and a tuple of `ColorConversion`
+            records describing every color property considered.
+
+        Notes
+        -----
+        Float colors are interpreted per element: fractional values in
+        (0, 1) mean unit-range, values above 1 mean byte-range, and an
+        element that mixes both is rejected.  Channels that contain only
+        0 and 1 are ambiguous.  All decisions, including an explicit
+        ``source_units`` override, are recorded per property in
+        ``conversions``.
+
+        Raises
+        ------
+        AmbiguousColorUnitError
+            If a floating-point unit cannot be determined safely.
+        PlyTransformError
+            If a color value has the wrong type or cannot be converted.
+        """
+        target_dtype, target_unit = _color_target(target)
+        if ambiguous not in ('error', 'unit', 'byte'):
+            raise ValueError("ambiguous must be 'error', 'unit' or "
+                             "'byte'")
+        selected = _select_color_properties(self, elements, properties)
+        conversions = []
+        new_elements = []
+
+        for elt in self.elements:
+            elt_props = [(prop, name) for (prop, name) in selected
+                         if name == elt.name]
+            if not elt_props:
+                new_elements.append(_clone_element(elt))
+                continue
+
+            elt_units = _infer_element_units(
+                elt, elt_props, source_units, ambiguous, clamp)
+
+            new_props = []
+            converted = {}
+            for prop in elt.properties:
+                pair = next(((p, n) for (p, n) in elt_props
+                             if p.name == prop.name), None)
+                if pair is None:
+                    new_props.append(_clone_property(prop))
+                    continue
+
+                if isinstance(prop, PlyListProperty):
+                    raise PlyTransformError(
+                        "color property %r of element %r is a list; "
+                        "only scalar colors can be normalized" %
+                        (prop.name, elt.name))
+
+                unit, unit_note = elt_units[prop.name]
+                new_values, conversion = _convert_color(
+                    elt.data[prop.name], prop.val_dtype, target_dtype,
+                    target_unit, unit, unit_note, clamp, elt.name,
+                    prop.name)
+                converted[prop.name] = new_values
+                conversions.append(conversion)
+
+                val_str = _data_type_reverse[
+                    _np.dtype(target_dtype).str[1:]]
+                new_props.append(PlyProperty(prop.name, val_str))
+
+            if not converted:
+                new_elements.append(_clone_element(elt))
+                continue
+
+            new_data = _copy_with_fields(elt.data, converted)
+            new_elt = PlyElement(elt.name, new_props, len(new_data),
+                                 elt.comments)
+            new_elt.data = new_data
+            new_elements.append(new_elt)
+
+        new_ply = PlyData(new_elements, text=self.text,
+                          byte_order=self.byte_order,
+                          comments=self.comments, obj_info=self.obj_info)
+        return ColorNormalizationResult(new_ply, tuple(conversions))
+
+    def audit_vertex_references(self, vertex_element='vertex'):
+        """
+        Report properties that appear to reference rows of an element.
+
+        A list property of integer type is reported when all of its
+        values are valid row indices, even if its name does not mention
+        vertices; this is how unknown vendor elements are detected.
+        Scalar integer properties are reported only when their names
+        look like vertex references, since arbitrary small integers are
+        too common to infer from data alone.
+
+        Parameters
+        ----------
+        vertex_element : str, optional
+            Name of the referenced element (default ``'vertex'``).
+
+        Returns
+        -------
+        tuple of VertexReference
+        """
+        return _audit_vertex_references(self, vertex_element)
+
+    def reindex_vertices(self, order, reference_rules=(),
+                         vertex_element='vertex', strict=True):
+        """
+        Reorder rows of a vertex element and remap index references.
+
+        ``order`` uses NumPy fancy-indexing semantics: row ``k`` of the
+        result is row ``order[k]`` of the input.  Every property that may
+        reference a vertex row must have an explicit
+        `VertexReferenceRule`; otherwise this method refuses to claim
+        that the file can be reordered safely.  In particular, a vendor
+        element whose integer list happens to contain valid vertex
+        indices is not silently rewritten.
+
+        Only the vertex data and properties named by rules are changed.
+        All other data types, field orders and values, as well as all
+        comments and `obj_info` lines, are preserved.
+
+        Parameters
+        ----------
+        order : sequence of int
+            A permutation of ``range(len(vertices))``.
+        reference_rules : iterable of VertexReferenceRule or mapping, optional
+            Rules for properties that reference vertices.  A mapping of
+            ``(element, property)`` pairs (or nested element mappings) to
+            a target element name is also accepted.  Use
+            ``VertexReferenceRule(..., ignore=True)`` to state that a
+            candidate property is not a reference.
+        vertex_element : str, optional
+            Name of the element whose rows are reordered.
+        strict : bool, optional
+            If True (default), raise `UnsafeVertexReorderError` when any
+            candidate reference has no rule.  If False, return a result
+            with ``safe=False`` and leave those properties untouched.
+
+        Returns
+        -------
+        VertexReorderResult
+
+        Raises
+        ------
+        UnsafeVertexReorderError
+            If a candidate reference has no explicit rule and `strict`
+            is True.
+        PlyTransformError
+            If a rule is invalid or an index is out of range.
+        ValueError
+            If `order` is not a permutation.
+        """
+        target = self[vertex_element]
+        n = len(target)
+        order_arr = _validate_order(order, n)
+        inverse = _inverse_order(order_arr)
+
+        rules = _coerce_reference_rules(reference_rules)
+        rule_map = {}
+        for rule in rules:
+            if rule.target != vertex_element:
+                raise PlyTransformError(
+                    "reference rule %r targets %r, but this operation "
+                    "only reindexes %r" %
+                    (rule, rule.target, vertex_element))
+            key = (rule.element, rule.property)
+            if key in rule_map:
+                raise PlyTransformError("duplicate reference rule for "
+                                        "%r.%r" % key)
+            if rule.element not in self:
+                raise PlyTransformError(
+                    "reference rule names unknown element %r" %
+                    rule.element)
+            elt = self[rule.element]
+            if rule.property not in elt:
+                raise PlyTransformError(
+                    "reference rule names unknown property %r on "
+                    "element %r" % (rule.property, rule.element))
+            if not rule.ignore:
+                prop = elt.ply_property(rule.property)
+                _check_rule_kind(rule, prop)
+            rule_map[key] = rule
+
+        # Conventional "face.vertex_indices" links are the only
+        # references migrated without a caller-provided rule.  Any
+        # vendor element, non-standard property name or unfamiliar
+        # integer list needs an explicit rule.
+        standard = []
+        for rule in STANDARD_VERTEX_REFERENCE_RULES:
+            if rule.target != vertex_element or rule.element not in self:
+                continue
+            elt = self[rule.element]
+            if rule.property not in elt:
+                continue
+            prop = elt.ply_property(rule.property)
+            if not isinstance(prop, PlyListProperty):
+                continue
+            if (rule.element, rule.property) not in rule_map:
+                standard.append(rule)
+        standard_keys = set((r.element, r.property) for r in standard)
+
+        candidates = _audit_vertex_references(self, vertex_element)
+        unresolved = tuple(
+            c for c in candidates
+            if (c.element, c.property) not in rule_map and
+            (c.element, c.property) not in standard_keys)
+        if unresolved and strict:
+            raise UnsafeVertexReorderError(unresolved, vertex_element)
+
+        applied = tuple(standard) + tuple(
+            rule for rule in rules if not rule.ignore)
+
+        new_elements = []
+        for elt in self.elements:
+            elt_rules = [r for r in applied if r.element == elt.name]
+            if elt.name == vertex_element:
+                new_data = elt.data[order_arr]
+                if elt_rules:
+                    new_data = _copy_structured(new_data)
+                    for rule in elt_rules:
+                        prop = elt.ply_property(rule.property)
+                        new_data[rule.property] = _remap_reference(
+                            elt.data[rule.property], prop, inverse, n,
+                            elt.name, rule.property)
+                new_elements.append(_element_with_data(elt, new_data))
+                continue
+
+            if not elt_rules:
+                new_elements.append(_clone_element(elt))
+                continue
+
+            new_data = _copy_structured(elt.data)
+            for rule in elt_rules:
+                prop = elt.ply_property(rule.property)
+                new_data[rule.property] = _remap_reference(
+                    elt.data[rule.property], prop, inverse, n,
+                    elt.name, rule.property)
+            new_elements.append(_element_with_data(elt, new_data))
+
+        new_ply = PlyData(new_elements, text=self.text,
+                          byte_order=self.byte_order,
+                          comments=self.comments, obj_info=self.obj_info)
+        ignored = tuple(r for r in rules if r.ignore)
+        return VertexReorderResult(
+            new_ply, safe=not unresolved, applied_rules=applied,
+            unresolved_references=unresolved,
+            ignored_references=ignored,
+            vertex_element=vertex_element)
+
     def __str__(self):
         return self.header
 
@@ -1104,6 +1396,272 @@ class PlyHeaderParseError(PlyParseError):
                  self.message, self.line))
 
 
+class AmbiguousColorUnitError(ValueError):
+    """
+    Raised when floating-point colors cannot be assigned a unit safely.
+
+    Attributes
+    ----------
+    element : str
+    property : str
+    values : tuple of float
+        The observed minimum and maximum values.
+    """
+
+    def __init__(self, element, property, values):
+        self.element = element
+        self.property = property
+        self.values = tuple(values)
+
+        ValueError.__init__(
+            self,
+            "color property %r of element %r has values in [%g, %g], "
+            "which is compatible with both unit and byte ranges; pass "
+            "source_units explicitly" %
+            (property, element, self.values[0], self.values[1]))
+
+
+class PlyTransformError(ValueError):
+    """
+    Raised when a transformation cannot be applied safely.
+    """
+
+    pass
+
+
+class UnsafeVertexReorderError(PlyTransformError):
+    """
+    Raised when vertex reordering has unclassified references.
+
+    Attributes
+    ----------
+    unresolved : tuple of VertexReference
+        Candidate references with no explicit rule.
+    vertex_element : str
+    """
+
+    def __init__(self, unresolved, vertex_element):
+        self.unresolved = tuple(unresolved)
+        self.vertex_element = vertex_element
+
+        details = ', '.join('%s.%s' % (r.element, r.property)
+                            for r in self.unresolved)
+        PlyTransformError.__init__(
+            self,
+            "cannot claim a safe reorder of %r: no explicit reference "
+            "rule for %s" % (vertex_element, details))
+
+
+class ColorConversion(object):
+    """
+    Provenance for one color property normalized by
+    `PlyData.normalize_colors`.
+
+    Attributes
+    ----------
+    element : str
+    property : str
+    source_dtype : str
+        PLY type name of the input property (for example ``'float'``).
+    target_dtype : str
+        PLY type name of the output property (for example ``'uchar'``).
+    source_unit : {'byte', 'unit'}
+        Interpretation of the input values.
+    target_unit : {'byte', 'unit'}
+        Interpretation of the output values.
+    scale : float
+        Multiplier applied to input values.
+    offset : float
+        Value added after scaling.
+    formula : str
+        Human-readable conversion formula.
+    source : str
+        Why the source unit was chosen.
+    clamped : int
+        Number of values clamped to the target range.
+
+    When the property is already in the target dtype and unit, `scale`
+    is 1, `offset` is 0 and no values are modified.
+    """
+
+    def __init__(self, element, property, source_dtype, target_dtype,
+                 source_unit, target_unit, scale, offset, formula,
+                 source, clamped):
+        self.element = element
+        self.property = property
+        self.source_dtype = source_dtype
+        self.target_dtype = target_dtype
+        self.source_unit = source_unit
+        self.target_unit = target_unit
+        self.scale = scale
+        self.offset = offset
+        self.formula = formula
+        self.source = source
+        self.clamped = clamped
+
+    def as_dict(self):
+        """
+        Return the conversion provenance as a plain dictionary.
+        """
+        return {
+            'element': self.element,
+            'property': self.property,
+            'source_dtype': self.source_dtype,
+            'target_dtype': self.target_dtype,
+            'source_unit': self.source_unit,
+            'target_unit': self.target_unit,
+            'scale': self.scale,
+            'offset': self.offset,
+            'formula': self.formula,
+            'source': self.source,
+            'clamped': self.clamped,
+        }
+
+    def __repr__(self):
+        return ('ColorConversion(%r, %r, source_dtype=%r, '
+                'target_dtype=%r, source_unit=%r, target_unit=%r, '
+                'formula=%r, source=%r)' %
+                (self.element, self.property, self.source_dtype,
+                 self.target_dtype, self.source_unit, self.target_unit,
+                 self.formula, self.source))
+
+
+class ColorNormalizationResult(object):
+    """
+    Result of `PlyData.normalize_colors`.
+
+    Attributes
+    ----------
+    plydata : PlyData
+        The normalized copy.
+    conversions : tuple of ColorConversion
+        Per-property conversion provenance, in element/property order.
+    """
+
+    def __init__(self, plydata, conversions):
+        self.plydata = plydata
+        self.conversions = tuple(conversions)
+
+    @property
+    def provenance(self):
+        """
+        Conversion provenance as a tuple of plain dictionaries.
+        """
+        return tuple(c.as_dict() for c in self.conversions)
+
+    def __repr__(self):
+        return ('ColorNormalizationResult(%r, conversions=%r)' %
+                (self.plydata, self.conversions))
+
+
+class VertexReference(object):
+    """
+    A property that may reference rows of a vertex-like element.
+
+    Attributes
+    ----------
+    element : str
+    property : str
+    reason : str
+        Why the property was flagged (``'name'`` or ``'values'``).
+    """
+
+    def __init__(self, element, property, reason):
+        self.element = element
+        self.property = property
+        self.reason = reason
+
+    def __repr__(self):
+        return ('VertexReference(%r, %r, reason=%r)' %
+                (self.element, self.property, self.reason))
+
+    def __eq__(self, other):
+        return (isinstance(other, VertexReference) and
+                (self.element, self.property, self.reason) ==
+                (other.element, other.property, other.reason))
+
+    def __hash__(self):
+        return hash((self.element, self.property, self.reason))
+
+
+class VertexReferenceRule(object):
+    """
+    Explicit rule for a property that references a vertex element.
+
+    Parameters
+    ----------
+    element : str
+    property : str
+    target : str, optional
+        Referenced element name (default ``'vertex'``).
+    kind : {'list', 'scalar'}, optional
+        Shape of the reference.  The default is inferred from the
+        property.
+    ignore : bool, optional
+        If True, state that the property is not a vertex reference and
+        must be left unchanged.
+    """
+
+    def __init__(self, element, property, target='vertex',
+                 kind=None, ignore=False):
+        self.element = element
+        self.property = property
+        self.target = target
+        self.kind = kind
+        self.ignore = ignore
+
+    def __repr__(self):
+        return ('VertexReferenceRule(%r, %r, target=%r, kind=%r, '
+                'ignore=%r)' %
+                (self.element, self.property, self.target, self.kind,
+                 self.ignore))
+
+    def __eq__(self, other):
+        return (isinstance(other, VertexReferenceRule) and
+                (self.element, self.property, self.target, self.kind,
+                 self.ignore) ==
+                (other.element, other.property, other.target, other.kind,
+                 other.ignore))
+
+    def __hash__(self):
+        return hash((self.element, self.property, self.target, self.kind,
+                     self.ignore))
+
+
+class VertexReorderResult(object):
+    """
+    Result of `PlyData.reindex_vertices`.
+
+    Attributes
+    ----------
+    plydata : PlyData
+        The transformed copy.
+    safe : bool
+        True only if every candidate reference had an explicit rule.
+    applied_rules : tuple of VertexReferenceRule
+    unresolved_references : tuple of VertexReference
+        Candidate references left untouched because `strict=False`.
+    ignored_references : tuple of VertexReferenceRule
+    vertex_element : str
+    """
+
+    def __init__(self, plydata, safe, applied_rules,
+                 unresolved_references, ignored_references,
+                 vertex_element):
+        self.plydata = plydata
+        self.safe = safe
+        self.applied_rules = tuple(applied_rules)
+        self.unresolved_references = tuple(unresolved_references)
+        self.ignored_references = tuple(ignored_references)
+        self.vertex_element = vertex_element
+
+    def __repr__(self):
+        return ('VertexReorderResult(safe=%r, applied_rules=%r, '
+                'unresolved_references=%r, ignored_references=%r)' %
+                (self.safe, self.applied_rules,
+                 self.unresolved_references, self.ignored_references))
+
+
 class _PlyHeaderParser(object):
     """
     Parser for PLY format header.
@@ -1400,6 +1958,485 @@ def _check_comments(comments):
                 raise ValueError("embedded newline in comment")
 
 
+_color_axis_names = ('red', 'green', 'blue', 'alpha')
+_color_prefixes = ('diffuse_', 'ambient_', 'specular_', 'emissive_')
+_color_targets = {
+    'uchar': ('u1', 'byte'),
+    'float': ('f4', 'unit'),
+}
+
+STANDARD_VERTEX_REFERENCE_RULES = (
+    VertexReferenceRule('face', 'vertex_indices', target='vertex',
+                        kind='list'),
+    VertexReferenceRule('face', 'vertex_index', target='vertex',
+                        kind='list'),
+)
+
+
+def _color_target(target):
+    if target not in _color_targets:
+        raise ValueError("target must be 'uchar' or 'float'")
+    return _color_targets[target]
+
+
+def _is_float_type(val_dtype):
+    return val_dtype in ('f4', 'f8')
+
+
+def _color_family(name):
+    """
+    Classify a property name as a color scalar.
+
+    Returns None for non-color names.
+    """
+    lowered = name.lower()
+    if lowered in _color_axis_names:
+        return lowered
+    for prefix in _color_prefixes:
+        if not lowered.startswith(prefix):
+            continue
+        suffix = lowered[len(prefix):]
+        if suffix in _color_axis_names or suffix in ('r', 'g', 'b', 'a'):
+            return prefix + suffix
+    return None
+
+
+def _select_color_properties(ply, elements, properties):
+    """
+    Resolve the set of (PlyProperty, element_name) pairs to normalize.
+    """
+    if elements is None:
+        names = [elt.name for elt in ply.elements]
+    elif isinstance(elements, str):
+        names = [elements]
+    else:
+        names = []
+        for name in elements:
+            if name not in ply:
+                raise ValueError("unknown element %r" % name)
+            names.append(name)
+    if elements is not None:
+        for name in names:
+            if name not in ply:
+                raise ValueError("unknown element %r" % name)
+
+    if properties is not None:
+        pairs = list(properties.items() if hasattr(properties, 'items')
+                     else properties)
+        selected = []
+        for element, name in pairs:
+            if element not in ply:
+                raise ValueError("unknown element %r" % element)
+            if element not in names:
+                continue
+            if name not in ply[element]:
+                raise ValueError("unknown property %r on element %r" %
+                                 (name, element))
+            selected.append((element, name))
+    else:
+        selected = []
+        for name in names:
+            elt = ply[name]
+            candidates = []
+            for prop in elt.properties:
+                if _color_family(prop.name) is not None:
+                    candidates.append(prop.name)
+            if all(short in elt for short in ('r', 'g', 'b')):
+                candidates.extend(short for short in ('r', 'g', 'b', 'a')
+                                  if short in elt)
+            for prop_name in candidates:
+                if prop_name not in elt:
+                    continue
+                selected.append((name, prop_name))
+
+    result = []
+    seen = set()
+    for element, name in selected:
+        if (element, name) in seen:
+            continue
+        seen.add((element, name))
+        result.append((ply[element].ply_property(name), element))
+    return result
+
+
+def _lookup_setting(setting, element, property):
+    if setting is None:
+        return None
+    if isinstance(setting, str):
+        return setting
+    if (element, property) in setting:
+        return setting[(element, property)]
+    try:
+        nested = setting[element]
+    except (KeyError, TypeError):
+        return None
+    if isinstance(nested, str):
+        return nested
+    try:
+        return nested[property]
+    except (KeyError, TypeError, IndexError):
+        return None
+
+
+def _conversion_formula(source_unit, target_unit):
+    if source_unit == 'byte' and target_unit == 'byte':
+        return 'identity (byte-range to byte-range)'
+    if source_unit == 'unit' and target_unit == 'byte':
+        return 'value * 255, rounded to nearest integer'
+    if source_unit == 'byte' and target_unit == 'unit':
+        return 'value / 255'
+    return 'identity (unit-range to unit-range)'
+
+
+def _infer_element_units(elt, elt_props, source_units, ambiguous, clamp):
+    """
+    Decide the source unit for every selected color property of one
+    element.
+
+    Floating-point channels in the same element are treated as one
+    unit system.  If any channel has a fractional value in (0, 1), the
+    group is unit-range; if any channel exceeds 1, it is byte-range.
+    Mixing both patterns is rejected rather than guessed.  Values that
+    are only 0 and 1 are genuinely ambiguous.
+
+    Returns a mapping from property name to (unit, explanation).
+    """
+    explicit = {}
+    for prop, _ in elt_props:
+        explicit[prop.name] = _lookup_setting(source_units, elt.name,
+                                              prop.name)
+
+    float_props = [prop for prop, _ in elt_props
+                   if not isinstance(prop, PlyListProperty) and
+                   _is_float_type(prop.val_dtype)]
+    has_fraction = False
+    has_above_one = False
+    has_values = False
+    for prop in float_props:
+        if explicit.get(prop.name) is not None:
+            continue
+        values = _np.asarray(elt.data[prop.name], dtype='f8')
+        if values.size == 0:
+            continue
+        has_values = True
+        if _np.isnan(values).any():
+            raise PlyTransformError(
+                "color property %r of element %r contains NaN" %
+                (prop.name, elt.name))
+        if (values < 0).any():
+            if not clamp:
+                raise PlyTransformError(
+                    "color property %r of element %r has negative "
+                    "values; only unit and byte ranges are supported "
+                    "(pass clamp=True to clamp them)" %
+                    (prop.name, elt.name))
+        if (values > 1.0).any():
+            has_above_one = True
+        if ((values > 0.0) & (values < 1.0)).any():
+            has_fraction = True
+
+    if has_above_one and has_fraction:
+        raise PlyTransformError(
+            "element %r mixes fractional color values with values above "
+            "1; pass source_units explicitly" % elt.name)
+    if has_above_one:
+        inferred = 'byte'
+        note = 'observed values above 1 in this element'
+    elif has_fraction:
+        inferred = 'unit'
+        note = 'observed fractional values in [0, 1]'
+    elif not has_values:
+        inferred = 'unit'
+        note = 'no values to inspect; assumed unit range'
+    else:
+        inferred = ambiguous
+        note = ('all floating-point colors in this element are 0 and/or '
+                '1, compatible with both units')
+
+    result = {}
+    for prop, _ in elt_props:
+        if isinstance(prop, PlyListProperty):
+            raise PlyTransformError(
+                "color property %r of element %r is a list; only scalar "
+                "colors can be normalized" % (prop.name, elt.name))
+        if not _is_float_type(prop.val_dtype):
+            result[prop.name] = (
+                'byte', 'integer properties are byte-range')
+            continue
+        if explicit.get(prop.name) is not None:
+            unit = explicit[prop.name]
+            if unit not in ('byte', 'unit'):
+                raise ValueError("source_units for %r.%r must be 'byte' "
+                                 "or 'unit'" % (elt.name, prop.name))
+            result[prop.name] = (unit, 'explicit source_units override')
+            continue
+        if inferred == 'error':
+            values = _np.asarray(elt.data[prop.name], dtype='f8')
+            raise AmbiguousColorUnitError(
+                elt.name, prop.name,
+                (float(values.min()) if values.size else 0.0,
+                 float(values.max()) if values.size else 0.0))
+        result[prop.name] = (inferred, note)
+    return result
+
+
+def _convert_color(values, source_dtype, target_dtype, target_unit,
+                   source_unit, source_note, clamp, element, property):
+    """
+    Convert one scalar color array and return (array, ColorConversion).
+    """
+    target_byte = target_unit == 'byte'
+    working = _np.asarray(values, dtype='f8')
+
+    if source_unit == 'unit' and target_unit == 'byte':
+        converted = working * 255.0
+    elif source_unit == 'byte' and target_unit == 'unit':
+        converted = working / 255.0
+    else:
+        converted = working.copy()
+
+    low, high = ((0.0, 255.0) if target_byte else (0.0, 1.0))
+    outside = (converted < low) | (converted > high)
+    clamped = int(_np.count_nonzero(outside))
+    if clamped:
+        if not clamp:
+            raise PlyTransformError(
+                "color property %r of element %r would need clamping to "
+                "[%g, %g]; pass clamp=True to allow it" %
+                (property, element, low, high))
+        converted = _np.clip(converted, low, high)
+
+    if target_byte:
+        result = _np.rint(converted).astype(_np.dtype(target_dtype))
+    else:
+        result = converted.astype(_np.dtype(target_dtype))
+
+    if source_unit == 'unit' and target_unit == 'byte':
+        scale, offset = 255.0, 0.0
+    elif source_unit == 'byte' and target_unit == 'unit':
+        scale, offset = 1.0 / 255.0, 0.0
+    else:
+        scale, offset = 1.0, 0.0
+
+    conversion = ColorConversion(
+        element, property, _data_type_reverse[source_dtype],
+        _data_type_reverse[target_dtype], source_unit, target_unit,
+        scale, offset, _conversion_formula(source_unit, target_unit),
+        source_note, clamped)
+    return result, conversion
+
+
+def _copy_with_fields(data, replacements):
+    """
+    Copy a structured array, replacing selected fields by name.
+    """
+    fields = []
+    for name in data.dtype.names:
+        if name in replacements:
+            fields.append((name, replacements[name].dtype))
+        else:
+            fields.append((name, data.dtype.fields[name][0]))
+    result = _np.empty(len(data), dtype=fields)
+    for name in data.dtype.names:
+        if name in replacements:
+            result[name] = replacements[name]
+        else:
+            result[name] = data[name]
+    return result
+
+
+def _copy_structured(data):
+    result = _np.empty(len(data), dtype=data.dtype)
+    result[:] = data
+    return result
+
+
+def _clone_property(prop):
+    if isinstance(prop, PlyListProperty):
+        return PlyListProperty(prop.name, prop.len_dtype, prop.val_dtype)
+    return PlyProperty(prop.name, prop.val_dtype)
+
+
+def _clone_properties(properties):
+    return tuple(_clone_property(prop) for prop in properties)
+
+
+def _clone_element(elt):
+    """
+    Copy an element and its array without touching values or dtypes.
+    """
+    new_elt = PlyElement(elt.name, _clone_properties(elt.properties),
+                         elt.count, elt.comments)
+    new_elt.data = _copy_structured(elt.data)
+    return new_elt
+
+
+def _element_with_data(elt, data):
+    new_elt = PlyElement(elt.name, _clone_properties(elt.properties),
+                         len(data), elt.comments)
+    new_elt.data = data
+    return new_elt
+
+
+def _validate_order(order, n):
+    order_arr = _np.asarray(order)
+    if order_arr.ndim != 1:
+        raise ValueError("order must be one-dimensional")
+    if len(order_arr) != n:
+        raise ValueError("order must contain exactly %d entries" % n)
+    if not _np.issubdtype(order_arr.dtype, _np.integer):
+        raise ValueError("order must contain integers")
+    if not _np.array_equal(_np.sort(order_arr), _np.arange(n)):
+        raise ValueError("order must be a permutation of range(%d)" % n)
+    return order_arr.astype(_np.intp)
+
+
+def _inverse_order(order):
+    inverse = _np.empty(len(order), dtype=_np.intp)
+    inverse[order] = _np.arange(len(order))
+    return inverse
+
+
+def _reference_name_matches(name):
+    lowered = name.lower()
+    patterns = ('vertex_ind', 'vertex_index', 'vertex_id',
+                'vertex_ids', 'vertex_reference', 'vertex_ref',
+                'vertex_index_', 'vertices', 'vertexindices',
+                'source_vertex', 'target_vertex')
+    if lowered in ('vertex_indices', 'vertex_index', 'vertex_ids'):
+        return True
+    return any(p in lowered for p in patterns)
+
+
+def _audit_vertex_references(ply, vertex_element):
+    if vertex_element not in ply:
+        raise ValueError("unknown element %r" % vertex_element)
+    n = len(ply[vertex_element])
+    result = []
+    for elt in ply.elements:
+        for prop in elt.properties:
+            if elt.name == vertex_element:
+                # A vertex element can also refer to its own rows (for
+                # example, a merged mesh remembering source vertices).
+                # Only name-like list properties are flagged here;
+                # arbitrary per-vertex integer lists are far too common.
+                if (isinstance(prop, PlyListProperty) and
+                        _is_integer_type(prop.val_dtype) and
+                        _reference_name_matches(prop.name)):
+                    result.append(VertexReference(elt.name, prop.name,
+                                                  'name'))
+                continue
+            if isinstance(prop, PlyListProperty):
+                if not _is_integer_type(prop.val_dtype):
+                    continue
+                if _reference_name_matches(prop.name):
+                    result.append(VertexReference(elt.name, prop.name,
+                                                  'name'))
+                    continue
+                if n and _list_values_are_indices(elt.data[prop.name], n):
+                    result.append(VertexReference(elt.name, prop.name,
+                                                  'values'))
+            else:
+                if not _is_integer_type(prop.val_dtype):
+                    continue
+                if _reference_name_matches(prop.name):
+                    result.append(VertexReference(elt.name, prop.name,
+                                                  'name'))
+    return tuple(result)
+
+
+def _is_integer_type(val_dtype):
+    return val_dtype in ('i1', 'i2', 'i4', 'u1', 'u2', 'u4')
+
+
+def _list_values_are_indices(values, n):
+    for row in values:
+        arr = _np.asarray(row)
+        if arr.size == 0:
+            continue
+        if arr.dtype.kind not in 'iu':
+            return False
+        if arr.min() < 0 or arr.max() >= n:
+            return False
+    return True
+
+
+def _coerce_reference_rules(rules):
+    if rules is None:
+        return ()
+    if isinstance(rules, dict):
+        result = []
+        for key, value in rules.items():
+            if (isinstance(key, tuple) and len(key) == 2 and
+                    isinstance(value, str)):
+                result.append(VertexReferenceRule(key[0], key[1],
+                                                  target=value))
+                continue
+            if isinstance(key, str) and isinstance(value, dict):
+                for prop, target in value.items():
+                    result.append(VertexReferenceRule(key, prop,
+                                                      target=target))
+                continue
+            raise ValueError("reference_rules mapping must map "
+                             "(element, property) to a target element")
+        return tuple(result)
+
+    result = []
+    for rule in rules:
+        if isinstance(rule, VertexReferenceRule):
+            result.append(rule)
+        elif (isinstance(rule, tuple) and len(rule) in (2, 3)):
+            result.append(VertexReferenceRule(*rule))
+        else:
+            raise TypeError("reference_rules must contain "
+                            "VertexReferenceRule instances")
+    return tuple(result)
+
+
+def _check_rule_kind(rule, prop):
+    if rule.kind is None:
+        return
+    if rule.kind not in ('list', 'scalar'):
+        raise PlyTransformError("reference rule kind must be 'list', "
+                                "'scalar' or None")
+    actual = 'list' if isinstance(prop, PlyListProperty) else 'scalar'
+    if rule.kind != actual:
+        raise PlyTransformError(
+            "reference rule for %r.%r says %r but the property is %r" %
+            (rule.element, rule.property, rule.kind, actual))
+
+
+def _remap_reference(values, prop, inverse, n, element, property):
+    if isinstance(prop, PlyListProperty):
+        values = _np.asarray(values)
+        if values.ndim > 1:
+            if values.size and (values.min() < 0 or values.max() >= n):
+                raise PlyTransformError(
+                    "reference %r.%r contains index outside range(%d)" %
+                    (element, property, n))
+            return inverse[values]
+
+        result = _np.empty(len(values), dtype=object)
+        for k, row in enumerate(values):
+            arr = _np.asarray(row)
+            if arr.size == 0:
+                result[k] = arr
+                continue
+            if arr.min() < 0 or arr.max() >= n:
+                raise PlyTransformError(
+                    "reference %r.%r row %d contains index outside "
+                    "range(%d)" % (element, property, k, n))
+            result[k] = inverse[arr]
+        return result
+
+    arr = _np.asarray(values)
+    if arr.size and (arr.min() < 0 or arr.max() >= n):
+        raise PlyTransformError(
+            "reference %r.%r contains index outside range(%d)" %
+            (element, property, n))
+    return inverse[arr]
+
+
 def _read_array(stream, dtype, n):
     """
     Read `n` elements of type `dtype` from an open stream.
@@ -1523,3 +2560,55 @@ _byte_order_reverse = {
 }
 
 _native_byte_order = {'little': '<', 'big': '>'}[_byteorder]
+
+
+def _main(argv=None):
+    """
+    Command-line color normalization with a provenance report.
+    """
+    import argparse
+    import json
+
+    parser = argparse.ArgumentParser(
+        prog='python -m plyfile',
+        description='Normalize PLY color units and record provenance.')
+    parser.add_argument('input')
+    parser.add_argument('output')
+    parser.add_argument('--target', choices=('uchar', 'float'),
+                        default='uchar')
+    parser.add_argument('--source-unit', choices=('byte', 'unit'))
+    parser.add_argument('--ambiguous', choices=('error', 'unit', 'byte'),
+                        default='error')
+    parser.add_argument('--clamp', action='store_true')
+    parser.add_argument('--properties', nargs='+', metavar='ELEMENT.PROPERTY')
+    parser.add_argument('--report',
+                        help='write JSON provenance to this path '
+                             '(default: <output>.colors.json)')
+    args = parser.parse_args(argv)
+
+    properties = None
+    if args.properties:
+        properties = [tuple(item.split('.', 1))
+                      for item in args.properties]
+
+    ply = PlyData.read(args.input)
+    result = ply.normalize_colors(
+        properties=properties, source_units=args.source_unit,
+        target=args.target, ambiguous=args.ambiguous, clamp=args.clamp)
+    result.plydata.write(args.output)
+
+    report = {
+        'input': args.input,
+        'output': args.output,
+        'target': args.target,
+        'conversions': list(result.provenance),
+    }
+    report_path = args.report or (args.output + '.colors.json')
+    with open(report_path, 'w') as stream:
+        json.dump(report, stream, indent=2, sort_keys=True)
+        stream.write('\n')
+    return 0
+
+
+if __name__ == '__main__':
+    raise SystemExit(_main())

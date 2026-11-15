@@ -12,6 +12,9 @@ import plyfile
 from plyfile import (
     PlyData, PlyElement, PlyProperty,
     PlyHeaderParseError, PlyElementParseError,
+    AmbiguousColorUnitError, PlyTransformError,
+    UnsafeVertexReorderError, VertexReference,
+    VertexReferenceRule,
 )
 
 
@@ -1016,3 +1019,503 @@ def test_text_io_bad_read(tet_ply_txt):
     with Raises(ValueError) as e:
         PlyData.read(stream1)
     assert str(e) == "can't read binary-format PLY from text stream"
+
+
+def make_vendor_ply(text=True):
+    """
+    Build a file with float unit-range colors, comments, a vendor
+    element with an unfamiliar name and a vertex reference.
+    """
+    vertex = numpy.array(
+        [(0, 0, 0, 0.0, 1.0, 0.25),
+         (1, 0, 0, 0.5, 0.5, 0.5),
+         (0, 1, 0, 1.0, 0.0, 1.0)],
+        dtype=[('x', 'f4'), ('y', 'f4'), ('z', 'f4'),
+               ('red', 'f4'), ('green', 'f4'), ('blue', 'f4')])
+    tiles = numpy.array(
+        [(7, [0, 1, 2], 0.5)],
+        dtype=[('tile_id', 'i4'), ('vertex_indices', object),
+               ('confidence', 'f4')])
+    tiles['vertex_indices'][0] = numpy.array([0, 1, 2], dtype='i4')
+
+    return PlyData(
+        [PlyElement.describe(vertex, 'vertex',
+                             comments=['vendor vertex block']),
+         PlyElement.describe(tiles, 'tile_meta',
+                             len_types={'vertex_indices': 'u1'},
+                             val_types={'vertex_indices': 'i4'},
+                             comments=['scanner tiles'])],
+        text=text,
+        comments=['converted from vendor scan'],
+        obj_info=['vendor:acme', 'revision 4'])
+
+
+def test_normalize_colors_unit_to_uchar(tmpdir):
+    ply0 = make_vendor_ply()
+    result = ply0.normalize_colors()
+
+    ply1 = result.plydata
+    vertex = ply1['vertex']
+
+    assert vertex.dtype()['red'] == 'u1'
+    assert vertex.dtype()['green'] == 'u1'
+    assert vertex.dtype()['blue'] == 'u1'
+    assert (vertex['red'] == [0, 128, 255]).all()
+    assert (vertex['green'] == [255, 128, 0]).all()
+    assert (vertex['blue'] == [64, 128, 255]).all()
+
+    # Non-color fields, dtypes and ordering are untouched.
+    assert vertex.dtype().names == \
+        ('x', 'y', 'z', 'red', 'green', 'blue')
+    assert vertex.dtype()['x'] == 'f4'
+    assert (vertex['x'] == [0, 1, 0]).all()
+
+    # Custom element and comments survive.
+    assert ply1['tile_meta'].comments == ['scanner tiles']
+    assert ply1['tile_meta'].properties[1].name == 'vertex_indices'
+    assert ply1['tile_meta']['confidence'][0] == numpy.float32(0.5)
+    assert ply1.comments == ['converted from vendor scan']
+    assert ply1.obj_info == ['vendor:acme', 'revision 4']
+
+    # And a round trip keeps the result.
+    ply2 = write_read(ply1, tmpdir)
+    assert (ply2['vertex']['red'] == [0, 128, 255]).all()
+
+
+def test_normalize_colors_report_source():
+    result = make_vendor_ply().normalize_colors()
+    report = {(c.element, c.property): c for c in result.conversions}
+
+    assert set(report) == {('vertex', 'red'),
+                           ('vertex', 'green'),
+                           ('vertex', 'blue')}
+    for conversion in report.values():
+        assert conversion.source_dtype == 'float'
+        assert conversion.target_dtype == 'uchar'
+        assert conversion.source_unit == 'unit'
+        assert conversion.target_unit == 'byte'
+        assert conversion.scale == 255.0
+        assert conversion.offset == 0.0
+        assert '255' in conversion.formula
+        assert conversion.clamped == 0
+        assert 'fractional' in conversion.source
+
+
+def test_normalize_colors_byte_to_unit():
+    data = numpy.array([(0, 127, 255, 5)],
+                       dtype=[('red', 'u1'), ('green', 'u1'),
+                              ('blue', 'u1'), ('material', 'i4')])
+    ply0 = PlyData([PlyElement.describe(data, 'vertex')], text=True)
+
+    result = ply0.normalize_colors(target='float')
+    vertex = result.plydata['vertex']
+
+    assert vertex.dtype()['red'] == 'f4'
+    assert vertex.dtype()['material'] == 'i4'
+    assert vertex['material'][0] == 5
+    assert vertex['red'][0] == 0.0
+    assert abs(vertex['green'][0] - 127 / 255) < 1e-6
+    assert vertex['blue'][0] == 1.0
+
+    conversion = result.conversions[0]
+    assert conversion.source_unit == 'byte'
+    assert conversion.target_unit == 'unit'
+    assert conversion.formula == 'value / 255'
+
+
+def test_normalize_colors_ambiguous_requires_source():
+    data = numpy.array([(1.0, 0.0, 1.0)],
+                       dtype=[('red', 'f4'), ('green', 'f4'),
+                              ('blue', 'f4')])
+    ply0 = PlyData([PlyElement.describe(data, 'vertex')], text=True)
+
+    with Raises(AmbiguousColorUnitError) as e:
+        ply0.normalize_colors()
+    assert e.exc_val.element == 'vertex'
+    assert e.exc_val.property in ('red', 'green', 'blue')
+
+    as_unit = ply0.normalize_colors(source_units='unit')
+    assert (as_unit.plydata['vertex']['red'] == [255]).all()
+
+    as_byte = ply0.normalize_colors(source_units='byte')
+    assert (as_byte.plydata['vertex']['red'] == [1]).all()
+
+    default_unit = ply0.normalize_colors(ambiguous='unit')
+    assert (default_unit.plydata['vertex']['red'] == [255]).all()
+
+
+def test_normalize_colors_rejects_mixed_scale():
+    data = numpy.array([(0.5, 0.0, 128.0)],
+                       dtype=[('red', 'f4'), ('green', 'f4'),
+                              ('blue', 'f4')])
+    ply0 = PlyData([PlyElement.describe(data, 'vertex')], text=True)
+
+    with Raises(PlyTransformError):
+        ply0.normalize_colors()
+
+
+def test_normalize_colors_clamp_is_explicit():
+    data = numpy.array([(-0.5, 0.5, 1.0)],
+                       dtype=[('red', 'f4'), ('green', 'f4'),
+                              ('blue', 'f4')])
+    ply0 = PlyData([PlyElement.describe(data, 'vertex')], text=True)
+
+    with Raises(PlyTransformError):
+        ply0.normalize_colors(source_units='unit')
+
+    result = ply0.normalize_colors(source_units='unit', clamp=True)
+    conversion = result.conversions[0]
+    assert conversion.clamped == 1
+    assert result.plydata['vertex']['red'][0] == 0
+
+
+def test_normalize_colors_ignores_unrelated_scalar_names():
+    data = numpy.array([(10, 20, 30)],
+                       dtype=[('surface_area', 'f4'),
+                              ('ambient_occlusion', 'f4'),
+                              ('roughness', 'f4')])
+    ply0 = PlyData([PlyElement.describe(data, 'vertex')], text=True)
+
+    result = ply0.normalize_colors()
+    assert result.conversions == ()
+    assert ply0.text == result.plydata.text
+    assert result.plydata['vertex'].dtype()['surface_area'] == 'f4'
+
+
+def test_audit_vertex_references_detects_unknown_element():
+    refs = make_vendor_ply().audit_vertex_references()
+    assert VertexReference('tile_meta', 'vertex_indices', 'name') in refs
+
+
+def test_reindex_vertices_standard_face_rule():
+    ply0 = tet_ply(True, '=')
+
+    result = ply0.reindex_vertices([3, 2, 1, 0])
+    assert result.safe
+    assert (result.plydata['vertex']['x'] ==
+            ply0['vertex']['x'][[3, 2, 1, 0]]).all()
+
+    expected = [numpy.array([3, 2, 1]), numpy.array([3, 1, 0]),
+                numpy.array([3, 2, 0]), numpy.array([2, 1, 0])]
+    for actual, wanted in zip(
+            result.plydata['face']['vertex_indices'], expected):
+        assert (actual == wanted).all()
+    # Colors and comments are preserved.
+    assert (result.plydata['face']['red'] ==
+            ply0['face']['red']).all()
+    assert result.plydata['face'].comments == []
+
+
+def test_reindex_vertices_requires_rule_for_unknown_element():
+    ply0 = make_vendor_ply()
+
+    with Raises(UnsafeVertexReorderError) as e:
+        ply0.reindex_vertices([2, 1, 0])
+
+    unresolved = e.exc_val.unresolved
+    assert any(r.element == 'tile_meta' and
+               r.property == 'vertex_indices' for r in unresolved)
+
+    result = ply0.reindex_vertices(
+        [2, 1, 0],
+        reference_rules=[VertexReferenceRule('tile_meta',
+                                             'vertex_indices')])
+    assert result.safe
+    assert (result.plydata['tile_meta']['vertex_indices'][0] ==
+            [2, 1, 0]).all()
+
+    # Unrelated vendor fields keep their values and type.
+    assert result.plydata['tile_meta'].dtype()['tile_id'] == 'i4'
+    assert result.plydata['tile_meta']['tile_id'][0] == 7
+    assert result.plydata['tile_meta']['confidence'][0] == \
+        numpy.float32(0.5)
+
+
+def test_reindex_vertices_non_strict_refuses_to_claim_safety():
+    ply0 = make_vendor_ply()
+    result = ply0.reindex_vertices([2, 1, 0], strict=False)
+
+    assert not result.safe
+    assert result.unresolved_references
+    # Untouched references keep their original values.
+    assert (result.plydata['tile_meta']['vertex_indices'][0] ==
+            [0, 1, 2]).all()
+    # Vertex data is still reordered.
+    assert (result.plydata['vertex']['x'] == [0, 1, 0]).all()
+
+
+def test_reindex_vertices_ignore_rule_marks_not_safe_issue():
+    ply0 = make_vendor_ply()
+    result = ply0.reindex_vertices(
+        [2, 1, 0],
+        reference_rules=[VertexReferenceRule('tile_meta',
+                                             'vertex_indices',
+                                             ignore=True)])
+    assert result.safe
+    assert (result.plydata['tile_meta']['vertex_indices'][0] ==
+            [0, 1, 2]).all()
+
+
+def test_reindex_vertices_rejects_bad_permutation():
+    ply0 = make_vendor_ply()
+    with Raises(ValueError):
+        ply0.reindex_vertices([0, 1, 1])
+    with Raises(ValueError):
+        ply0.reindex_vertices([0, 1])
+
+
+def test_reindex_vertices_rejects_out_of_range_reference():
+    vertex = numpy.array([(0,), (1,), (2,)], dtype=[('x', 'f4')])
+    weird = numpy.array([([0, 9],)], dtype=[('corners', object)])
+    ply0 = PlyData(
+        [PlyElement.describe(vertex, 'vertex'),
+         PlyElement.describe(weird, 'patch',
+                             val_types={'corners': 'i4'})],
+        text=True)
+
+    with Raises(PlyTransformError):
+        ply0.reindex_vertices(
+            [2, 1, 0],
+            reference_rules=[VertexReferenceRule('patch', 'corners')])
+
+
+def test_normalize_colors_preserves_untouched_binary_element():
+    vertex = numpy.array(
+        [(1.0, 0.2, 0.4, 0.5), (2.0, 0.8, 0.6, 0.5)],
+        dtype=[('x', 'f4'), ('red', 'f4'), ('green', 'f4'),
+               ('blue', 'f4')])
+    obj = numpy.array([(7, [0, 1])],
+                      dtype=[('object_id', 'u1'),
+                             ('vertex_indices', object)])
+    obj['vertex_indices'][0] = numpy.array([0, 1], dtype='i4')
+
+    ply0 = PlyData(
+        [PlyElement.describe(vertex, 'vertex'),
+         PlyElement.describe(obj, 'object_record',
+                             len_types={'vertex_indices': 'u1'},
+                             val_types={'vertex_indices': 'i4'})],
+        text=False, byte_order='<', comments=['binary vendor file'])
+
+    result = ply0.normalize_colors()
+    assert result.plydata['object_record'].properties[0].val_dtype == 'u1'
+    assert result.plydata['object_record'].properties[1].val_dtype == 'i4'
+    assert result.plydata['object_record'].properties[1].len_dtype == 'u1'
+
+    stream0 = BytesIO()
+    ply0['object_record']._write(stream0, False, '<')
+    stream1 = BytesIO()
+    result.plydata['object_record']._write(stream1, False, '<')
+    assert stream0.getvalue() == stream1.getvalue()
+
+    # Colors are rounded, byte-scale values per the documented formula.
+    assert (result.plydata['vertex']['red'] == [51, 204]).all()
+    assert (result.plydata['vertex']['green'] == [102, 153]).all()
+    assert (result.plydata['vertex']['x'] == [1.0, 2.0]).all()
+
+
+def test_reindex_vertices_ignored_rule_is_reported():
+    ply0 = make_vendor_ply()
+    result = ply0.reindex_vertices(
+        [2, 1, 0],
+        reference_rules=[VertexReferenceRule('tile_meta',
+                                             'vertex_indices',
+                                             ignore=True)])
+    assert result.ignored_references == (
+        VertexReferenceRule('tile_meta', 'vertex_indices', ignore=True),)
+    assert not result.applied_rules
+
+
+def test_normalize_colors_selected_element_only():
+    ply0 = make_vendor_ply()
+    result = ply0.normalize_colors(elements=['tile_meta'])
+    assert result.conversions == ()
+    assert ply0['vertex'].dtype()['red'] == 'f4'
+    assert result.plydata['vertex'].dtype()['red'] == 'f4'
+    assert result.plydata['tile_meta'].dtype()['vertex_indices'] == '|O'
+
+
+def test_color_provenance_is_exportable():
+    result = make_vendor_ply().normalize_colors()
+    provenance = result.provenance
+
+    assert len(provenance) == 3
+    assert provenance == tuple(c.as_dict() for c in result.conversions)
+    for record in provenance:
+        assert record['element'] == 'vertex'
+        assert record['source_unit'] == 'unit'
+        assert record['target_unit'] == 'byte'
+        assert record['scale'] == 255.0
+        assert set(record) == {
+            'element', 'property', 'source_dtype', 'target_dtype',
+            'source_unit', 'target_unit', 'scale', 'offset', 'formula',
+            'source', 'clamped'}
+
+
+def test_normalize_colors_empty_element_is_not_ambiguous():
+    data = numpy.zeros(0, dtype=[('red', 'f4'), ('green', 'f4'),
+                                 ('blue', 'f4')])
+    ply0 = PlyData([PlyElement.describe(data, 'vertex')], text=True)
+
+    result = ply0.normalize_colors()
+    assert len(result.plydata['vertex']) == 0
+    assert result.plydata['vertex'].dtype()['red'] == 'u1'
+    assert 'no values' in result.conversions[0].source
+
+
+def test_normalize_colors_prefixed_names():
+    data = numpy.array([(0.2, 0.8)], dtype=[('diffuse_red', 'f4'),
+                                            ('diffuse_green', 'f4')])
+    ply0 = PlyData([PlyElement.describe(data, 'vertex')], text=True)
+
+    result = ply0.normalize_colors()
+    assert [c.property for c in result.conversions] == \
+        ['diffuse_red', 'diffuse_green']
+    assert (result.plydata['vertex']['diffuse_red'] == [51]).all()
+
+
+def test_normalize_colors_clamp_split_range():
+    data = numpy.array([(-0.5, 0.5)], dtype=[('red', 'f4'),
+                                            ('green', 'f4')])
+    ply0 = PlyData([PlyElement.describe(data, 'vertex')], text=True)
+
+    with Raises(PlyTransformError):
+        ply0.normalize_colors(source_units='unit')
+
+    result = ply0.normalize_colors(source_units='unit', clamp=True)
+    assert result.plydata['vertex']['red'][0] == 0
+    assert result.conversions[0].clamped == 1
+
+    too_low = numpy.array([(-2.0, 0.5)], dtype=[('red', 'f4'),
+                                               ('green', 'f4')])
+    ply1 = PlyData([PlyElement.describe(too_low, 'vertex')], text=True)
+    with Raises(PlyTransformError):
+        ply1.normalize_colors(source_units='unit')
+    clamped = ply1.normalize_colors(source_units='unit', clamp=True)
+    assert clamped.plydata['vertex']['red'][0] == 0
+    assert clamped.conversions[0].clamped == 1
+
+
+def test_normalize_colors_rejects_bad_ambiguous_value():
+    ply0 = make_vendor_ply()
+    with Raises(ValueError):
+        ply0.normalize_colors(ambiguous='maybe')
+
+
+def test_normalize_colors_accepts_string_element():
+    ply0 = make_vendor_ply()
+    result = ply0.normalize_colors(elements='vertex')
+    assert len(result.conversions) == 3
+
+
+def test_cli_writes_report(tmpdir):
+    import json
+
+    source = tmpdir.join('source.ply')
+    data = numpy.array([(0.0, 0.25, 1.0)],
+                       dtype=[('red', 'f4'), ('green', 'f4'),
+                              ('blue', 'f4')])
+    PlyData([PlyElement.describe(data, 'vertex')],
+            text=True).write(str(source))
+
+    target = tmpdir.join('target.ply')
+    report = tmpdir.join('report.json')
+    code = plyfile._main([str(source), str(target),
+                          '--ambiguous', 'unit',
+                          '--report', str(report)])
+    assert code == 0
+
+    written = PlyData.read(str(target))
+    assert written['vertex'].dtype()['red'] == 'u1'
+    assert (written['vertex']['blue'] == [255]).all()
+
+    payload = json.loads(report.read())
+    assert payload['input'] == str(source)
+    assert payload['target'] == 'uchar'
+    assert len(payload['conversions']) == 3
+    assert payload['conversions'][0]['source_unit'] == 'unit'
+
+
+def test_normalize_colors_keeps_fixed_shape_field():
+    data = numpy.zeros(2, dtype=[('vertex_indices', 'i4', (3,)),
+                                 ('red', 'f4'), ('green', 'f4'),
+                                 ('blue', 'f4')])
+    data['vertex_indices'] = [[0, 1, 2], [2, 1, 0]]
+    data['red'] = [0.1, 0.2]
+    data['green'] = [0.3, 0.4]
+    data['blue'] = [0.5, 0.6]
+
+    ply0 = PlyData([PlyElement.describe(data, 'face')], text=True)
+    result = ply0.normalize_colors()
+
+    assert result.plydata['face'].data.dtype['vertex_indices'].shape == \
+        (3,)
+    assert result.plydata['face'].data.dtype['vertex_indices'].base == \
+        numpy.dtype('i4')
+    assert (result.plydata['face']['vertex_indices'][0] ==
+            [0, 1, 2]).all()
+    assert (result.plydata['face']['red'] == [26, 51]).all()
+
+
+def test_reindex_vertices_scalar_reference_needs_rule():
+    vertices = numpy.array([(0,), (1,), (2,)], dtype=[('x', 'f4')])
+    edges = numpy.array([(0, 0.5), (2, 0.25)],
+                        dtype=[('vertex_id', 'i4'), ('weight', 'f4')])
+    ply0 = PlyData(
+        [PlyElement.describe(vertices, 'vertex'),
+         PlyElement.describe(edges, 'edge')],
+        text=True)
+
+    refs = ply0.audit_vertex_references()
+    assert VertexReference('edge', 'vertex_id', 'name') in refs
+
+    with Raises(UnsafeVertexReorderError):
+        ply0.reindex_vertices([2, 1, 0])
+
+    result = ply0.reindex_vertices(
+        [2, 1, 0],
+        reference_rules=[VertexReferenceRule('edge', 'vertex_id',
+                                             kind='scalar')])
+    assert (result.plydata['edge']['vertex_id'] == [2, 0]).all()
+    assert (result.plydata['edge']['weight'] == [0.5, 0.25]).all()
+
+
+def test_reindex_vertices_rejects_rule_kind_mismatch():
+    ply0 = make_vendor_ply()
+    with Raises(PlyTransformError):
+        ply0.reindex_vertices(
+            [2, 1, 0],
+            reference_rules=[VertexReferenceRule('tile_meta',
+                                                 'vertex_indices',
+                                                 kind='scalar')])
+
+
+def test_reindex_vertices_self_referential_list():
+    data = numpy.zeros(3, dtype=[('x', 'f4'),
+                                 ('source_vertex_indices', object)])
+    data['x'] = [0, 1, 2]
+    data['source_vertex_indices'][0] = numpy.array([0], dtype='i4')
+    data['source_vertex_indices'][1] = numpy.array([0, 1], dtype='i4')
+    data['source_vertex_indices'][2] = numpy.array([1, 2], dtype='i4')
+    ply0 = PlyData(
+        [PlyElement.describe(
+            data, 'vertex',
+            len_types={'source_vertex_indices': 'u1'},
+            val_types={'source_vertex_indices': 'i4'})],
+        text=True)
+
+    refs = ply0.audit_vertex_references()
+    assert VertexReference('vertex', 'source_vertex_indices',
+                           'name') in refs
+
+    with Raises(UnsafeVertexReorderError):
+        ply0.reindex_vertices([2, 1, 0])
+
+    result = ply0.reindex_vertices(
+        [2, 1, 0],
+        reference_rules=[VertexReferenceRule(
+            'vertex', 'source_vertex_indices')])
+    assert result.safe
+    rows = [numpy.asarray(row).tolist() for row in
+            result.plydata['vertex']['source_vertex_indices']]
+    assert rows == [[2], [2, 1], [1, 0]]
+    assert (result.plydata['vertex']['x'] == [2, 1, 0]).all()

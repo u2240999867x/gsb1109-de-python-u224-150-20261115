@@ -459,6 +459,117 @@ new instances and modifying in place).  For example, a single
 but modifying that instance will then affect all of those containing
 `PlyData` instances.
 
+### Normalizing color units
+
+`PlyData.normalize_colors` returns a new `PlyData` with scalar color
+properties converted to a single unit.  It does not modify the source
+instance and it copies everything else — element and property order,
+types, values, comments and `obj_info` lines — unchanged.  Elements
+that contain no recognized color remain byte-for-byte identical when
+written.
+
+```Python Console
+>>> import numpy
+>>> vertex = numpy.array([(0.0, 0.25, 1.0),
+...                       (1.0, 0.5, 0.0)],
+...                      dtype=[('red', 'f4'), ('green', 'f4'),
+...                             ('blue', 'f4')])
+>>> ply = PlyData([PlyElement.describe(vertex, 'vertex')], text=True)
+>>> result = ply.normalize_colors()
+>>> result.plydata['vertex'].data['red']
+array([  0, 255], dtype=uint8)
+>>> result.plydata['vertex'].data['green']
+array([ 64, 128], dtype=uint8)
+>>>
+```
+
+Recognition covers `red`, `green`, `blue`, `alpha` and their prefixed
+forms such as `diffuse_red`.  Short `r`, `g`, `b`, `a` names are used
+only when all three of `r`, `g` and `b` occur in the same element.
+Use `properties` to name additional vendor channels explicitly.
+
+Floating-point colors are interpreted per element: fractional values
+in (0, 1) mean unit range, values above 1 mean byte range, and an
+element mixing both is rejected instead of guessed.  A channel whose
+values are only 0 and 1 is genuinely ambiguous; pass `source_units`
+(or choose `ambiguous='unit'` / `'byte'`) to decide.
+
+`value * 255` conversion rounds to the nearest integer.  Values that
+would land outside the target range are an error unless `clamp=True`
+is passed.
+
+Each conversion carries its provenance:
+
+```Python Console
+>>> conversion = result.conversions[0]
+>>> conversion.source_dtype, conversion.target_dtype
+('float', 'uchar')
+>>> conversion.source_unit, conversion.target_unit
+('unit', 'byte')
+>>> conversion.formula
+'value * 255, rounded to nearest integer'
+>>> conversion.source
+'observed fractional values in [0, 1]'
+>>>
+```
+
+`result.provenance` exposes the same records as plain dictionaries,
+which is suitable for writing a conversion manifest alongside the
+output file.
+
+### Reordering vertices and migrating references
+
+`PlyData.reindex_vertices` applies a permutation and rewrites index
+properties that refer to vertex rows.  The conventional
+`face.vertex_indices` link is handled automatically.  Everything else
+that could be a reference must be declared explicitly with a
+`VertexReferenceRule`, because a vendor element can contain an integer
+list that happens to be valid row indices:
+
+```Python Console
+>>> import numpy
+>>> vertices = numpy.array([(0,), (1,), (2,)], dtype=[('x', 'f4')])
+>>> tiles = numpy.array([([0, 1],)], dtype=[('corners', object)])
+>>> tiles['corners'][0] = numpy.array([0, 1], dtype='i4')
+>>> ply = PlyData(
+...     [PlyElement.describe(vertices, 'vertex'),
+...      PlyElement.describe(tiles, 'tile_meta',
+...                          val_types={'corners': 'i4'})],
+...     text=True)
+>>> from plyfile import UnsafeVertexReorderError
+>>> try:
+...     ply.reindex_vertices([2, 1, 0])
+... except UnsafeVertexReorderError as error:
+...     print([(r.element, r.property) for r in error.unresolved])
+[('tile_meta', 'corners')]
+>>>
+```
+
+Supplying the rule migrates the values; the result reports whether the
+whole file could be reordered safely:
+
+```Python Console
+>>> from plyfile import VertexReferenceRule
+>>> result = ply.reindex_vertices(
+...     [2, 1, 0],
+...     reference_rules=[VertexReferenceRule('tile_meta',
+...                                          'corners')])
+>>> result.safe
+True
+>>> result.plydata['tile_meta']['corners'][0]
+array([2, 1])
+>>>
+```
+
+With `strict=False` the vertex rows are still reordered, but
+unclassified references are left untouched and `safe` is `False`.
+Use `VertexReferenceRule(..., ignore=True)` to state that a candidate
+integer list is not a reference; such rules are reported in
+`ignored_references`.  A result with `safe=True` means every detected
+candidate had a rule or was explicitly ignored; it is not a blanket
+claim about arbitrary proprietary semantics that are not observable
+from the file.
+
 ### Text-mode streams
 
 Input and output on text-mode streams is supported for ASCII-format
@@ -466,3 +577,18 @@ PLY files, but not binary-format PLY files. Input and output on
 binary streams is supported for all valid PLY files. Note that
 `sys.stdout` and `sys.stdin` are text streams, so they can only be
 used directly for ASCII-format PLY files.
+
+### Command-line conversion
+
+The module can also be run directly.  It writes the normalized PLY and a
+JSON provenance report (default: `<output>.colors.json`):
+
+```console
+$ python -m plyfile in.ply out.ply --ambiguous unit
+```
+
+Properties can be restricted with `--properties ELEMENT.PROPERTY ...`.
+Integer color properties are treated as byte-range; float properties are
+inspected per element as described above.  The command exits non-zero
+without writing output when a unit is ambiguous or a conversion would
+need clamping without `--clamp`.

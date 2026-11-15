@@ -3,6 +3,13 @@
 All notable changes to this project will be documented here.
 
 ## [Unreleased]
+### Added
+- `PlyData.normalize_colors` normalizes scalar color properties to a
+  single unit without changing other elements, types, order or values,
+  and reports per-property conversion provenance.
+- `PlyData.audit_vertex_references` and `PlyData.reindex_vertices`
+  reorder vertex rows and migrate index references, but refuse to claim
+  a safe reorder when a candidate reference has no explicit rule.
 
 ## [1.1.5] - 2026-07-25
 ### Fixed
