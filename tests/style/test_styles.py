@@ -1,0 +1,210 @@
+# Copyright 2018-2026 Jérôme Dumonteil
+# Copyright (c) 2009-2010 Ars Aperta, Itaapy, Pierlis, Talend.
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+#
+#
+# Authors (odfdo project): jerome.dumonteil@gmail.com
+# The odfdo project is a derivative work of the lpod-python project:
+# https://github.com/lpod/lpod-python
+# Authors: Romain Gauthier <romain@itaapy.com>
+#          Hervé Cauwelier <herve@itaapy.com>
+#          David Versmisse <david.versmisse@itaapy.com>
+
+from collections.abc import Iterable
+
+import pytest
+
+from odfdo.const import ODF_STYLES
+from odfdo.document import Document
+from odfdo.master_page import StyleMasterPage
+from odfdo.style import Style
+from odfdo.styles import Styles
+
+
+@pytest.fixture
+def styles(samples) -> Iterable[Styles]:
+    document = Document(samples("example.odt"))
+    yield document.get_part(ODF_STYLES)
+
+
+def test_styles_class(styles):
+    assert isinstance(styles, Styles)
+
+
+def test_create_style():
+    style = Style("paragraph", "style1")
+    assert style.serialize() in (
+        ('<style:style style:name="style1" style:family="paragraph"/>'),
+        ('<style:style style:family="paragraph" style:name="style1"/>'),
+    )
+
+
+def test_get_styles(styles):
+    style_list = styles.get_styles()
+    assert len(style_list) == 20
+
+
+def test_get_styles_paragraph(styles):
+    style_list = styles.get_styles(family="paragraph")
+    assert len(style_list) == 10
+
+
+def test_get_styles_paragraph_wrong(styles):
+    with pytest.raises(ValueError):
+        styles.get_styles(family="not_a_family")
+
+
+def test_get_styles_master_page(styles):
+    style_list = styles.get_styles(family="master-page")
+    assert len(style_list) == 1
+
+
+def test_styles_get_master_pages(styles):
+    style_list = styles.master_pages
+    assert len(style_list) == 1
+    assert isinstance(style_list[0], StyleMasterPage)
+
+
+def test_styles_get_master_page(styles):
+    style = styles.get_master_page(0)
+    assert isinstance(style, StyleMasterPage)
+
+
+def test_styles_get_master_page_none(styles):
+    style = styles.get_master_page(5)
+    assert style is None
+
+
+def test_styles_get_master_pages_no_master_styles(styles):
+    elem = styles.get_element("//office:master-styles")
+    elem.delete()
+    style_list = styles.master_pages
+    assert len(style_list) == 0
+
+
+def test_get_style_automatic(styles):
+    style = styles.get_style("page-layout", "Mpm1")
+    assert style is not None
+
+
+def test_get_style_named(styles):
+    style = styles.get_style("paragraph", "Heading_20_1")
+    assert style.display_name == "Heading 1"
+
+
+def test_get_style_display_name(styles):
+    style = styles.get_style("paragraph", display_name="Text body")
+    assert style.name == "Text_20_body"
+
+
+def test_insert_style(styles):
+    styles = styles.clone
+    style = Style(
+        "paragraph",
+        name="style1",
+        area="text",
+        **{"fo:color": "#0000ff", "fo:background-color": "#ff0000"},
+    )
+    context = styles.get_element("//office:styles")
+    context.append(style)
+    read_style = styles.get_style("paragraph", "style1")
+    assert read_style._canonicalize() == (
+        '<style:style style:family="paragraph" '
+        'style:name="style1">'
+        '<style:text-properties fo:background-color="#ff0000" '
+        'fo:color="#0000ff">'
+        "</style:text-properties>"
+        "</style:style>"
+    )
+
+
+def test_bad_set_language(styles):
+    styles = styles.clone
+    with pytest.raises(TypeError):
+        styles.set_default_styles_language_country("wrong")
+
+
+def test_language(styles):
+    assert styles.default_language == "fr-FR"
+
+
+def test_language_no_default_style(styles):
+    styles = styles.clone
+    defaults = styles.get_elements("//style:default-style")
+    for elem in defaults:
+        elem.delete()
+    assert styles.default_language == ""
+
+
+def test_language_default_style_without_lang_props(styles):
+    styles = styles.clone
+    defaults = styles.get_elements("//style:default-style")
+    for elem in defaults:
+        text_props = elem.get_element("//style:text-properties")
+        if text_props:
+            text_props.delete()
+    assert styles.default_language == ""
+
+
+def test_language_only_lang(styles):
+    styles = styles.clone
+    styles.default_language = "en"
+    assert styles.default_language == "en"
+
+
+def test_set_office_master_styles_no_exist_master_pages(styles):
+    current = styles.office_master_styles
+    current.delete()
+    mp = styles.master_pages
+    assert mp == []
+
+
+def test_get_style_contexts_automatic(styles):
+    contexts = styles._get_style_contexts("", automatic=True)
+    assert len(contexts) == 1
+    assert contexts[0].tag == "office:automatic-styles"
+
+
+def test_office_master_styles_setter(styles):
+    styles = styles.clone
+    old_master = styles.office_master_styles
+    assert old_master is not None
+    styles.office_master_styles = old_master.clone
+    assert styles.office_master_styles is not None
+
+
+def test_office_master_styles_setter_from_none(styles):
+    styles = styles.clone
+    current = styles.office_master_styles
+    current.delete()
+    assert styles.office_master_styles is None
+    styles.office_master_styles = current.clone
+    assert styles.office_master_styles is not None
+
+
+def test_office_automatic_styles_getter_and_setter(styles):
+    styles = styles.clone
+    auto_styles = styles.office_automatic_styles
+    assert auto_styles is not None
+    styles.office_automatic_styles = auto_styles.clone
+    assert styles.office_automatic_styles is not None
+
+
+def test_office_automatic_styles_setter_from_none(styles):
+    styles = styles.clone
+    auto_styles = styles.office_automatic_styles
+    auto_styles.delete()
+    assert styles.office_automatic_styles is None
+    styles.office_automatic_styles = auto_styles.clone
+    assert styles.office_automatic_styles is not None

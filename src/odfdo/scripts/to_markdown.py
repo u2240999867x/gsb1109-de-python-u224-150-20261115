@@ -1,0 +1,125 @@
+# Copyright 2018-2026 Jérôme Dumonteil
+# Copyright (c) 2009-2013 Ars Aperta, Itaapy, Pierlis, Talend.
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+#
+#
+# Authors (odfdo project): jerome.dumonteil@gmail.com
+# The odfdo project is a derivative work of the lpod-python project:
+# https://github.com/lpod/lpod-python
+"""Command-line script to convert an ODF text or spreadsheet document to
+Markdown.
+
+This script reads an ODF text or spreadsheet document and prints its content
+to standard output in Markdown format, or writes it to a file.
+"""
+
+from __future__ import annotations
+
+from argparse import ArgumentParser, Namespace
+from pathlib import Path
+from typing import Any
+
+from odfdo import __version__
+from odfdo.utils.script_utils import read_document
+
+PROG = "odfdo-markdown"
+
+
+def configure_parser() -> ArgumentParser:
+    """Configure the command-line argument parser."""
+    description = "Convert an ODF text or spreadsheet document to Markdown format and print to standard output."
+    epilog = (
+        "This tool exports the textual content of an ODF text or spreadsheet "
+        "document in Markdown format."
+        "It can output to a file or standard output."
+    )
+    parser = ArgumentParser(prog=PROG, description=description, epilog=epilog)
+    parser.add_argument(
+        "--version",
+        action="version",
+        version=f"{PROG} v{__version__}",
+    )
+    parser.add_argument(
+        "document",
+        nargs="?",
+        default=None,
+        action="store",
+        help="input document. if not present, read from stdin",
+    )
+    parser.add_argument(
+        "-i",
+        "--input",
+        action="store",
+        dest="input_file",
+        metavar="INPUT",
+        required=False,
+        default=None,
+        help="input document, if option not present, use the document "
+        "argument or read from stdin",
+    )
+    parser.add_argument(
+        "-o",
+        "--output",
+        action="store",
+        dest="output_file",
+        metavar="OUTPUT",
+        required=False,
+        default=None,
+        help="output Markdown file, if option not present, write to stdout",
+    )
+    return parser
+
+
+def parse_cli_args(cli_args: list[str] | None = None) -> Namespace:
+    """Parse command-line arguments."""
+    parser = configure_parser()
+    return parser.parse_args(cli_args)
+
+
+def _markdown_as_string(result: Any) -> str:
+    """Render the to_markdown() result as a single Markdown text."""
+    if isinstance(result, str):
+        return result + "\n"
+    return "".join(f"# {item.name}\n\n{item.content}\n" for item in result)
+
+
+def to_md(args: Namespace) -> None:
+    """Convert an ODF document to Markdown and print to stdout or file."""
+    document = read_document(args.input_file or args.document)
+    content = _markdown_as_string(document.to_markdown())
+    if args.output_file:
+        Path(args.output_file).write_text(content, encoding="utf-8")
+    else:
+        print(content, end="")
+
+
+def main() -> int:
+    """Execute the CLI entry point."""
+    args: Namespace = parse_cli_args()
+    return main_to_md(args)
+
+
+def main_to_md(args: Namespace) -> int:
+    """Run the main Markdown conversion CLI logic with error handling."""
+    try:
+        to_md(args)
+    except Exception:
+        configure_parser().print_help()
+        print()
+        raise
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

@@ -1,0 +1,212 @@
+# Copyright 2018-2026 Jérôme Dumonteil
+# Copyright (c) 2009-2012 Ars Aperta, Itaapy, Pierlis, Talend.
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+#
+#
+# Authors (odfdo project): jerome.dumonteil@gmail.com
+# The odfdo project is a derivative work of the lpod-python project:
+# https://github.com/lpod/lpod-python
+# Authors: David Versmisse <david.versmisse@itaapy.com>
+#          Hervé Cauwelier <herve@itaapy.com>
+#          Romain Gauthier <romain@itaapy.com>
+#          Jerome Dumonteil <jerome.dumonteil@itaapy.com>
+"""Coordinate translation utilities for ODF documents.
+
+This module provides functions for converting between different coordinate
+representations used in ODF tables, such as "A1" style, (row, column) tuples,
+and numeric indices.
+"""
+
+from __future__ import annotations
+
+import re
+
+_ALPHA_PREFIX_RE = re.compile(r"^[A-Za-z]*")
+
+
+def translate_from_any(x: str | int, length: int, idx: int) -> int:
+    """Translate a coordinate from any format to a 0-based integer index.
+
+    Args:
+        x: The coordinate, which can be a 1-based integer or a string.
+        length: The length of the axis for handling negative indices.
+        idx: The index in the coordinate tuple to use (0 for x, 1 for y).
+
+    Returns:
+        int: The 0-based integer coordinate.
+
+    Raises:
+        TypeError: If the input value is not a string or integer.
+
+    """
+    if isinstance(x, str):
+        value_int = convert_coordinates(x)[idx]
+        if value_int is None:
+            msg = f"Wrong value: {x!r}"
+            raise TypeError(msg)
+    elif isinstance(x, int):
+        value_int = x
+    else:
+        msg = f"Wrong value: {x!r}"
+        raise TypeError(msg)
+    if value_int < 0:
+        return increment(value_int, length)
+    return value_int
+
+
+def alpha_to_digit(alpha: str) -> int:
+    """Translate a column name from alphabetic to a 0-based numeric index.
+
+    For example, "A" becomes 0, "B" becomes 1, and "AB" becomes 27.
+
+    Args:
+        alpha: The alphabetic column name.
+
+    Returns:
+        int: The 0-based numeric index of the column.
+
+    Raises:
+        ValueError: If the input string contains non-alphabetic characters.
+
+    """
+    if isinstance(alpha, int):
+        return alpha
+    if not alpha.isalpha():
+        msg = f"Column value {alpha!r} is malformed"
+        raise ValueError(msg)
+    column = 0
+    for c in alpha.lower():
+        val = ord(c) - ord("a") + 1
+        column = column * 26 + val
+    return column - 1
+
+
+def digit_to_alpha(digit: int | str) -> str:
+    """Translate a 0-based column index to its alphabetic representation.
+
+    For example, 0 becomes "A", 1 becomes "B", and 27 becomes "AB".
+
+    Args:
+        digit: The 0-based numeric index of the column.
+
+    Returns:
+        str: The alphabetic representation of the column.
+
+    Raises:
+        TypeError: If the input is not an integer.
+
+    """
+    if isinstance(digit, str) and digit.isalpha():
+        return digit
+    if not isinstance(digit, int):
+        msg = f"Column number {digit!r} is invalid"
+        raise TypeError(msg)
+    digit += 1
+    column = ""
+    while digit:
+        column = chr(65 + ((digit - 1) % 26)) + column
+        digit = (digit - 1) // 26
+    return column
+
+
+def increment(value: int, step: int) -> int:
+    """Adjust a negative index to a positive one based on a step.
+
+    This is used to handle negative indexing in table coordinates.
+
+    Args:
+        value: The index value, which may be negative.
+        step: The total size of the dimension (e.g., table width or height).
+
+    Returns:
+        int: The adjusted, non-negative index.
+
+    """
+    while value < 0:
+        if step == 0:
+            return 0
+        value += step
+    return value
+
+
+def convert_coordinates(obj: tuple | list | str) -> tuple[int | None, ...]:
+    """Translate various coordinate formats into a tuple of 0-based integers.
+
+    This function can handle formats like "A1", "A1:C3", or tuples like (0, 0).
+    A single cell coordinate is returned as a (column, row) tuple. An area is
+    returned as a (col1, row1, col2, row2) tuple.
+
+    Args:
+        obj: The coordinate representation to convert.
+
+    Returns:
+        tuple[int | None, ...]: A tuple of 0-based integer coordinates.
+
+    Raises:
+        TypeError: If the input object is of an unsupported type.
+        ValueError: If the coordinate string is malformed.
+
+    Examples:
+        >>> convert_coordinates("D3")
+        (3, 2)
+        >>> convert_coordinates((1, 2))
+        (1, 2)
+        >>> convert_coordinates("A1:B3")
+        (0, 0, 1, 2)
+
+    """
+    if isinstance(obj, str):
+        return _convert_coordinates_from_string(obj)
+    if isinstance(obj, tuple | list):
+        return _convert_coordinates_from_iterable(obj)
+    msg = f"Bad coordinates type: {type(obj)!r}"
+    raise TypeError(msg)
+
+
+def _convert_coordinates_from_iterable(obj: tuple | list) -> tuple[int | None, ...]:
+    """Translate coordinate as iterable into a tuple of 0-based integers."""
+    try:
+        return tuple(int(x) if x is not None else None for x in obj)
+    except TypeError as exc:
+        msg = f"Bad coordinates type: {type(obj)!r}"
+        raise TypeError(msg) from exc
+    except ValueError as exc:
+        msg = f"Bad coordinates value: {obj!r}"
+        raise ValueError(msg) from exc
+
+
+def _convert_coordinates_from_string(obj: str) -> tuple[int | None, ...]:
+    """Translate coordinate as string into a tuple of 0-based integers."""
+    coordinates: list[int | None] = []
+    for coord in (x.strip() for x in obj.split(":", 1)):
+        # First "A"
+        alpha = _ALPHA_PREFIX_RE.match(coord).group(0)
+        try:
+            column = alpha_to_digit(alpha)
+        except ValueError:
+            # maybe '1:4' table row coordinates
+            column = None
+        coordinates.append(column)
+        # Then "1"
+        digits = coord[len(alpha) :]
+        try:
+            line = int(digits) - 1 if digits else None
+        except ValueError:
+            # maybe 'A:C' row coordinates
+            line = None
+        if line and line < 0:
+            msg = f"Coordinates {obj!r} malformed"
+            raise ValueError(msg)
+        coordinates.append(line)
+    return tuple(coordinates)

@@ -1,0 +1,117 @@
+# Copyright 2018-2026 Jérôme Dumonteil
+# Copyright (c) 2009-2010 Ars Aperta, Itaapy, Pierlis, Talend.
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+#
+#
+# Authors (odfdo project): jerome.dumonteil@gmail.com
+# The odfdo project is a derivative work of the lpod-python project:
+# https://github.com/lpod/lpod-python
+from datetime import timedelta
+
+from odfdo.datatype import Duration
+from odfdo.meta_auto_reload import MetaAutoReload
+
+
+def test_create_missing_arg():
+    reload = MetaAutoReload()
+    assert reload.delay == Duration.encode(timedelta(0))
+
+
+def test_create_minimal():
+    delay = timedelta(seconds=15)
+    reload = MetaAutoReload(delay)
+    expected = (
+        '<meta:auto-reload xlink:actuate="onLoad" xlink:show="replace" '
+        'xlink:type="simple" meta:delay="PT00H00M15S" xlink:href=""/>'
+    )
+    assert reload.serialize() == expected
+    assert reload.href == ""
+
+
+def test_create():
+    delay = timedelta(seconds=15)
+    reload = MetaAutoReload(delay=delay, href="some url")
+    expected = (
+        '<meta:auto-reload xlink:actuate="onLoad" xlink:show="replace" '
+        'xlink:type="simple" meta:delay="PT00H00M15S" xlink:href="some url"/>'
+    )
+    assert reload.serialize() == expected
+    assert reload.delay == Duration.encode(delay)
+    assert reload.href == "some url"
+    assert repr(reload) == (
+        "<MetaAutoReload tag=meta:auto-reload href=some url delay=0:00:15>"
+    )
+
+
+def test_as_dict():
+    delay = timedelta(seconds=15)
+    reload = MetaAutoReload(delay=delay, href="some url")
+    expected = {
+        "meta:delay": delay,
+        "xlink:actuate": "onLoad",
+        "xlink:href": "some url",
+        "xlink:show": "replace",
+        "xlink:type": "simple",
+    }
+    print(reload.as_dict())
+    assert reload.as_dict() == expected
+
+
+def test_as_dict_delay_none():
+    reload = MetaAutoReload(href="some url")
+    reload.delay = None
+    expected = {
+        "meta:delay": timedelta(0),
+        "xlink:actuate": "onLoad",
+        "xlink:href": "some url",
+        "xlink:show": "replace",
+        "xlink:type": "simple",
+    }
+    print(reload.as_dict())
+    assert reload.as_dict() == expected
+
+
+def test_from_dict():
+    delay = timedelta(seconds=15)
+    reload = MetaAutoReload()
+    imported = {
+        "meta:delay": delay,
+        "xlink:actuate": "onLoad",
+        "xlink:href": "some url",
+        "xlink:show": "replace",
+        "xlink:type": "simple",
+    }
+    reload.from_dict(imported)
+    assert reload.as_dict() == imported
+
+
+def test_str():
+    delay = timedelta(seconds=15)
+    reload = MetaAutoReload(delay=delay, href="some url")
+    expected = "(some url)"
+    assert str(reload) == expected
+
+
+def test_repr():
+    delay = timedelta(seconds=15)
+    reload = MetaAutoReload(delay=delay, href="some url")
+    expected = "<MetaAutoReload tag=meta:auto-reload href=some url delay=0:00:15>"
+    assert repr(reload) == expected
+
+
+def test_repr_2():
+    reload = MetaAutoReload()
+    reload.delay = None
+    expected = "<MetaAutoReload tag=meta:auto-reload href= delay=>"
+    assert repr(reload) == expected

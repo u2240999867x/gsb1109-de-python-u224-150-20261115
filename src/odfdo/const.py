@@ -1,0 +1,859 @@
+# Copyright 2018-2026 Jérôme Dumonteil
+# Copyright (c) 2009-2010 Ars Aperta, Itaapy, Pierlis, Talend.
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+#
+#
+# Authors (odfdo project): jerome.dumonteil@gmail.com
+# The odfdo project is a derivative work of the lpod-python project:
+# https://github.com/lpod/lpod-python
+# Authors: David Versmisse <david.versmisse@itaapy.com>
+#          Hervé Cauwelier <herve@itaapy.com>
+"""Constants, XML tags and ODF headers."""
+
+from __future__ import annotations
+
+from datetime import date, datetime, timedelta
+from decimal import Decimal
+
+# import for compatibility with previous version:
+from .utils.css3_colormap import CSS3_COLORMAP  # noqa: F401
+
+"""Safety limits for Markdown export of tables. Note that LibrOffice limmits
+are higher, about 2**20 rows and 2**14 columns."""
+MAX_MD_LINES: int = 200_000
+MAX_MD_COLUMNS: int = 8048
+
+CellValue = str | bytes | bool | int | float | Decimal | date | datetime | timedelta
+"""Union of Python types accepted as a cell value."""
+
+ODF_TEMPLATES = {
+    "text": "text.ott",
+    "texte": "text.ott",
+    "odt": "text.ott",
+    "spreadsheet": "spreadsheet.ots",
+    "tableur": "spreadsheet.ots",
+    "ods": "spreadsheet.ots",
+    "presentation": "presentation.otp",
+    "odp": "presentation.otp",
+    # Follow the spec
+    "drawing": "drawing.otg",
+    "odg": "drawing.otg",
+    # Follow the mimetype
+    "graphics": "drawing.otg",
+    "graphic": "drawing.otg",
+    # TODO
+    # 'chart': 'templates/chart.otc',
+    # 'image': 'templates/image.oti',
+    # 'formula': 'templates/image.otf',
+    # 'master': 'templates/image.odm',
+    # 'web': 'templates/image.oth',
+}
+
+ODF_TEXT = "application/vnd.oasis.opendocument.text"
+ODF_TEXT_TEMPLATE = "application/vnd.oasis.opendocument.text-template"
+ODF_SPREADSHEET = "application/vnd.oasis.opendocument.spreadsheet"
+ODF_SPREADSHEET_TEMPLATE = "application/vnd.oasis.opendocument.spreadsheet-template"
+ODF_PRESENTATION = "application/vnd.oasis.opendocument.presentation"
+ODF_PRESENTATION_TEMPLATE = "application/vnd.oasis.opendocument.presentation-template"
+ODF_DRAWING = "application/vnd.oasis.opendocument.graphics"
+ODF_DRAWING_TEMPLATE = "application/vnd.oasis.opendocument.graphics-template"
+ODF_CHART = "application/vnd.oasis.opendocument.chart"
+ODF_CHART_TEMPLATE = "application/vnd.oasis.opendocument.chart-template"
+ODF_IMAGE = "application/vnd.oasis.opendocument.image"
+ODF_IMAGE_TEMPLATE = "application/vnd.oasis.opendocument.image-template"
+ODF_FORMULA = "application/vnd.oasis.opendocument.formula"
+ODF_FORMULA_TEMPLATE = "application/vnd.oasis.opendocument.formula-template"
+ODF_MASTER = "application/vnd.oasis.opendocument.text-master"
+ODF_WEB = "application/vnd.oasis.opendocument.text-web"
+
+# File extensions and their mimetype
+ODF_EXTENSIONS = {
+    "odt": ODF_TEXT,
+    "ott": ODF_TEXT_TEMPLATE,
+    "ods": ODF_SPREADSHEET,
+    "ots": ODF_SPREADSHEET_TEMPLATE,
+    "odp": ODF_PRESENTATION,
+    "otp": ODF_PRESENTATION_TEMPLATE,
+    "odg": ODF_DRAWING,
+    "otg": ODF_DRAWING_TEMPLATE,
+    "odc": ODF_CHART,
+    "otc": ODF_CHART_TEMPLATE,
+    "odi": ODF_IMAGE,
+    "oti": ODF_IMAGE_TEMPLATE,
+    "odf": ODF_FORMULA,
+    "otf": ODF_FORMULA_TEMPLATE,
+    "odm": ODF_MASTER,
+    "oth": ODF_WEB,
+}
+
+# Mimetypes and their file extension
+ODF_MIMETYPES = {
+    ODF_TEXT: "odt",
+    ODF_TEXT_TEMPLATE: "ott",
+    ODF_SPREADSHEET: "ods",
+    ODF_SPREADSHEET_TEMPLATE: "ots",
+    ODF_PRESENTATION: "odp",
+    ODF_PRESENTATION_TEMPLATE: "otp",
+    ODF_DRAWING: "odg",
+    ODF_DRAWING_TEMPLATE: "otg",
+    ODF_CHART: "odc",
+    ODF_CHART_TEMPLATE: "otc",
+    ODF_IMAGE: "odi",
+    ODF_IMAGE_TEMPLATE: "oti",
+    ODF_FORMULA: "odf",
+    ODF_FORMULA_TEMPLATE: "otf",
+    ODF_MASTER: "odm",
+    ODF_WEB: "oth",
+}
+
+# Flat ODF extensions
+ODF_FLAT_EXTENSIONS = {
+    ".fodt",
+    ".fods",
+    ".fodp",
+    ".fodg",
+    ".fodc",
+    ".fodi",
+    ".fodf",
+}
+
+# Mapping from mimetype to flat ODF extension
+ODF_MIMETYPE_TO_FLAT_EXTENSION = {
+    ODF_TEXT: ".fodt",
+    ODF_SPREADSHEET: ".fods",
+    ODF_PRESENTATION: ".fodp",
+    ODF_DRAWING: ".fodg",
+    ODF_CHART: ".fodc",
+    ODF_IMAGE: ".fodi",
+    ODF_FORMULA: ".fodf",
+}
+
+# Standard parts in the container (other are regular paths)
+ODF_PARTS = ("content", "meta", "settings", "styles", "manifest")
+
+# Paths of standard parts
+ODF_CONTENT = "content.xml"
+ODF_META = "meta.xml"
+ODF_SETTINGS = "settings.xml"
+ODF_STYLES = "styles.xml"
+ODF_MANIFEST = "META-INF/manifest.xml"
+ODF_MANIFEST_NAME = "manifest.xml"
+ODF_MANIFEST_RDF = "manifest.rdf"
+ODF_MANIFEST_RDF_TYPE = "application/rdf+xml"
+
+OFFICE_VERSION = "1.4"
+
+# LibreOffice and OpenOffice extensions
+USE_LO_EXTENSIONS = True
+
+_OFFICE_PREFIX_CORE = [
+    b'<?xml version="1.0" encoding="UTF-8"?>',
+    b"<office:document",
+    b'  xmlns:office="urn:oasis:names:tc:opendocument:xmlns:office:1.0"',
+    b'  xmlns:style="urn:oasis:names:tc:opendocument:xmlns:style:1.0"',
+    b'  xmlns:text="urn:oasis:names:tc:opendocument:xmlns:text:1.0"',
+    b'  xmlns:table="urn:oasis:names:tc:opendocument:xmlns:table:1.0"',
+    b'  xmlns:draw="urn:oasis:names:tc:opendocument:xmlns:drawing:1.0"',
+    b'  xmlns:fo="urn:oasis:names:tc:opendocument:xmlns:xsl-fo-compatible:1.0"',
+    b'  xmlns:xlink="http://www.w3.org/1999/xlink"',
+    b'  xmlns:dc="http://purl.org/dc/elements/1.1/"',
+    b'  xmlns:meta="urn:oasis:names:tc:opendocument:xmlns:meta:1.0"',
+    b'  xmlns:number="urn:oasis:names:tc:opendocument:xmlns:datastyle:1.0"',
+    b'  xmlns:presentation="urn:oasis:names:tc:opendocument:xmlns:presentation:1.0"',
+    b'  xmlns:svg="urn:oasis:names:tc:opendocument:xmlns:svg-compatible:1.0"',
+    b'  xmlns:chart="urn:oasis:names:tc:opendocument:xmlns:chart:1.0"',
+    b'  xmlns:dr3d="urn:oasis:names:tc:opendocument:xmlns:dr3d:1.0"',
+    b'  xmlns:math="http://www.w3.org/1998/Math/MathML"',
+    b'  xmlns:form="urn:oasis:names:tc:opendocument:xmlns:form:1.0"',
+    b'  xmlns:script="urn:oasis:names:tc:opendocument:xmlns:script:1.0"',
+    b'  xmlns:xforms="http://www.w3.org/2002/xforms"',
+    b'  xmlns:xsd="http://www.w3.org/2001/XMLSchema"',
+    b'  xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"',
+    b'  xmlns:anim="urn:oasis:names:tc:opendocument:xmlns:animation:1.0"',
+    b'  xmlns:smil="urn:oasis:names:tc:opendocument:xmlns:smil-compatible:1.0"',
+    b'  xmlns:of="urn:oasis:names:tc:opendocument:xmlns:of:1.2"',
+    b'  xmlns:xhtml="http://www.w3.org/1999/xhtml"',
+    b'  xmlns:grddl="http://www.w3.org/2003/g/data-view#"',
+    b'  xmlns:config="urn:oasis:names:tc:opendocument:xmlns:config:1.0"',
+    b'  xmlns:dom="http://www.w3.org/2001/xml-events"',
+    b'  xmlns:manifest="urn:oasis:names:tc:opendocument:xmlns:manifest:1.0"',
+    b'  xmlns:rdfa="http://docs.oasis-open.org/opendocument/meta/rdfa#"',
+    b'  xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#"',
+    b'  xmlns:pkg="http://docs.oasis-open.org/ns/office/1.2/meta/pkg#"',
+    b'  xmlns:dsig="urn:oasis:names:tc:opendocument:xmlns:digitalsignature:1.0"',
+]
+
+_OFFICE_PREFIX_EXTENSIONS = [
+    b'  xmlns:ooo="http://openoffice.org/2004/office"',
+    b'  xmlns:oooc="http://openoffice.org/2004/calc"',
+    b'  xmlns:ooow="http://openoffice.org/2004/writer"',
+    b'  xmlns:officeooo="http://openoffice.org/2009/office"',
+    b'  xmlns:tableooo="http://openoffice.org/2009/table"',
+    b'  xmlns:drawooo="http://openoffice.org/2010/draw"',
+    b'  xmlns:calcext="urn:org:documentfoundation:names:experimental:calc:xmlns:calcext:1.0"',
+    b'  xmlns:loext="urn:org:documentfoundation:names:experimental:office:xmlns:loext:1.0"',
+    b'  xmlns:field="urn:openoffice:names:experimental:ooo-ms-interop:xmlns:field:1.0"',
+    b'  xmlns:formx="urn:openoffice:names:experimental:ooxml-odf-interop:xmlns:form:1.0"',
+    b'  xmlns:css3t="http://www.w3.org/TR/css3-text/"',
+    b'  xmlns:rpt="http://openoffice.org/2005/report"',
+    b'  xmlns:presentationooo="http://openoffice.org/2012/presentation"',
+    b'  xmlns:formooo="http://openoffice.org/2011/form"',
+    b'  xmlns:chartooo="http://openoffice.org/2010/chart"',
+]
+
+_OFFICE_PREFIX_EXTENSIONS_NAMES = {
+    line.split(b":", 1)[1].split(b"=", 1)[0].decode()
+    for line in _OFFICE_PREFIX_EXTENSIONS
+}
+
+
+def _generate_office_prefix() -> bytes:
+    lines = _OFFICE_PREFIX_CORE[:]
+    if USE_LO_EXTENSIONS:
+        lines.extend(_OFFICE_PREFIX_EXTENSIONS)
+    return b"\n".join(lines) + b" "
+
+
+OFFICE_PREFIX = _generate_office_prefix()
+# packaging
+FOLDER = "folder"
+ZIP = "zip"
+XML = "xml"
+PACKAGING = {FOLDER, XML, ZIP}
+
+# Presentation classes (for layout)
+ODF_CLASSES = (
+    "title",
+    "outline",
+    "subtitle",
+    "text",
+    "graphic",
+    "object",
+    "chart",
+    "table",
+    "orgchart",
+    "page",
+    "notes",
+    "handout",
+)
+
+ODF_PROPERTIES = {
+    "chart:angle-offset",
+    "chart:auto-position",
+    "chart:auto-size",
+    "chart:automatic-content",
+    "chart:axis-label-position",
+    "chart:axis-position",
+    "chart:connect-bars",
+    "chart:data-label-number",
+    "chart:data-label-symbol",
+    "chart:data-label-text",
+    "chart:deep",
+    "chart:display-equation",
+    "chart:display-label",
+    "chart:display-r-square",
+    "chart:error-category",
+    "chart:error-lower-indicator",
+    "chart:error-lower-limit",
+    "chart:error-lower-range",
+    "chart:error-margin",
+    "chart:error-percentage",
+    "chart:error-upper-indicator",
+    "chart:error-upper-limit",
+    "chart:error-upper-range",
+    "chart:gap-width",
+    "chart:group-bars-per-axis",
+    "chart:hole-size",
+    "chart:include-hidden-cells",
+    "chart:interpolation",
+    "chart:interval-major",
+    "chart:interval-minor-divisor",
+    "chart:japanese-candle-stick",
+    "chart:label-arrangement",
+    "chart:label-position",
+    "chart:label-position-negative",
+    "chart:lines",
+    "chart:link-data-style-to-source",
+    "chart:logarithmic",
+    "chart:maximum",
+    "chart:mean-value",
+    "chart:minimum",
+    "chart:origin",
+    "chart:overlap",
+    "chart:percentage",
+    "chart:pie-offset",
+    "chart:regression-type",
+    "chart:reverse-direction",
+    "chart:right-angled-axes",
+    "chart:scale-text",
+    "chart:series-source",
+    "chart:solid-type",
+    "chart:sort-by-x-values",
+    "chart:spline-order",
+    "chart:spline-resolution",
+    "chart:stacked",
+    "chart:symbol-height",
+    "chart:symbol-name",
+    "chart:symbol-type",
+    "chart:symbol-width",
+    "chart:text-overlap",
+    "chart:three-dimensional",
+    "chart:tick-mark-position",
+    "chart:tick-marks-major-inner",
+    "chart:tick-marks-major-outer",
+    "chart:tick-marks-minor-inner",
+    "chart:tick-marks-minor-outer",
+    "chart:treat-empty-cells",
+    "chart:vertical",
+    "chart:visible",
+    "db:additional-column-statement",
+    "db:append-table-alias-name",
+    "db:apply-command",
+    "db:as-template",
+    "db:base-dn",
+    "db:boolean-comparison-mode",
+    "db:catalog-name",
+    "db:command",
+    "db:data-source-setting-is-list",
+    "db:data-source-setting-name",
+    "db:data-source-setting-type",
+    "db:data-type",
+    "db:database-name",
+    "db:decimal",
+    "db:default-cell-style-name",
+    "db:default-row-style-name",
+    "db:delete-rule",
+    "db:description",
+    "db:enable-sql92-check",
+    "db:encoding",
+    "db:escape-processing",
+    "db:extension",
+    "db:field",
+    "db:hostname",
+    "db:ignore-driver-privileges",
+    "db:is-ascending",
+    "db:is-autoincrement",
+    "db:is-clustered",
+    "db:is-empty-allowed",
+    "db:is-first-row-header-line",
+    "db:is-nullable",
+    "db:is-password-required",
+    "db:is-table-name-length-limited",
+    "db:is-unique",
+    "db:local-socket",
+    "db:login-timeout",
+    "db:max-row-count",
+    "db:media-type",
+    "db:name",
+    "db:parameter-name-substitution",
+    "db:port",
+    "db:precision",
+    "db:referenced-table-name",
+    "db:related-column-name",
+    "db:row-retrieving-statement",
+    "db:scale",
+    "db:schema-name",
+    "db:show-deleted",
+    "db:string",
+    "db:style-name",
+    "db:suppress-version-columns",
+    "db:system-driver-settings",
+    "db:thousand",
+    "db:title",
+    "db:type",
+    "db:type-name",
+    "db:update-rule",
+    "db:use-catalog",
+    "db:use-system-user",
+    "db:user-name",
+    "db:visible",
+    "dr3d:ambient-color",
+    "dr3d:back-scale",
+    "dr3d:backface-culling",
+    "dr3d:close-back",
+    "dr3d:close-front",
+    "dr3d:depth",
+    "dr3d:diffuse-color",
+    "dr3d:edge-rounding",
+    "dr3d:edge-rounding-mode",
+    "dr3d:emissive-color",
+    "dr3d:end-angle",
+    "dr3d:horizontal-segments",
+    "dr3d:lighting-mode",
+    "dr3d:normals-direction",
+    "dr3d:normals-kind",
+    "dr3d:shadow",
+    "dr3d:shininess",
+    "dr3d:specular-color",
+    "dr3d:transform",  # ODF v1.3
+    "dr3d:texture-filter",
+    "dr3d:texture-generation-mode-x",
+    "dr3d:texture-generation-mode-y",
+    "dr3d:texture-kind",
+    "dr3d:texture-mode",
+    "dr3d:vertical-segments",
+    "draw:allow-overlap",  # ODF v1.4
+    "draw:auto-grow-height",
+    "draw:auto-grow-width",
+    "draw:background-size",
+    "draw:blue",
+    "draw:caption-angle",
+    "draw:caption-angle-type",
+    "draw:caption-escape",
+    "draw:caption-escape-direction",
+    "draw:caption-fit-line-length",
+    "draw:caption-gap",
+    "draw:caption-line-length",
+    "draw:caption-type",
+    "draw:color-inversion",
+    "draw:concave",  # ODF v1.3
+    "draw:corners",  # ODF v1.3
+    "draw:color-mode",
+    "draw:contrast",
+    "draw:decorative",  # ODF v1.4
+    "draw:decimal-places",
+    "draw:display-name",  # ODF v1.2
+    "draw:draw-aspect",
+    "draw:end-guide",
+    "draw:end-line-spacing-horizontal",
+    "draw:end-line-spacing-vertical",
+    "draw:enhanced-path",  # ODF v1.3
+    "draw:escape-direction",
+    "draw:fill",
+    "draw:fill-color",
+    "draw:fill-gradient-name",
+    "draw:fill-hatch-name",
+    "draw:fill-hatch-solid",
+    "draw:fill-image-height",
+    "draw:fill-image-name",
+    "draw:fill-image-ref-point",
+    "draw:fill-image-ref-point-x",
+    "draw:fill-image-ref-point-y",
+    "draw:fill-image-width",
+    "draw:fit-to-contour",
+    "draw:fit-to-size",
+    "draw:frame-display-border",
+    "draw:frame-display-scrollbar",
+    "draw:frame-margin-horizontal",
+    "draw:frame-margin-vertical",
+    "draw:gamma",
+    "draw:gradient-step-count",
+    "draw:green",
+    "draw:guide-distance",
+    "draw:guide-overhang",
+    "draw:handle-position",  # ODF v1.3
+    "draw:id",  # ODF v1.0
+    "draw:image-opacity",
+    "draw:line-distance",
+    "draw:luminance",
+    "draw:marker-end",
+    "draw:marker-end-center",
+    "draw:marker-end-width",
+    "draw:marker-start",
+    "draw:marker-start-center",
+    "draw:marker-start-width",
+    "draw:measure-align",
+    "draw:mime-type",  # ODF v1.3
+    "draw:measure-vertical-align",
+    "draw:name",  # ODF v1.0
+    "draw:ole-draw-aspect",
+    "draw:opacity",
+    "draw:opacity-name",
+    "draw:parallel",
+    "draw:placing",
+    "draw:red",
+    "draw:secondary-fill-color",
+    "draw:shadow",
+    "draw:shadow-color",
+    "draw:shadow-offset-x",
+    "draw:shadow-offset-y",
+    "draw:shadow-opacity",
+    "draw:sharpness",  # ODF v1.3
+    "draw:show-unit",
+    "draw:start-guide",
+    "draw:start-line-spacing-horizontal",
+    "draw:start-line-spacing-vertical",
+    "draw:stroke",
+    "draw:stroke-dash",
+    "draw:stroke-dash-names",
+    "draw:stroke-linejoin",
+    "draw:symbol-color",
+    "draw:textarea-horizontal-align",
+    "draw:textarea-vertical-align",
+    "draw:tile-repeat-offset",
+    "draw:transform",  # ODF v1.3
+    "draw:unit",
+    "draw:visible-area-height",
+    "draw:visible-area-left",
+    "draw:visible-area-top",
+    "draw:visible-area-width",
+    "draw:wrap-influence-on-position",
+    "fo:background-color",
+    "fo:border",
+    "fo:border-bottom",
+    "fo:border-left",
+    "fo:border-right",
+    "fo:border-top",
+    "fo:break-after",
+    "fo:break-before",
+    "fo:clip",
+    "fo:color",
+    "fo:country",
+    "fo:font-family",
+    "fo:font-size",
+    "fo:font-style",
+    "fo:font-variant",
+    "fo:font-weight",
+    "fo:height",
+    "fo:hyphenate",
+    "fo:hyphenation-keep",
+    "fo:hyphenation-ladder-count",
+    "fo:hyphenation-push-char-count",
+    "fo:hyphenation-remain-char-count",
+    "fo:keep-together",
+    "fo:keep-with-next",
+    "fo:language",
+    "fo:letter-spacing",
+    "fo:line-height",
+    "fo:margin",
+    "fo:margin-bottom",
+    "fo:margin-left",
+    "fo:margin-right",
+    "fo:margin-top",
+    "fo:max-height",
+    "fo:max-width",
+    "fo:min-height",
+    "fo:min-width",
+    "fo:orphans",
+    "fo:padding",
+    "fo:padding-bottom",
+    "fo:padding-left",
+    "fo:padding-right",
+    "fo:padding-top",
+    "fo:page-height",
+    "fo:page-width",
+    "fo:script",
+    "fo:text-align",
+    "fo:text-align-last",
+    "fo:text-indent",
+    "fo:text-shadow",
+    "fo:text-transform",
+    "fo:widows",
+    "fo:width",
+    "fo:wrap-option",
+    "form:allow-deletes",  # ODF v1.0
+    "form:allow-inserts",  # ODF v1.0
+    "form:allow-updates",  # ODF v1.0
+    "form:apply-filter",  # ODF v1.0
+    "form:command",  # ODF v1.0
+    "form:command-type",  # ODF v1.0
+    "form:control-implementation",  # ODF v1.2
+    "form:datasource",  # ODF v1.0
+    "form:detail-fields",  # ODF v1.0
+    "form:enctype",  # ODF v1.0
+    "form:filter",  # ODF v1.0
+    "form:id",  # ODF v1.0
+    "form:ignore-result",  # ODF v1.0
+    "form:label",  # ODF v1.0
+    "form:linked-cell",
+    "form:list-linkage-type",
+    "form:master-fields",  # ODF v1.0
+    "form:method",  # ODF v1.0
+    "form:name",  # ODF v1.0
+    "form:navigation-mode",  # ODF v1.0
+    "form:order",  # ODF v1.0
+    "form:property-name",  # ODF v1.0
+    "form:repeat",
+    "form:source-cell-range",
+    "form:spin-button",
+    "form:tabcycle",  # ODF v1.2
+    "form:value",  # ODF v1.0
+    "form:xforms-list-source",  # ODF v1.0
+    "form:xforms-submission",  # ODF v1.0
+    "grddl:transformation",
+    "number:rfc-language-tag",
+    "number:script",
+    "presentation:background-objects-visible",
+    "presentation:background-visible",
+    "presentation:display-date-time",
+    "presentation:display-footer",
+    "presentation:display-header",
+    "presentation:display-page-number",
+    "presentation:duration",
+    "presentation:transition-speed",
+    "presentation:transition-style",
+    "presentation:transition-type",
+    "presentation:visibility",
+    "smil:direction",
+    "smil:fadeColor",
+    "smil:subtype",
+    "smil:type",
+    "style:auto-text-indent",
+    "style:background-transparency",
+    "style:border-line-width",
+    "style:border-line-width-bottom",
+    "style:border-line-width-left",
+    "style:border-line-width-right",
+    "style:border-line-width-top",
+    "style:cell-protect",
+    "style:column-width",
+    "style:country-asian",
+    "style:country-complex",
+    "style:decimal-places",
+    "style:diagonal-bl-tr",
+    "style:diagonal-bl-tr-widths",
+    "style:diagonal-tl-br",
+    "style:diagonal-tl-br-widths",
+    "style:direction",
+    "style:display-name",  # ODF v1.0
+    "style:dynamic-spacing",
+    "style:editable",
+    "style:first-page-number",
+    "style:flow-with-text",
+    "style:font-charset",
+    "style:font-charset-asian",
+    "style:font-charset-complex",
+    "style:font-family-asian",
+    "style:font-family-complex",
+    "style:font-family-generic",
+    "style:font-family-generic-asian",
+    "style:font-family-generic-complex",
+    "style:font-independent-line-spacing",
+    "style:font-name",
+    "style:font-name-asian",
+    "style:font-name-complex",
+    "style:font-pitch",
+    "style:font-pitch-asian",
+    "style:font-pitch-complex",
+    "style:font-relief",
+    "style:font-size-asian",
+    "style:font-size-complex",
+    "style:font-size-rel",
+    "style:font-size-rel-asian",
+    "style:font-size-rel-complex",
+    "style:font-style-asian",
+    "style:font-style-complex",
+    "style:font-style-name",
+    "style:font-style-name-asian",
+    "style:font-style-name-complex",
+    "style:font-weight-asian",
+    "style:font-weight-complex",
+    "style:footnote-max-height",
+    "style:glyph-orientation-vertical",
+    "style:horizontal-pos",
+    "style:horizontal-rel",
+    "style:join-border",
+    "style:justify-single-word",
+    "style:language-asian",
+    "style:language-complex",
+    "style:layout-grid-base-height",
+    "style:layout-grid-base-width",
+    "style:layout-grid-color",
+    "style:layout-grid-display",
+    "style:layout-grid-lines",
+    "style:layout-grid-mode",
+    "style:layout-grid-print",
+    "style:layout-grid-ruby-below",
+    "style:layout-grid-ruby-height",
+    "style:layout-grid-snap-to",
+    "style:layout-grid-standard-mode",
+    "style:letter-kerning",
+    "style:line-break",
+    "style:line-height-at-least",
+    "style:line-spacing",
+    "style:list-level",
+    "style:master-page-name",  # ODF v1.0
+    "style:margin-gutter",  # ODF v1.4
+    "style:may-break-between-rows",
+    "style:min-row-height",
+    "style:mirror",
+    "style:name",  # ODF v1.0
+    "style:num-format",
+    "style:num-letter-sync",
+    "style:num-prefix",
+    "style:num-suffix",
+    "style:number-wrapped-paragraphs",
+    "style:overflow-behavior",
+    "style:page-layout-name",  # ODF v1.0
+    "style:page-number",
+    "style:paper-tray-name",
+    "style:percentage-data-style-name",
+    "style:print",
+    "style:print-content",
+    "style:print-orientation",
+    "style:print-page-order",
+    "style:protect",
+    "style:punctuation-wrap",
+    "style:register-true",
+    "style:register-truth-ref-style-name",
+    "style:rel-column-width",
+    "style:rel-height",
+    "style:rel-width",
+    "style:repeat",
+    "style:repeat-content",
+    "style:rfc-language-tag",
+    "style:rfc-language-tag-asian",
+    "style:rfc-language-tag-complex",
+    "style:rotation-align",
+    "style:rotation-angle",
+    "style:row-height",
+    "style:ruby-align",
+    "style:ruby-position",
+    "style:run-through",
+    "style:scale-to",
+    "style:scale-to-pages",
+    "style:script-asian",
+    "style:script-complex",
+    "style:script-type",
+    "style:shadow",
+    "style:shrink-to-fit",
+    "style:snap-to-layout-grid",
+    "style:tab-stop-distance",
+    "style:table-centering",
+    "style:text-align-source",
+    "style:text-autospace",
+    "style:text-blinking",
+    "style:text-combine",
+    "style:text-combine-end-char",
+    "style:text-combine-start-char",
+    "style:text-emphasize",
+    "style:text-line-through-color",
+    "style:text-line-through-mode",
+    "style:text-line-through-style",
+    "style:text-line-through-text",
+    "style:text-line-through-text-style",
+    "style:text-line-through-type",
+    "style:text-line-through-width",
+    "style:text-outline",
+    "style:text-overline-color",
+    "style:text-overline-mode",
+    "style:text-overline-style",
+    "style:text-overline-type",
+    "style:text-overline-width",
+    "style:text-position",
+    "style:text-rotation-angle",
+    "style:text-rotation-scale",
+    "style:text-scale",
+    "style:text-underline-color",
+    "style:text-underline-mode",
+    "style:text-underline-style",
+    "style:text-underline-type",
+    "style:text-underline-width",
+    "style:use-optimal-column-width",
+    "style:use-optimal-row-height",
+    "style:use-window-font-color",
+    "style:vertical-align",
+    "style:vertical-pos",
+    "style:vertical-rel",
+    "style:width",
+    "style:wrap",
+    "style:wrap-contour",
+    "style:wrap-contour-mode",
+    "style:wrap-dynamic-threshold",
+    "style:writing-mode",
+    "style:writing-mode-automatic",
+    "svg:fill-rule",
+    "svg:height",
+    "svg:stroke-color",
+    "svg:stroke-linecap",
+    "svg:stroke-opacity",
+    "svg:stroke-width",
+    "svg:viewBox",  # ODF v1.3
+    "svg:width",
+    "svg:x",
+    "svg:y",
+    "table:align",
+    "table:border-model",
+    "table:display",
+    "table:embedded-number-behavior",
+    "table:first-row-end-column",
+    "table:first-row-start-column",
+    "table:last-row-end-column",
+    "table:last-row-start-column",
+    "table:paragraph-style-name",
+    "table:protection-key-digest-algorithm",
+    "table:rfc-language-tag",
+    "table:script",
+    "table:template-name",
+    "table:use-banding-columns-styles",
+    "table:use-banding-rows-styles",
+    "table:use-first-column-styles",
+    "table:use-first-row-styles",
+    "table:use-last-column-styles",
+    "table:use-last-row-styles",
+    "table:use-wildcards",
+    "text:anchor-page-number",
+    "text:anchor-type",
+    "text:animation",
+    "text:animation-delay",
+    "text:animation-direction",
+    "text:animation-repeat",
+    "text:animation-start-inside",
+    "text:animation-steps",
+    "text:animation-stop-inside",
+    "text:condition",
+    "text:continue-list",
+    "text:display",
+    "text:dont-balance-text-columns",
+    "text:id",  # ODF v1.0
+    "text:label-followed-by",
+    "text:label",  # without that line note_citation doesn't work
+    "text:line-break",
+    "text:line-number",
+    "text:list-id",
+    "text:list-level-position-and-space-mode",
+    "text:list-tab-stop-position",
+    "text:min-label-distance",
+    "text:min-label-width",
+    "text:name",  # ODF v1.0
+    "text:number-lines",
+    "text:protection-key-digest-algorithm",
+    "text:space-before",
+    "text:style-name",  # ODF v1.0
+    "text:style-override",
+    "xforms:bind",  # ODF v1.2
+    "xhtml:about",
+    "xhtml:content",
+    "xhtml:datatype",
+    "xhtml:property",
+    "xml:id",
+}
+
+ODF_COLOR_PROPERTY = {
+    "dr3d:ambient-color",
+    "dr3d:diffuse-color",
+    "dr3d:emissive-color",
+    "dr3d:specular-color",
+    "draw:fill-color",
+    "draw:secondary-fill-color",
+    "draw:shadow-color",
+    "fo:background-color",
+    "fo:color",
+    "smil:fadeColor",
+    "style:layout-grid-color",
+    "style:text-line-through-color",
+    "style:text-overline-color",
+    "style:text-underline-color",
+    "svg:stroke-color",
+}
+
+BODY_ALLOW_NAMED_RANGE_TAGS = {
+    "office:chart",
+    "office:database",
+    "office:drawing",
+    "office:image",
+    "office:presentation",
+    "office:spreadsheet",
+    "office:text",
+}

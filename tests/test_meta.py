@@ -1,0 +1,1998 @@
+# Copyright 2018-2026 Jérôme Dumonteil
+# Copyright (c) 2009-2010 Ars Aperta, Itaapy, Pierlis, Talend.
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+#
+#
+# Authors (odfdo project): jerome.dumonteil@gmail.com
+# The odfdo project is a derivative work of the lpod-python project:
+# https://github.com/lpod/lpod-python
+# Authors: Hervé Cauwelier <herve@itaapy.com>
+#          David Versmisse <david.versmisse@itaapy.com>
+
+import io
+from collections.abc import Iterable
+from datetime import date as dtdate
+from datetime import datetime, timedelta
+from decimal import Decimal
+from textwrap import dedent
+
+import pytest
+
+from odfdo.body import Metadata
+from odfdo.const import ODF_META
+from odfdo.datatype import DateTime, Duration
+from odfdo.document import Document
+from odfdo.meta import GENERATOR, Meta
+from odfdo.meta_auto_reload import MetaAutoReload
+from odfdo.meta_hyperlink_behaviour import MetaHyperlinkBehaviour
+from odfdo.meta_template import MetaTemplate
+
+
+@pytest.fixture
+def meta(samples) -> Iterable[Meta]:
+    document = Document(samples("meta.odt"))
+    #   <office:meta>
+    #     <meta:creation-date>2009-07-31T15:57:37</meta:creation-date>
+    #     <meta:editing-duration>PT00H05M30S</meta:editing-duration>
+    #     <meta:editing-cycles>2</meta:editing-cycles>
+    #     <meta:generator>LibreOffice/6.0.3.2$MacOSX_X86_64 LibreOffice_project/8f48d515416608e3a835360314dac7e47fd0b821</meta:generator>
+    #     <dc:description>Comments
+    # Commentaires
+    # 评论</dc:description>
+    #     <meta:keyword>Mots-clés</meta:keyword>
+    #     <dc:subject>Sujet de sa majesté</dc:subject>
+    #     <dc:title>Intitulé</dc:title>
+    #     <dc:date>2009-07-31T15:59:13</dc:date>
+    #     <meta:document-statistic meta:table-count="0" meta:image-count="0" meta:object-count="0" meta:page-count="1" meta:paragraph-count="1" meta:word-count="4" meta:character-count="27" meta:non-whitespace-character-count="24"/>
+    #     <meta:user-defined meta:name="Achevé à la date" meta:value-type="date">2009-07-31T00:00:00</meta:user-defined>
+    #     <meta:user-defined meta:name="Numéro du document" meta:value-type="float">3</meta:user-defined>
+    #     <meta:user-defined meta:name="Référence" meta:value-type="boolean">true</meta:user-defined>
+    #     <meta:user-defined meta:name="Vérifié par">Moi-même</meta:user-defined>
+    #   </office:meta>
+    yield document.get_part(ODF_META)
+
+
+def test_get_title(meta):
+    title = meta.get_title()
+    expected = "Intitulé"
+    assert title == expected
+
+
+def test_set_title(meta):
+    clone = meta.clone
+    title = "Nouvel intitulé"
+    clone.set_title(title)
+    assert clone.get_title() == title
+
+
+def test_title_property(meta):
+    clone = meta.clone
+    title = "Nouvel intitulé"
+    clone.title = title
+    assert clone.title == title
+
+
+def test_title_property_empty(meta):
+    clone = meta.clone
+    orig = clone.get_element("//dc:title")
+    orig.delete()
+    title = "Nouvel intitulé"
+    clone.title = title
+    assert clone.title == title
+
+
+def test_get_description(meta):
+    description = meta.get_description()
+    expected = "Comments\nCommentaires\n评论"
+    assert description == expected
+
+
+def test_set_description(meta):
+    clone = meta.clone
+    description = "评论\nnCommentaires\nComments"
+    clone.set_description(description)
+    assert clone.get_description() == description
+
+
+def test_description_property(meta):
+    clone = meta.clone
+    description = "评论\nnCommentaires\nComments"
+    clone.description = description
+    assert clone.description == description
+
+
+def test_description_property_empty(meta):
+    clone = meta.clone
+    orig = clone.get_element("//dc:description")
+    orig.delete()
+    description = "评论\nnCommentaires\nComments"
+    clone.description = description
+    assert clone.description == description
+
+
+def test_get_subject(meta):
+    subject = meta.get_subject()
+    expected = "Sujet de sa majesté"
+    assert subject == expected
+
+
+def test_set_subject(meta):
+    clone = meta.clone
+    subject = "Θέμα"
+    clone.set_subject(subject)
+    assert clone.get_subject() == subject
+
+
+def test_subject_property(meta):
+    clone = meta.clone
+    subject = "Θέμα"
+    clone.subject = subject
+    assert clone.subject == subject
+
+
+def test_subject_property_empty(meta):
+    clone = meta.clone
+    orig = clone.get_element("//dc:subject")
+    orig.delete()
+    subject = "Θέμα"
+    clone.subject = subject
+    assert clone.subject == subject
+
+
+def test_get_language(meta):
+    language = meta.get_language()
+    assert language is None
+
+
+def test_set_language(meta):
+    clone = meta.clone
+    language = "en-US"
+    clone.set_language(language)
+    assert clone.get_language() == language
+
+
+def test_set_bad_language(meta):
+    clone = meta.clone
+    language = "English"
+    with pytest.raises(TypeError):
+        clone.set_language(language)
+
+
+def test_language_property(meta):
+    clone = meta.clone
+    language = "en-US"
+    clone.language = language
+    assert clone.language == language
+    assert clone.get_language() == language
+
+
+def test_language_property_double(meta):
+    clone = meta.clone
+    language = "en-US"
+    language2 = "en-UK"
+    clone.language = language
+    assert clone.language == language
+    clone.language = language2
+    assert clone.language == language2
+
+
+def test_get_modification_date(meta):
+    date = meta.get_modification_date()
+    expected = DateTime.decode("2009-07-31T15:59:13")
+    assert date == expected
+    assert meta.date == expected
+
+
+def test_set_modification_date(meta):
+    clone = meta.clone
+    now = datetime.now().replace(microsecond=0)
+    clone.set_modification_date(now)
+    assert clone.get_modification_date() == now
+
+
+def test_set_modification_date_meta_special(meta):
+    clone = meta.clone
+    elem = clone.get_element("//dc:date")
+    elem.delete()
+    now = datetime.now().replace(microsecond=0)
+    clone.set_modification_date(now)
+    assert clone.get_modification_date() == now
+
+
+def test_modification_date_property(meta):
+    clone = meta.clone
+    now = datetime.now().replace(microsecond=0)
+    clone.date = now
+    assert clone.date == now
+    assert clone.get_modification_date() == now
+
+
+def test_set_bad_modication_date(meta):
+    clone = meta.clone
+    date_val = 123
+    with pytest.raises((AttributeError, TypeError)):
+        clone.set_modification_date(date_val)  # type: ignore[arg-type]
+
+
+def test_print_date_property(meta):
+    clone = meta.clone
+    now = datetime.now().replace(microsecond=0)
+    clone.print_date = now
+    assert clone.print_date == now
+
+
+def test_print_date_property_2(meta):
+    clone = meta.clone
+    now = datetime.now().replace(microsecond=0)
+    clone.print_date = now
+    # second change
+    now = now + timedelta(hours=1)
+    clone.print_date = now
+    assert clone.print_date == now
+
+
+def test_print_date_property_none(meta):
+    clone = meta.clone
+    now = datetime.now().replace(microsecond=0)
+    clone.print_date = None
+    assert clone.print_date - now < timedelta(hours=3)
+
+
+def test_get_creation_date(meta):
+    date_val = meta.get_creation_date()
+    expected = datetime(2009, 7, 31, 15, 57, 37)
+    assert date_val == expected
+
+
+def test_set_creation_date(meta):
+    clone = meta.clone
+    now = datetime.now().replace(microsecond=0)
+    clone.set_creation_date(now)
+    assert clone.get_creation_date() == now
+
+
+def test_set_bad_creation_date(meta):
+    clone = meta.clone
+    date_val = 123
+    with pytest.raises((AttributeError, TypeError)):
+        clone.set_creation_date(date_val)  # type: ignore[arg-type]
+
+
+def test_set_creation_date_none(meta):
+    clone = meta.clone
+    now_date = datetime.now()
+    clone.set_creation_date(None)
+    assert clone.get_creation_date() - now_date < timedelta(hours=3)
+
+
+def test_creation_date_property(meta):
+    clone = meta.clone
+    now = datetime.now().replace(microsecond=0)
+    clone.creation_date = now
+    assert clone.creation_date == now
+
+
+def test_get_initial_creator(meta):
+    creator = meta.get_initial_creator()
+    expected = None
+    assert creator == expected
+
+
+def test_set_initial_creator(meta):
+    clone = meta.clone
+    creator = "Hervé"
+    clone.set_initial_creator(creator)
+    assert clone.get_initial_creator() == creator
+
+
+def test_initial_creator_property(meta):
+    clone = meta.clone
+    creator = "Hervé"
+    clone.initial_creator = creator
+    assert clone.initial_creator == creator
+
+
+def test_initial_creator_property_twice(meta):
+    clone = meta.clone
+    creator = "Hervé"
+    creator2 = "John"
+    clone.initial_creator = creator
+    clone.initial_creator = creator2
+    assert clone.initial_creator == creator2
+
+
+def test_printed_by_property(meta):
+    clone = meta.clone
+    printer = "Jérôme"
+    clone.printed_by = printer
+    assert clone.printed_by == printer
+
+
+def test_printed_by_property_twice(meta):
+    clone = meta.clone
+    printer = "Jérôme"
+    printer2 = "John"
+    clone.printed_by = printer
+    clone.printed_by = printer2
+    assert clone.printed_by == printer2
+
+
+def test_get_creator(meta):
+    creator = meta.creator
+    expected = None
+    assert creator == expected
+
+
+def test_set_creator(meta):
+    clone = meta.clone
+    creator = "Hervé"
+    clone.creator = creator
+    assert clone.creator == creator
+
+
+def test_set_creator_2(meta):
+    clone = meta.clone
+    clone.creator = None
+    creator = "Hervé"
+    clone.creator = creator
+    assert clone.creator == creator
+
+
+def test_get_keywords(meta):
+    keywords = meta.get_keywords()
+    expected = "Mots-clés"
+    assert keywords == expected
+
+
+def test_set_keywords(meta):
+    clone = meta.clone
+    keywords = "Nouveaux mots-clés"
+    clone.set_keywords(keywords)
+    assert clone.get_keywords() == keywords
+
+
+def test_keyword_property(meta):
+    clone = meta.clone
+    keyword = "Nouveaux"
+    clone.keyword = keyword
+    assert clone.keyword == keyword
+
+
+def test_keywords_property(meta):
+    clone = meta.clone
+    keywords = "Nouveaux mots-clés"
+    clone.keywords = keywords
+    assert clone.keywords == keywords
+
+
+def test_creation_date_from_date(meta):
+    clone = meta.clone
+    d = dtdate(2024, 7, 14)
+    clone.creation_date = d
+    assert clone.creation_date == datetime(2024, 7, 14, 0, 0, 0)
+
+
+def test_modification_date_from_date(meta):
+    clone = meta.clone
+    d = dtdate(2024, 7, 14)
+    clone.date = d
+    assert clone.date == datetime(2024, 7, 14, 0, 0, 0)
+
+
+def test_print_date_from_date(meta):
+    clone = meta.clone
+    d = dtdate(2024, 7, 14)
+    clone.print_date = d
+    assert clone.print_date == datetime(2024, 7, 14, 0, 0, 0)
+
+
+def test_keyword_property_on_none(meta):
+    clone = meta.clone
+    element = clone.get_element("//meta:keyword")
+    if element:
+        element.delete()
+    word = "Albert"
+    clone.keywords = word
+    assert clone.keywords == word
+
+
+def test_get_editing_duration(meta):
+    duration = meta.get_editing_duration()
+    expected = Duration.decode("PT00H05M30S")
+    assert duration == expected
+
+
+def test_user_defined_date_from_datetime(meta):
+    dt = datetime(2024, 7, 14, 15, 30, 0)
+    meta.set_user_defined_metadata("MyDate", dt)
+    result = meta.get_user_defined_metadata()
+    assert result["MyDate"] == dt
+
+
+def test_meta_from_dict_template_no_date(meta):
+    clone = meta.clone
+    clone.set_template(href="http://example.org/template.ott", title="My Template")
+    tmpl = clone.template
+    tmpl.del_attribute("meta:date")
+    exported = clone.as_dict(full=True)
+    assert "meta:date" not in exported["meta:template"]
+    clone.from_dict(exported)
+    assert clone.template.href == "http://example.org/template.ott"
+
+
+def test_meta_from_dict_template_dict_without_date(meta):
+    dict_data = {
+        "meta:template": {
+            "xlink:href": "http://example.org/custom.ott",
+            "xlink:title": "Custom Template",
+        }
+    }
+    meta.from_dict(dict_data)
+    assert meta.template.href == "http://example.org/custom.ott"
+    assert meta.template.title == "Custom Template"
+
+
+def test_meta_from_dict_auto_reload_without_delay(meta):
+    clone = meta.clone
+    dict_data = {
+        "meta:auto-reload": {
+            "xlink:href": "http://example.org/reload.odt",
+        }
+    }
+    clone.from_dict(dict_data)
+    assert clone.auto_reload.href == "http://example.org/reload.odt"
+
+
+def test_meta_from_dict_hyperlink_behaviour_without_keys(meta):
+    clone = meta.clone
+    dict_data = {
+        "meta:hyperlink-behaviour": {
+            "xlink:show": "replace",
+        }
+    }
+    clone.from_dict(dict_data)
+    assert clone.hyperlink_behaviour.show == "replace"
+
+
+def test_editing_duration_property(meta):
+    clone = meta.clone
+    duration = timedelta(1, 2, 0, 0, 5, 6, 7)
+    clone.editing_duration = duration
+    assert clone.editing_duration == duration
+    assert clone.get_editing_duration() == duration
+
+
+def test_set_bad_editing_duration(meta):
+    clone = meta.clone
+    duration = "PT00H01M27S"
+    with pytest.raises(TypeError):
+        clone.set_editing_duration(duration)
+
+
+def test_get_editing_cycles(meta):
+    cycles = meta.get_editing_cycles()
+    expected = 2
+    assert cycles == expected
+
+
+def test_set_editing_cycles(meta):
+    clone = meta.clone
+    cycles = 1  # I swear it was a first shot!
+    clone.set_editing_cycles(cycles)
+    assert clone.get_editing_cycles() == cycles
+
+
+def test_editing_cycles_property(meta):
+    clone = meta.clone
+    cycles = 1  # I swear it was a first shot!
+    clone.editing_cycles = cycles
+    assert clone.editing_cycles == cycles
+    assert clone.get_editing_cycles() == cycles
+
+
+def test_set_bad_editing_cycles(meta):
+    clone = meta.clone
+    cycles = "3"
+    with pytest.raises(TypeError):
+        clone.editing_cycles = cycles
+
+
+def test_set_bad_editing_cycles_2(meta):
+    clone = meta.clone
+    cycles = -4
+    with pytest.raises(ValueError):
+        clone.editing_cycles = cycles
+
+
+def test_get_generator(meta):
+    generator = meta.get_generator()
+    expected = (
+        "LibreOffice/6.0.3.2$MacOSX_X86_64 "
+        "LibreOffice_project/8f48d515416608e3a835360314dac7e47fd0b821"
+    )
+    assert generator == expected
+
+
+def test_generator_getter(meta):
+    generator = meta.generator
+    expected = (
+        "LibreOffice/6.0.3.2$MacOSX_X86_64 "
+        "LibreOffice_project/8f48d515416608e3a835360314dac7e47fd0b821"
+    )
+    assert generator == expected
+
+
+def test_set_generator(meta):
+    clone = meta.clone
+    generator = "odfdo Project"
+    clone.set_generator(generator)
+    assert clone.get_generator() == generator
+
+
+def test_generator_setter(meta):
+    clone = meta.clone
+    generator = "odfdo Project"
+    clone.generator = generator
+    assert clone.generator == generator
+
+
+def test_generator_default_unmodified(samples):
+    document = Document(samples("meta.odt"))
+    with io.BytesIO() as bytes_content:
+        document.save(bytes_content)
+    # document saved, generator string should be ours
+    assert document.meta.get_generator() == GENERATOR
+
+
+def test_generator_default_modified(samples):
+    document = Document(samples("meta.odt"))
+    document.meta.set_generator("custom generator")
+    with io.BytesIO() as bytes_content:
+        document.save(bytes_content)
+    # document saved, generator string should be untouched
+    assert document.meta.get_generator() == "custom generator"
+
+
+def test_get_statistic(meta):
+    statistic = meta.get_statistic()
+    expected = {
+        "meta:table-count": 0,
+        "meta:image-count": 0,
+        "meta:object-count": 0,
+        "meta:page-count": 1,
+        "meta:paragraph-count": 1,
+        "meta:word-count": 4,
+        "meta:character-count": 27,
+        "meta:non-whitespace-character-count": 24,
+    }
+    assert statistic == expected
+
+
+def test_set_statistic(meta):
+    clone = meta.clone
+    statistic = {
+        "meta:table-count": 1,
+        "meta:image-count": 2,
+        "meta:object-count": 3,
+        "meta:page-count": 4,
+        "meta:paragraph-count": 5,
+        "meta:word-count": 6,
+        "meta:character-count": 7,
+        "meta:non-whitespace-character-count": 24,
+    }
+    clone.set_statistic(statistic)
+    assert clone.get_statistic() == statistic
+
+
+def test_statistic_property(meta):
+    clone = meta.clone
+    statistic = {
+        "meta:table-count": 1,
+        "meta:image-count": 2,
+        "meta:object-count": 3,
+        "meta:page-count": 4,
+        "meta:paragraph-count": 5,
+        "meta:word-count": 6,
+        "meta:character-count": 7,
+        "meta:non-whitespace-character-count": 24,
+    }
+    clone.statistic = statistic
+    assert clone.statistic == statistic
+    assert clone.get_statistic() == statistic
+
+
+def test_statistic_property_none(meta):
+    clone = meta.clone
+    element = clone.get_element("//meta:document-statistic")
+    if element:
+        element.delete()
+    assert clone.statistic is None
+
+
+def test_statistic_property_bad(meta):
+    clone = meta.clone
+    with pytest.raises(TypeError):
+        clone.statistic = 42
+
+
+def test_statistic_property_bad_2(meta):
+    clone = meta.clone
+    statistic = {
+        "meta:table-count": "error",
+        "meta:image-count": 2,
+        "meta:object-count": 3,
+        "meta:page-count": 4,
+        "meta:paragraph-count": 5,
+        "meta:word-count": 6,
+        "meta:character-count": 7,
+        "meta:non-whitespace-character-count": 24,
+    }
+    with pytest.raises(TypeError):
+        clone.statistic = statistic
+
+
+def test_get_user_defined_metadata(meta):
+    metadata = meta.get_user_defined_metadata()
+    expected = {
+        "Achevé à la date": datetime(2009, 7, 31, 0, 0, 0),
+        "Numéro du document": Decimal("3"),
+        "Référence": True,
+        "Vérifié par": "Moi-même",
+    }
+    assert metadata == expected
+
+
+def test_set_user_defined_metadata(meta):
+    # A new value
+    meta.set_user_defined_metadata("Prop5", 1)
+    # Change a value
+    meta.set_user_defined_metadata("Référence", False)
+    expected = {
+        "Achevé à la date": datetime(2009, 7, 31, 0, 0, 0),
+        "Numéro du document": Decimal("3"),
+        "Référence": False,
+        "Vérifié par": "Moi-même",
+        "Prop5": Decimal("1"),
+    }
+    metadata = meta.get_user_defined_metadata()
+    assert metadata == expected
+
+
+def test_user_defined_metadata_property_getter(meta):
+    # A new value
+    meta.set_user_defined_metadata("Prop5", 1)
+    # Change a value
+    meta.set_user_defined_metadata("Référence", False)
+    expected = {
+        "Achevé à la date": datetime(2009, 7, 31, 0, 0, 0),
+        "Numéro du document": Decimal("3"),
+        "Référence": False,
+        "Vérifié par": "Moi-même",
+        "Prop5": Decimal("1"),
+    }
+    metadata = meta.user_defined_metadata
+    assert metadata == expected
+
+
+def test_set_user_defined_metadata_none(meta):
+    # A new value
+    meta.set_user_defined_metadata("Prop5", 2)
+    # Change a value
+    meta.set_user_defined_metadata("Référence", None)
+    meta.set_user_defined_metadata("Vérifié par", None)
+    expected = {
+        "Achevé à la date": datetime(2009, 7, 31, 0, 0, 0),
+        "Numéro du document": Decimal("3"),
+        "Prop5": Decimal("2"),
+    }
+    metadata = meta.get_user_defined_metadata()
+    assert metadata == expected
+
+
+def test_user_defined_metadata_clear(meta):
+    meta.clear_user_defined_metadata()
+    metadata = meta.user_defined_metadata
+    assert metadata == {}
+
+
+def test_user_defined_metadata_property_setter(meta):
+    new_data = {
+        "Achevé le date": dtdate(2012, 7, 31),
+        "Numéro document": Decimal("4"),
+        "Référence": True,
+    }
+    meta.user_defined_metadata = new_data
+    assert meta.user_defined_metadata == new_data
+    assert meta.get_user_defined_metadata() == new_data
+
+
+def test_set_user_defined_metadata_datetime(meta):
+    dt = datetime(2025, 1, 2, 3, 4, 5)
+    expected = {
+        "name": "when",
+        "text": "2025-01-02T03:04:05",
+        "value": datetime(2025, 1, 2, 3, 4, 5),
+        "value_type": "date",
+    }
+    meta.set_user_defined_metadata("when", dt)
+    result = meta.get_user_defined_metadata_of_name("when")
+    assert result == expected
+
+
+def test_set_user_defined_metadata_date(meta):
+    dt = dtdate(2025, 1, 2)
+    expected = {
+        "name": "when",
+        "text": "2025-01-02",
+        "value": dtdate(2025, 1, 2),
+        "value_type": "date",
+    }
+    meta.set_user_defined_metadata("when", dt)
+    assert meta.get_user_defined_metadata_of_name("when") == expected
+
+
+def test_set_user_defined_metadata_timedelta(meta):
+    td = timedelta(hours=4)
+    expected = {
+        "name": "when",
+        "text": "PT04H00M00S",
+        "value": td,
+        "value_type": "time",
+    }
+    meta.set_user_defined_metadata("when", td)
+    assert meta.get_user_defined_metadata_of_name("when") == expected
+
+
+def test_set_user_defined_metadata_wrong_type(meta):
+    with pytest.raises(TypeError):
+        meta.set_user_defined_metadata("when", [])
+
+
+def test_get_user_defined_metadata_of_name(meta):
+    ref = "Référence"
+    metadata = meta.get_user_defined_metadata_of_name(ref)
+    expected = {"name": ref, "text": "true", "value": True, "value_type": "boolean"}
+    assert metadata == expected
+
+
+def test_get_user_defined_metadata_buggy_meta_name(meta):
+    ref = "Référence"
+    for item in meta.get_elements("//meta:user-defined"):
+        # Read the values
+        name = item.get_attribute("meta:name")
+        if name == ref:
+            item.set_attribute("meta:name", None)
+            break
+    metadata = meta.get_user_defined_metadata()
+    expected = {
+        "Achevé à la date": datetime(2009, 7, 31, 0, 0, 0),
+        "Numéro du document": Decimal("3"),
+        "Vérifié par": "Moi-même",
+        "": True,
+    }
+    assert metadata == expected
+
+
+def test_user_defined_metadata_list_buggy_meta_name(meta):
+    ref = "Référence"
+    for item in meta.get_elements("//meta:user-defined"):
+        # Read the values
+        name = item.get_attribute("meta:name")
+        if name == ref:
+            item.set_attribute("meta:name", None)
+            break
+    metadata_list = meta._user_defined_metadata_list()
+    expected = [
+        {
+            "meta:name": "",
+            "meta:value-type": "boolean",
+            "value": True,
+        },
+        {
+            "meta:name": "Achevé à la date",
+            "meta:value-type": "date",
+            "value": datetime(2009, 7, 31, 0, 0, 0),
+        },
+        {
+            "meta:name": "Numéro du document",
+            "meta:value-type": "float",
+            "value": Decimal("3"),
+        },
+        {
+            "meta:name": "Vérifié par",
+            "meta:value-type": "string",
+            "value": "Moi-même",
+        },
+    ]
+    assert metadata_list == expected
+
+
+def test_user_defined_metadata_list(meta):
+    td = timedelta(hours=5)
+    meta.set_user_defined_metadata("duration", td)
+    metadata_list = meta._user_defined_metadata_list()
+    expected = [
+        {
+            "meta:name": "Achevé à la date",
+            "meta:value-type": "date",
+            "value": datetime(2009, 7, 31, 0, 0, 0),
+        },
+        {
+            "meta:name": "Numéro du document",
+            "meta:value-type": "float",
+            "value": Decimal("3"),
+        },
+        {"meta:name": "Référence", "meta:value-type": "boolean", "value": True},
+        {"meta:name": "Vérifié par", "meta:value-type": "string", "value": "Moi-même"},
+        {
+            "meta:name": "duration",
+            "meta:value-type": "time",
+            "value": td,
+        },
+    ]
+    assert metadata_list == expected
+
+
+def test_no_meta_template(meta):
+    clone = meta.clone
+    template = clone.template
+    assert template is None
+
+
+def test_set_meta_template(meta):
+    clone = meta.clone
+    current = clone.template
+    if isinstance(current, MetaTemplate):
+        current.delete()
+    now = datetime.now().replace(microsecond=0)
+    clone.set_template(date=now, href="some url", title="some title")
+    template = clone.template
+    assert isinstance(template, MetaTemplate)
+    assert template.date == DateTime.encode(now)
+    assert template.href == "some url"
+    assert template.title == "some title"
+
+
+def test_set_meta_template_twice(meta):
+    clone = meta.clone
+    now = datetime.now().replace(microsecond=0)
+    clone.set_template(date=now, href="some url", title="some title")
+    template = clone.template
+    assert isinstance(template, MetaTemplate)
+    # second change
+    clone.set_template(date=now, href="new url", title="new title")
+    template = clone.template
+    assert isinstance(template, MetaTemplate)
+    assert template.date == DateTime.encode(now)
+    assert template.href == "new url"
+    assert template.title == "new title"
+
+
+def test_no_meta_auto_reload(meta):
+    clone = meta.clone
+    reload = clone.auto_reload
+    assert reload is None
+
+
+def test_set_meta_auto_reload(meta):
+    clone = meta.clone
+    current = clone.auto_reload
+    if isinstance(current, MetaAutoReload):
+        current.delete()
+    delay = timedelta(seconds=15)
+    clone.set_auto_reload(delay=delay, href="some url")
+    reload = clone.auto_reload
+    assert isinstance(reload, MetaAutoReload)
+    assert reload.delay == Duration.encode(delay)
+    assert reload.href == "some url"
+    assert repr(reload) == (
+        "<MetaAutoReload tag=meta:auto-reload href=some url delay=0:00:15>"
+    )
+
+
+def test_set_meta_auto_reload_twice(meta):
+    clone = meta.clone
+    delay = timedelta(seconds=15)
+    clone.set_auto_reload(delay=delay, href="some url")
+    reload = clone.auto_reload
+    assert isinstance(reload, MetaAutoReload)
+    # second change
+    clone.set_auto_reload(delay=delay, href="new url")
+    reload = clone.auto_reload
+    assert isinstance(reload, MetaAutoReload)
+    assert reload.delay == Duration.encode(delay)
+    assert reload.href == "new url"
+    assert repr(reload) == (
+        "<MetaAutoReload tag=meta:auto-reload href=new url delay=0:00:15>"
+    )
+
+
+def test_no_hyperlink_behaviour(meta):
+    clone = meta.clone
+    behaviour = clone.hyperlink_behaviour
+    assert behaviour is None
+
+
+def test_set_hyperlink_behaviour(meta):
+    clone = meta.clone
+    current = clone.hyperlink_behaviour
+    if isinstance(current, MetaHyperlinkBehaviour):
+        current.delete()
+    clone.set_hyperlink_behaviour(target_frame_name="some_frame", show="_top")
+    behaviour = clone.hyperlink_behaviour
+    assert isinstance(behaviour, MetaHyperlinkBehaviour)
+    assert behaviour.show == "_top"
+    assert behaviour.target_frame_name == "some_frame"
+    assert repr(behaviour) == (
+        "<MetaHyperlinkBehaviour tag=meta:hyperlink-behaviour target=some_frame show=_top>"
+    )
+
+
+def test_set_hyperlink_behaviour_twice(meta):
+    clone = meta.clone
+    clone.set_hyperlink_behaviour(target_frame_name="some_frame", show="_top")
+    behaviour = clone.hyperlink_behaviour
+    assert isinstance(behaviour, MetaHyperlinkBehaviour)
+    # second change
+    clone.set_hyperlink_behaviour(target_frame_name="new_frame", show="_top")
+    behaviour = clone.hyperlink_behaviour
+    assert isinstance(behaviour, MetaHyperlinkBehaviour)
+    assert behaviour.show == "_top"
+    assert behaviour.target_frame_name == "new_frame"
+    assert repr(behaviour) == (
+        "<MetaHyperlinkBehaviour tag=meta:hyperlink-behaviour target=new_frame show=_top>"
+    )
+
+
+def test_meta_export_dict(meta):
+    exported = meta.as_dict()
+    expected = {
+        "meta:creation-date": datetime(2009, 7, 31, 15, 57, 37),
+        "dc:date": datetime(2009, 7, 31, 15, 59, 13),
+        "meta:editing-duration": timedelta(seconds=330),
+        "meta:editing-cycles": 2,
+        "meta:document-statistic": {
+            "meta:table-count": 0,
+            "meta:image-count": 0,
+            "meta:object-count": 0,
+            "meta:page-count": 1,
+            "meta:paragraph-count": 1,
+            "meta:word-count": 4,
+            "meta:character-count": 27,
+            "meta:non-whitespace-character-count": 24,
+        },
+        "meta:generator": "LibreOffice/6.0.3.2$MacOSX_X86_64 LibreOffice_project/8f48d515416608e3a835360314dac7e47fd0b821",
+        "dc:title": "Intitulé",
+        "dc:description": "Comments\nCommentaires\n评论",
+        "meta:keyword": "Mots-clés",
+        "dc:subject": "Sujet de sa majesté",
+        "meta:user-defined": [
+            {
+                "meta:name": "Achevé à la date",
+                "meta:value-type": "date",
+                "value": datetime(2009, 7, 31, 0, 0, 0),
+            },
+            {
+                "meta:name": "Numéro du document",
+                "meta:value-type": "float",
+                "value": Decimal("3"),
+            },
+            {"meta:name": "Référence", "meta:value-type": "boolean", "value": True},
+            {
+                "meta:name": "Vérifié par",
+                "meta:value-type": "string",
+                "value": "Moi-même",
+            },
+        ],
+    }
+    assert exported == expected
+
+
+def test_meta_statistic_none(meta):
+    with pytest.raises(TypeError):
+        meta.statistic = None
+
+
+def test_meta_export_dict_error(meta):
+    element = meta.get_element("//meta:document-statistic")
+    element.delete()
+    with pytest.raises(LookupError):
+        meta.as_dict()
+
+
+def test_meta_export_dict_auto_reload_hyperlink_behaviour(meta):
+    meta.set_auto_reload(timedelta(seconds=30))
+    meta.set_hyperlink_behaviour()
+    exported = meta.as_dict()
+    expected = {
+        "meta:creation-date": datetime(2009, 7, 31, 15, 57, 37),
+        "dc:date": datetime(2009, 7, 31, 15, 59, 13),
+        "meta:editing-duration": timedelta(seconds=330),
+        "meta:editing-cycles": 2,
+        "meta:document-statistic": {
+            "meta:table-count": 0,
+            "meta:image-count": 0,
+            "meta:object-count": 0,
+            "meta:page-count": 1,
+            "meta:paragraph-count": 1,
+            "meta:word-count": 4,
+            "meta:character-count": 27,
+            "meta:non-whitespace-character-count": 24,
+        },
+        "meta:generator": "LibreOffice/6.0.3.2$MacOSX_X86_64 LibreOffice_project/8f48d515416608e3a835360314dac7e47fd0b821",
+        "dc:title": "Intitulé",
+        "dc:description": "Comments\nCommentaires\n评论",
+        "meta:keyword": "Mots-clés",
+        "dc:subject": "Sujet de sa majesté",
+        "meta:auto-reload": {
+            "meta:delay": timedelta(seconds=30),
+            "xlink:actuate": "onLoad",
+            "xlink:href": "",
+            "xlink:show": "replace",
+            "xlink:type": "simple",
+        },
+        "meta:hyperlink-behaviour": {
+            "office:target-frame-name": "_blank",
+            "xlink:show": "replace",
+        },
+        "meta:user-defined": [
+            {
+                "meta:name": "Achevé à la date",
+                "meta:value-type": "date",
+                "value": datetime(2009, 7, 31, 0, 0, 0),
+            },
+            {
+                "meta:name": "Numéro du document",
+                "meta:value-type": "float",
+                "value": Decimal("3"),
+            },
+            {"meta:name": "Référence", "meta:value-type": "boolean", "value": True},
+            {
+                "meta:name": "Vérifié par",
+                "meta:value-type": "string",
+                "value": "Moi-même",
+            },
+        ],
+    }
+    assert exported == expected
+
+
+def test_meta_export_dict_full(meta):
+    exported = meta.as_dict(True)
+    expected = {
+        "meta:creation-date": datetime(2009, 7, 31, 15, 57, 37),
+        "dc:date": datetime(2009, 7, 31, 15, 59, 13),
+        "meta:editing-duration": timedelta(seconds=330),
+        "meta:editing-cycles": 2,
+        "meta:document-statistic": {
+            "meta:table-count": 0,
+            "meta:image-count": 0,
+            "meta:object-count": 0,
+            "meta:page-count": 1,
+            "meta:paragraph-count": 1,
+            "meta:word-count": 4,
+            "meta:character-count": 27,
+            "meta:non-whitespace-character-count": 24,
+        },
+        "meta:generator": "LibreOffice/6.0.3.2$MacOSX_X86_64 LibreOffice_project/8f48d515416608e3a835360314dac7e47fd0b821",
+        "dc:title": "Intitulé",
+        "dc:description": "Comments\nCommentaires\n评论",
+        "dc:creator": None,
+        "meta:keyword": "Mots-clés",
+        "dc:subject": "Sujet de sa majesté",
+        "dc:language": None,
+        "meta:initial-creator": None,
+        "meta:print-date": None,
+        "meta:printed-by": None,
+        "meta:auto-reload": None,
+        "meta:hyperlink-behaviour": None,
+        "meta:template": None,
+        "meta:user-defined": [
+            {
+                "meta:name": "Achevé à la date",
+                "meta:value-type": "date",
+                "value": datetime(2009, 7, 31, 0, 0, 0),
+            },
+            {
+                "meta:name": "Numéro du document",
+                "meta:value-type": "float",
+                "value": Decimal("3"),
+            },
+            {"meta:name": "Référence", "meta:value-type": "boolean", "value": True},
+            {
+                "meta:name": "Vérifié par",
+                "meta:value-type": "string",
+                "value": "Moi-même",
+            },
+        ],
+    }
+    assert exported == expected
+
+
+def test_meta_export_json(meta):
+    exported = meta.as_json()
+    expected = dedent(
+        """\
+    {
+        "meta:creation-date": "2009-07-31T15:57:37",
+        "dc:date": "2009-07-31T15:59:13",
+        "meta:editing-duration": "PT00H05M30S",
+        "meta:editing-cycles": 2,
+        "meta:document-statistic": {
+            "meta:table-count": 0,
+            "meta:image-count": 0,
+            "meta:object-count": 0,
+            "meta:page-count": 1,
+            "meta:paragraph-count": 1,
+            "meta:word-count": 4,
+            "meta:character-count": 27,
+            "meta:non-whitespace-character-count": 24
+        },
+        "meta:generator": "LibreOffice/6.0.3.2$MacOSX_X86_64 LibreOffice_project/8f48d515416608e3a835360314dac7e47fd0b821",
+        "dc:title": "Intitulé",
+        "dc:description": "Comments\\nCommentaires\\n评论",
+        "meta:keyword": "Mots-clés",
+        "dc:subject": "Sujet de sa majesté",
+        "meta:user-defined": [
+            {
+                "meta:name": "Achevé à la date",
+                "meta:value-type": "date",
+                "value": "2009-07-31T00:00:00"
+            },
+            {
+                "meta:name": "Numéro du document",
+                "meta:value-type": "float",
+                "value": 3
+            },
+            {
+                "meta:name": "Référence",
+                "meta:value-type": "boolean",
+                "value": true
+            },
+            {
+                "meta:name": "Vérifié par",
+                "meta:value-type": "string",
+                "value": "Moi-même"
+            }
+        ]
+    }"""
+    )
+    assert exported.strip() == expected.strip()
+
+
+def test_meta_export_json_with_reload(meta):
+    delay = timedelta(seconds=15)
+    meta.set_auto_reload(delay, "some_url")
+    exported = meta.as_json()
+    expected = dedent(
+        """\
+    {
+        "meta:creation-date": "2009-07-31T15:57:37",
+        "dc:date": "2009-07-31T15:59:13",
+        "meta:editing-duration": "PT00H05M30S",
+        "meta:editing-cycles": 2,
+        "meta:document-statistic": {
+            "meta:table-count": 0,
+            "meta:image-count": 0,
+            "meta:object-count": 0,
+            "meta:page-count": 1,
+            "meta:paragraph-count": 1,
+            "meta:word-count": 4,
+            "meta:character-count": 27,
+            "meta:non-whitespace-character-count": 24
+        },
+        "meta:generator": "LibreOffice/6.0.3.2$MacOSX_X86_64 LibreOffice_project/8f48d515416608e3a835360314dac7e47fd0b821",
+        "dc:title": "Intitulé",
+        "dc:description": "Comments\\nCommentaires\\n评论",
+        "meta:keyword": "Mots-clés",
+        "dc:subject": "Sujet de sa majesté",
+        "meta:auto-reload": {
+            "meta:delay": "PT00H00M15S",
+            "xlink:actuate": "onLoad",
+            "xlink:href": "some_url",
+            "xlink:show": "replace",
+            "xlink:type": "simple"
+        },
+        "meta:user-defined": [
+            {
+                "meta:name": "Achevé à la date",
+                "meta:value-type": "date",
+                "value": "2009-07-31T00:00:00"
+            },
+            {
+                "meta:name": "Numéro du document",
+                "meta:value-type": "float",
+                "value": 3
+            },
+            {
+                "meta:name": "Référence",
+                "meta:value-type": "boolean",
+                "value": true
+            },
+            {
+                "meta:name": "Vérifié par",
+                "meta:value-type": "string",
+                "value": "Moi-même"
+            }
+        ]
+    }"""
+    )
+    assert exported.strip() == expected.strip()
+
+
+def test_meta_export_json_full(meta):
+    exported = meta.as_json(True)
+    expected = dedent(
+        """\
+    {
+        "meta:creation-date": "2009-07-31T15:57:37",
+        "dc:date": "2009-07-31T15:59:13",
+        "meta:editing-duration": "PT00H05M30S",
+        "meta:editing-cycles": 2,
+        "meta:document-statistic": {
+            "meta:table-count": 0,
+            "meta:image-count": 0,
+            "meta:object-count": 0,
+            "meta:page-count": 1,
+            "meta:paragraph-count": 1,
+            "meta:word-count": 4,
+            "meta:character-count": 27,
+            "meta:non-whitespace-character-count": 24
+        },
+        "meta:generator": "LibreOffice/6.0.3.2$MacOSX_X86_64 LibreOffice_project/8f48d515416608e3a835360314dac7e47fd0b821",
+        "dc:title": "Intitulé",
+        "dc:description": "Comments\\nCommentaires\\n评论",
+        "dc:creator": null,
+        "meta:keyword": "Mots-clés",
+        "dc:subject": "Sujet de sa majesté",
+        "dc:language": null,
+        "meta:initial-creator": null,
+        "meta:print-date": null,
+        "meta:printed-by": null,
+        "meta:template": null,
+        "meta:auto-reload": null,
+        "meta:hyperlink-behaviour": null,
+        "meta:user-defined": [
+            {
+                "meta:name": "Achevé à la date",
+                "meta:value-type": "date",
+                "value": "2009-07-31T00:00:00"
+            },
+            {
+                "meta:name": "Numéro du document",
+                "meta:value-type": "float",
+                "value": 3
+            },
+            {
+                "meta:name": "Référence",
+                "meta:value-type": "boolean",
+                "value": true
+            },
+            {
+                "meta:name": "Vérifié par",
+                "meta:value-type": "string",
+                "value": "Moi-même"
+            }
+        ]
+    }"""
+    )
+    assert exported == expected
+
+
+def test_meta_from_json(meta):
+    json_str = meta.as_json()
+    meta.from_json(json_str)
+    assert meta.editing_duration == timedelta(minutes=1, seconds=36)
+    assert meta.get_user_defined_metadata()["Achevé à la date"] == datetime(
+        2009, 7, 31, 0, 0, 0
+    )
+
+
+def test_meta_from_dict_1(meta):
+    imported = {
+        "meta:creation-date": datetime(2024, 7, 14, 12, 00, 00),
+        "dc:date": datetime(2009, 7, 31, 15, 59, 13),
+        "meta:editing-duration": timedelta(seconds=100),
+        "meta:editing-cycles": 1,
+        "dc:subject": None,
+    }
+    expected = {
+        "meta:creation-date": datetime(2024, 7, 14, 12, 00, 00),
+        "dc:date": datetime(2024, 7, 14, 12, 00, 00),
+        "meta:editing-duration": timedelta(seconds=0),
+        "meta:editing-cycles": 1,
+        "meta:document-statistic": {
+            "meta:table-count": 0,
+            "meta:image-count": 0,
+            "meta:object-count": 0,
+            "meta:page-count": 1,
+            "meta:paragraph-count": 1,
+            "meta:word-count": 4,
+            "meta:character-count": 27,
+            "meta:non-whitespace-character-count": 24,
+        },
+        "meta:generator": "LibreOffice/6.0.3.2$MacOSX_X86_64 LibreOffice_project/8f48d515416608e3a835360314dac7e47fd0b821",
+        "dc:title": "Intitulé",
+        "dc:description": "Comments\nCommentaires\n评论",
+        "dc:creator": None,
+        "meta:keyword": "Mots-clés",
+        "dc:subject": None,
+        "dc:language": None,
+        "meta:initial-creator": None,
+        "meta:print-date": None,
+        "meta:printed-by": None,
+        "meta:auto-reload": None,
+        "meta:hyperlink-behaviour": None,
+        "meta:template": None,
+        "meta:user-defined": [
+            {
+                "meta:name": "Achevé à la date",
+                "meta:value-type": "date",
+                "value": datetime(2009, 7, 31, 0, 0, 0),
+            },
+            {
+                "meta:name": "Numéro du document",
+                "meta:value-type": "float",
+                "value": Decimal("3"),
+            },
+            {"meta:name": "Référence", "meta:value-type": "boolean", "value": True},
+            {
+                "meta:name": "Vérifié par",
+                "meta:value-type": "string",
+                "value": "Moi-même",
+            },
+        ],
+    }
+    meta.from_dict(imported)
+    result = meta.as_dict(full=True)
+    assert result == expected
+
+
+def test_meta_from_dict_2(meta):
+    imported = {
+        "meta:creation-date": datetime(2024, 7, 14, 12, 00, 00),
+        "dc:date": datetime(2009, 7, 31, 15, 59, 13),
+        "meta:editing-duration": timedelta(seconds=100),
+        "meta:editing-cycles": 1,
+        "dc:subject": None,
+        "meta:user-defined": None,
+    }
+    expected = {
+        "meta:creation-date": datetime(2024, 7, 14, 12, 00, 00),
+        "dc:date": datetime(2024, 7, 14, 12, 00, 00),
+        "meta:editing-duration": timedelta(seconds=0),
+        "meta:editing-cycles": 1,
+        "meta:document-statistic": {
+            "meta:table-count": 0,
+            "meta:image-count": 0,
+            "meta:object-count": 0,
+            "meta:page-count": 1,
+            "meta:paragraph-count": 1,
+            "meta:word-count": 4,
+            "meta:character-count": 27,
+            "meta:non-whitespace-character-count": 24,
+        },
+        "meta:generator": "LibreOffice/6.0.3.2$MacOSX_X86_64 LibreOffice_project/8f48d515416608e3a835360314dac7e47fd0b821",
+        "dc:title": "Intitulé",
+        "dc:description": "Comments\nCommentaires\n评论",
+        "dc:creator": None,
+        "meta:keyword": "Mots-clés",
+        "dc:subject": None,
+        "dc:language": None,
+        "meta:initial-creator": None,
+        "meta:print-date": None,
+        "meta:printed-by": None,
+        "meta:auto-reload": None,
+        "meta:hyperlink-behaviour": None,
+        "meta:template": None,
+        "meta:user-defined": [],
+    }
+    meta.from_dict(imported)
+    result = meta.as_dict(full=True)
+    assert result == expected
+
+
+def test_meta_from_dict_3(meta):
+    imported = {
+        "meta:creation-date": datetime(2024, 7, 14, 12, 00, 00),
+        "dc:date": datetime(2009, 7, 31, 15, 59, 13),
+        "meta:editing-duration": timedelta(seconds=100),
+        "meta:editing-cycles": 1,
+        "dc:subject": None,
+        "meta:user-defined": [
+            {
+                "meta:name": "New property",
+                "meta:value-type": "string",
+                "value": "Anatole",
+            }
+        ],
+    }
+    expected = {
+        "meta:creation-date": datetime(2024, 7, 14, 12, 00, 00),
+        "dc:date": datetime(2024, 7, 14, 12, 00, 00),
+        "meta:editing-duration": timedelta(seconds=0),
+        "meta:editing-cycles": 1,
+        "meta:document-statistic": {
+            "meta:table-count": 0,
+            "meta:image-count": 0,
+            "meta:object-count": 0,
+            "meta:page-count": 1,
+            "meta:paragraph-count": 1,
+            "meta:word-count": 4,
+            "meta:character-count": 27,
+            "meta:non-whitespace-character-count": 24,
+        },
+        "meta:generator": "LibreOffice/6.0.3.2$MacOSX_X86_64 LibreOffice_project/8f48d515416608e3a835360314dac7e47fd0b821",
+        "dc:title": "Intitulé",
+        "dc:description": "Comments\nCommentaires\n评论",
+        "dc:creator": None,
+        "meta:keyword": "Mots-clés",
+        "dc:subject": None,
+        "dc:language": None,
+        "meta:initial-creator": None,
+        "meta:print-date": None,
+        "meta:printed-by": None,
+        "meta:auto-reload": None,
+        "meta:hyperlink-behaviour": None,
+        "meta:template": None,
+        "meta:user-defined": [
+            {
+                "meta:name": "Achevé à la date",
+                "meta:value-type": "date",
+                "value": datetime(2009, 7, 31, 0, 0, 0),
+            },
+            {
+                "meta:name": "New property",
+                "meta:value-type": "string",
+                "value": "Anatole",
+            },
+            {
+                "meta:name": "Numéro du document",
+                "meta:value-type": "float",
+                "value": Decimal("3"),
+            },
+            {"meta:name": "Référence", "meta:value-type": "boolean", "value": True},
+            {
+                "meta:name": "Vérifié par",
+                "meta:value-type": "string",
+                "value": "Moi-même",
+            },
+        ],
+    }
+    meta.from_dict(imported)
+    result = meta.as_dict(full=True)
+    print(result)
+    assert result == expected
+
+
+def test_meta_from_dict_4(meta):
+    imported = {
+        "meta:creation-date": datetime(2024, 7, 14, 12, 00, 00),
+        "dc:date": datetime(2009, 7, 31, 15, 59, 13),
+        "meta:editing-duration": timedelta(seconds=100),
+        "meta:editing-cycles": 1,
+        "meta:document-statistic": None,
+        "meta:generator": "toto",
+        "dc:subject": None,
+        "dc:title": None,
+        "dc:description": None,
+        "dc:keyword": None,
+        "meta:user-defined": [
+            {
+                "meta:name": "Achevé à la date",
+                "value": None,
+            }
+        ],
+    }
+    expected = {
+        "meta:creation-date": datetime(2024, 7, 14, 12, 00, 00),
+        "dc:date": datetime(2024, 7, 14, 12, 00, 00),
+        "meta:editing-duration": timedelta(seconds=0),
+        "meta:editing-cycles": 1,
+        "meta:document-statistic": {
+            "meta:table-count": 0,
+            "meta:image-count": 0,
+            "meta:object-count": 0,
+            "meta:page-count": 0,
+            "meta:paragraph-count": 0,
+            "meta:word-count": 0,
+            "meta:character-count": 0,
+            "meta:non-whitespace-character-count": 0,
+        },
+        "meta:generator": "toto",
+        "dc:title": None,
+        "dc:description": None,
+        "dc:creator": None,
+        "meta:keyword": "Mots-clés",
+        "dc:subject": None,
+        "dc:language": None,
+        "meta:initial-creator": None,
+        "meta:print-date": None,
+        "meta:printed-by": None,
+        "meta:auto-reload": None,
+        "meta:hyperlink-behaviour": None,
+        "meta:template": None,
+        "meta:user-defined": [
+            {
+                "meta:name": "Numéro du document",
+                "meta:value-type": "float",
+                "value": Decimal("3"),
+            },
+            {"meta:name": "Référence", "meta:value-type": "boolean", "value": True},
+            {
+                "meta:name": "Vérifié par",
+                "meta:value-type": "string",
+                "value": "Moi-même",
+            },
+        ],
+    }
+    meta.from_dict(imported)
+    result = meta.as_dict(full=True)
+    assert result == expected
+
+
+def test_meta_from_dict_5(meta):
+    imported = {
+        "meta:creation-date": datetime(2024, 7, 14, 12, 00, 00),
+        "dc:date": datetime(2009, 7, 31, 15, 59, 13),
+        "meta:editing-duration": timedelta(seconds=100),
+        "meta:editing-cycles": 1,
+        "meta:document-statistic": {
+            "meta:table-count": 1,
+            "meta:image-count": 22,
+            "meta:object-count": 33,
+            "meta:page-count": 444,
+            "meta:paragraph-count": 555,
+            "meta:word-count": 666,
+            "meta:character-count": 777,
+            "meta:non-whitespace-character-count": 888,
+        },
+        "meta:generator": "toto",
+        "dc:subject": None,
+        "dc:title": None,
+        "dc:description": None,
+        "dc:keyword": None,
+        "meta:user-defined": [
+            {
+                "meta:name": "Achevé à la date",
+                "value": None,
+            }
+        ],
+    }
+    expected = {
+        "meta:creation-date": datetime(2024, 7, 14, 12, 00, 00),
+        "dc:date": datetime(2024, 7, 14, 12, 00, 00),
+        "meta:editing-cycles": 1,
+        "meta:document-statistic": {
+            "meta:table-count": 1,
+            "meta:image-count": 22,
+            "meta:object-count": 33,
+            "meta:page-count": 444,
+            "meta:paragraph-count": 555,
+            "meta:word-count": 666,
+            "meta:character-count": 777,
+            "meta:non-whitespace-character-count": 888,
+        },
+        "meta:generator": "toto",
+        "meta:keyword": "Mots-clés",
+        "meta:user-defined": [
+            {
+                "meta:name": "Numéro du document",
+                "meta:value-type": "float",
+                "value": Decimal("3"),
+            },
+            {"meta:name": "Référence", "meta:value-type": "boolean", "value": True},
+            {
+                "meta:name": "Vérifié par",
+                "meta:value-type": "string",
+                "value": "Moi-même",
+            },
+        ],
+    }
+    meta.from_dict(imported)
+    result = meta.as_dict(full=False)
+    assert result == expected
+
+
+def test_meta_from_dict_42(meta):
+    imported = {
+        "meta:creation-date": datetime(2024, 7, 14, 12, 00, 00),
+        "dc:date": datetime(2009, 7, 31, 15, 59, 13),
+        "meta:editing-duration": timedelta(seconds=100),
+        "meta:editing-cycles": 1,
+        "meta:document-statistic": None,
+        "meta:generator": "toto",
+        "dc:subject": None,
+        "dc:title": None,
+        "dc:description": None,
+        "dc:keyword": None,
+        "meta:user-defined": [
+            {
+                "meta:name": "Achevé à la date",
+                "value": None,
+            }
+        ],
+    }
+    expected = {
+        "meta:creation-date": datetime(2024, 7, 14, 12, 00, 00),
+        "dc:date": datetime(2024, 7, 14, 12, 00, 00),
+        "meta:editing-duration": timedelta(seconds=0),
+        "meta:editing-cycles": 1,
+        "meta:document-statistic": {
+            "meta:table-count": 0,
+            "meta:image-count": 0,
+            "meta:object-count": 0,
+            "meta:page-count": 0,
+            "meta:paragraph-count": 0,
+            "meta:word-count": 0,
+            "meta:character-count": 0,
+            "meta:non-whitespace-character-count": 0,
+        },
+        "meta:generator": "toto",
+        "dc:title": None,
+        "dc:description": None,
+        "dc:creator": None,
+        "meta:keyword": "Mots-clés",
+        "dc:subject": None,
+        "dc:language": None,
+        "meta:initial-creator": None,
+        "meta:print-date": None,
+        "meta:printed-by": None,
+        "meta:auto-reload": None,
+        "meta:hyperlink-behaviour": None,
+        "meta:template": None,
+        "meta:user-defined": [
+            {
+                "meta:name": "Numéro du document",
+                "meta:value-type": "float",
+                "value": Decimal("3"),
+            },
+            {"meta:name": "Référence", "meta:value-type": "boolean", "value": True},
+            {
+                "meta:name": "Vérifié par",
+                "meta:value-type": "string",
+                "value": "Moi-même",
+            },
+        ],
+    }
+    meta.from_dict(imported)
+    result = meta.as_dict(full=True)
+    assert result == expected
+
+
+def test_meta_from_dict_modif_date(meta):
+    imported = {}
+    element = meta.get_element("//dc:date")
+    element.delete()
+    meta.from_dict(imported)
+    result = meta.as_dict(full=True)
+    assert isinstance(result["dc:date"], datetime)
+
+
+def test_meta_from_dict_creation_date(meta):
+    imported = {}
+    element = meta.get_element("//meta:creation-date")
+    element.delete()
+    meta.from_dict(imported)
+    result = meta.as_dict(full=True)
+    assert isinstance(result["meta:creation-date"], datetime)
+
+
+def test_meta_from_dict_generator(meta):
+    imported = {}
+    meta.generator = ""
+    meta.from_dict(imported)
+    result = meta.as_dict(full=True)
+    assert result["meta:generator"].startswith("odfdo")
+
+
+def test_meta_from_dict_creator(meta):
+    key = "dc:creator"
+    content = "John"
+    imported = {key: content}
+    meta.from_dict(imported)
+    result = meta.as_dict(full=True)
+    assert result[key] == content
+
+
+def test_meta_from_dict_language(meta):
+    key = "dc:language"
+    content = "fr-FR"
+    imported = {key: content}
+    meta.from_dict(imported)
+    result = meta.as_dict(full=True)
+    assert result[key] == content
+
+
+def test_meta_from_dict_initial_creator(meta):
+    key = "meta:initial-creator"
+    content = "Homer"
+    imported = {key: content}
+    meta.from_dict(imported)
+    result = meta.as_dict(full=True)
+    assert result[key] == content
+
+
+def test_meta_from_dict_printed_by(meta):
+    key = "meta:printed-by"
+    content = "Homer"
+    imported = {key: content}
+    meta.from_dict(imported)
+    result = meta.as_dict(full=True)
+    assert result[key] == content
+
+
+def test_meta_from_dict_print_date(meta):
+    key = "meta:print-date"
+    content = datetime(2025, 1, 2, 3, 4, 5, 6)
+    imported = {key: content}
+    meta.from_dict(imported)
+    result = meta.as_dict(full=True)
+    assert result[key] == content
+
+
+def test_meta_from_dict_meta_template(meta):
+    key = "meta:template"
+    template = MetaTemplate(datetime(2025, 1, 2, 3, 4, 5, 6), "url", "Title")
+    content = template.as_dict()
+    imported = {key: content}
+    meta.from_dict(imported)
+    result = meta.as_dict(full=True)
+    assert result[key] == content
+
+
+def test_meta_from_dict_auto_reload(meta):
+    key = "meta:auto-reload"
+    delay = timedelta(seconds=15)
+    meta.set_auto_reload(delay=delay, href="new url")
+    imported = {}
+    meta.from_dict(imported)
+    result = meta.as_dict(full=True)
+    content = {
+        "meta:delay": delay,
+        "xlink:actuate": "onLoad",
+        "xlink:href": "new url",
+        "xlink:show": "replace",
+        "xlink:type": "simple",
+    }
+    assert result[key] == content
+
+
+def test_meta_from_dict_behaviour(meta):
+    key = "meta:hyperlink-behaviour"
+    meta.set_hyperlink_behaviour(target_frame_name="some_frame", show="_top")
+    imported = {}
+    meta.from_dict(imported)
+    result = meta.as_dict(full=True)
+    content = {
+        "office:target-frame-name": "some_frame",
+        "xlink:show": "_top",
+    }
+    assert result[key] == content
+
+
+def test_meta_strip_1(samples):
+    document = Document(samples("meta.odt"))
+    meta = document.meta
+    dt = datetime(2024, 7, 14, 12, 13, 14)
+    meta.strip(creation_date=dt)
+    # check document updated
+    meta = document.meta
+    exported = meta.as_dict(True)
+    expected = {
+        "meta:creation-date": datetime(2024, 7, 14, 12, 13, 14),
+        "dc:date": datetime(2024, 7, 14, 12, 13, 14),
+        "meta:editing-duration": timedelta(0),
+        "meta:editing-cycles": 1,
+        "meta:document-statistic": {
+            "meta:table-count": 0,
+            "meta:image-count": 0,
+            "meta:object-count": 0,
+            "meta:page-count": 0,
+            "meta:paragraph-count": 0,
+            "meta:word-count": 0,
+            "meta:character-count": 0,
+            "meta:non-whitespace-character-count": 0,
+        },
+        "meta:generator": GENERATOR,
+        "dc:title": None,
+        "dc:description": None,
+        "dc:creator": None,
+        "meta:keyword": None,
+        "dc:subject": None,
+        "dc:language": None,
+        "meta:initial-creator": None,
+        "meta:print-date": None,
+        "meta:printed-by": None,
+        "meta:template": None,
+        "meta:auto-reload": None,
+        "meta:hyperlink-behaviour": None,
+        "meta:user-defined": [],
+    }
+
+    assert exported == expected
+
+
+def test_meta_strip_2(samples):
+    document = Document(samples("meta.odt"))
+    meta = document.meta
+    dt = datetime(2024, 7, 14, 12, 13, 14)
+    meta.strip(generator="unknown", creation_date=dt)
+    # check document updated
+    meta = document.meta
+    exported = meta.as_dict(True)
+    expected = {
+        "meta:creation-date": datetime(2024, 7, 14, 12, 13, 14),
+        "dc:date": datetime(2024, 7, 14, 12, 13, 14),
+        "meta:editing-duration": timedelta(0),
+        "meta:editing-cycles": 1,
+        "meta:document-statistic": {
+            "meta:table-count": 0,
+            "meta:image-count": 0,
+            "meta:object-count": 0,
+            "meta:page-count": 0,
+            "meta:paragraph-count": 0,
+            "meta:word-count": 0,
+            "meta:character-count": 0,
+            "meta:non-whitespace-character-count": 0,
+        },
+        "meta:generator": "unknown",
+        "dc:title": None,
+        "dc:description": None,
+        "dc:creator": None,
+        "meta:keyword": None,
+        "dc:subject": None,
+        "dc:language": None,
+        "meta:initial-creator": None,
+        "meta:print-date": None,
+        "meta:printed-by": None,
+        "meta:template": None,
+        "meta:auto-reload": None,
+        "meta:hyperlink-behaviour": None,
+        "meta:user-defined": [],
+    }
+
+    assert exported == expected
+
+
+def test_meta_body_class(meta):
+    body = meta.body
+    assert isinstance(body, Metadata)
+
+
+def test_meta_body_serialize(meta):
+    body = meta.body
+    expected = (
+        "<office:meta>"
+        "<meta:creation-date>2009-07-31T15:57:37</meta:creation-date>"
+        "<meta:editing-duration>PT00H05M30S</meta:editing-duration>"
+        "<meta:editing-cycles>2</meta:editing-cycles>"
+        "<meta:generator>LibreOffice/6.0.3.2$MacOSX_X86_64 "
+        "LibreOffice_project/8f48d515416608e3a835360314dac7e47fd0b821"
+        "</meta:generator>"
+        "<dc:description>Comments\nCommentaires\n评论</dc:description>"
+        "<meta:keyword>Mots-clés</meta:keyword>"
+        "<dc:subject>Sujet de sa majesté</dc:subject>"
+        "<dc:title>Intitulé</dc:title>"
+        "<dc:date>2009-07-31T15:59:13</dc:date>"
+        '<meta:document-statistic meta:table-count="0" '
+        'meta:image-count="0" meta:object-count="0" '
+        'meta:page-count="1" meta:paragraph-count="1" '
+        'meta:word-count="4" meta:character-count="27" '
+        'meta:non-whitespace-character-count="24"/>'
+        '<meta:user-defined meta:name="Achevé à la date" '
+        'meta:value-type="date">2009-07-31T00:00:00</meta:user-defined>'
+        '<meta:user-defined meta:name="Numéro du document" '
+        'meta:value-type="float">3</meta:user-defined>'
+        '<meta:user-defined meta:name="Référence" '
+        'meta:value-type="boolean">true</meta:user-defined>'
+        '<meta:user-defined meta:name="Vérifié par">Moi-même'
+        "</meta:user-defined>"
+        "</office:meta>"
+    )
+    assert body.serialize() == expected
+
+
+def test_meta_body_clear(meta):
+    body = meta.body
+    body.clear()
+    expected = "<office:meta/>"
+    assert body.serialize() == expected
+
+
+def test_meta_body_from_no_dict_1(meta):
+    meta2 = meta.clone
+    body2 = meta2.body
+    body2.clear()
+    meta2.set_statistic({})
+    expected = (
+        "{\n"
+        '    "meta:document-statistic": {\n'
+        '        "meta:table-count": 0,\n'
+        '        "meta:image-count": 0,\n'
+        '        "meta:object-count": 0,\n'
+        '        "meta:page-count": 0,\n'
+        '        "meta:paragraph-count": 0,\n'
+        '        "meta:word-count": 0,\n'
+        '        "meta:character-count": 0,\n'
+        '        "meta:non-whitespace-character-count": 0\n'
+        "    },\n"
+        '    "meta:user-defined": []\n'
+        "}"
+    )
+    assert meta2.as_json() == expected
+
+
+def test_meta_body_from_no_dict_2(meta):
+    meta2 = meta.clone
+    meta.body.clear()
+    meta.set_statistic({})
+    body2 = meta2.body
+    body2.clear()
+    meta2.set_statistic({})
+    meta2_dict = meta2.as_dict()
+    meta.date = datetime(2025, 1, 2, 3, 4, 5, 6).replace(microsecond=0)
+    meta.creation_date = datetime(2025, 1, 2, 3, 4, 5, 6).replace(microsecond=0)
+    meta.generator = "gen"
+    meta.from_dict(meta2_dict)
+    expected = (
+        "{\n"
+        '    "meta:creation-date": "2025-01-02T03:04:05",\n'
+        '    "dc:date": "2025-01-02T03:04:05",\n'
+        '    "meta:editing-cycles": 1,\n'
+        '    "meta:document-statistic": {\n'
+        '        "meta:table-count": 0,\n'
+        '        "meta:image-count": 0,\n'
+        '        "meta:object-count": 0,\n'
+        '        "meta:page-count": 0,\n'
+        '        "meta:paragraph-count": 0,\n'
+        '        "meta:word-count": 0,\n'
+        '        "meta:character-count": 0,\n'
+        '        "meta:non-whitespace-character-count": 0\n'
+        "    },\n"
+        '    "meta:generator": "gen",\n'
+        '    "meta:user-defined": []\n'
+        "}"
+    )
+    assert meta.as_json() == expected
+
+
+def test_deprecated_meta_body(meta):
+    assert meta.meta_body.serialize() == meta.body.serialize()
+
+
+def test_meta_as_json_with_date_user_defined(meta):
+    meta.set_user_defined_metadata("DateProp", dtdate(2026, 8, 15))
+    js = meta.as_json()
+    assert '"2026-08-15"' in js
+
+
+def test_meta_forced_datetime_1():
+    d = dtdate(2026, 8, 15)
+    assert Meta._forced_datetime(d) == datetime(2026, 8, 15, 0, 0, 0)
+
+
+def test_meta_forced_datetime_2():
+    d = dtdate(2026, 8, 15)
+    assert Meta._forced_datetime(d) == datetime(2026, 8, 15, 0, 0, 0)
+
+
+def test_meta_forced_datetime_3():
+    now = datetime(2026, 8, 15, 12, 0, 0)
+    assert Meta._forced_datetime(None, default=now) == now
+
+
+def test_meta_forced_datetime_4():
+    res = Meta._forced_datetime(None)
+    assert isinstance(res, datetime)

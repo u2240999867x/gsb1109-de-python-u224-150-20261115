@@ -1,0 +1,2084 @@
+# Odfdo Release Notes
+
+## [3.27.3] - 2026-10-24
+
+-   Improve the filter for parasite files (`.DS_Store` and others) when savving the document.
+-   Small refactoring of Markdown export code.
+
+### Changed
+
+-   Refactoring of code in `mixin_md.py`.
+
+### Fixed
+
+-   Ignore parasite files and dotfiles when saving folder or zip
+
+## [3.27.2] - 2026-10-17
+
+-   Support for tables with missing or partial `table:table-column` definitions.
+-   Added `Table.normalize_columns()` and `Document.normalize_tables()`.
+
+### Added
+
+-   Added `Table.normalize_columns()` to ensure `table:table-column` definitions cover the full width of table rows.
+-   Added `Document.normalize_tables()` to normalize column definitions across all tables in document content and styles.
+
+### Fixed
+
+-   Fixed markdown export (`to_markdown()`) crashing on tables lacking `table:table-column` tags or with partial column declarations.
+-   Fixed `Table.width`, column getters, and iterators to handle tables with undeclared or partial `table:table-column` tags.
+-   Fixed `Table.append_column()` when appending to a table with no prior columns by inserting before the first row element.
+-   Enforce complete `table:table-column` declarations in `Document.save()` for strict ODF schema compliance (except for `folder` packaging which preserves original parts for inspection/debugging).
+
+## [3.27.1] - 2026-10-10
+
+-   Adapt github action to genrate documentation with `Python 3.15`.
+
+### Changed
+
+-   Adapt github action `documentation.yml` to use `Python 3.15`.
+
+## [3.27.0] - 2026-10-10
+
+-   Add Python 3.15 to the test suite.
+
+### Changed
+
+-   Adapt configurations of `pytproject.toml`, `tox` and `github actions` for Python 3.15.
+-   Small refactor and code reformat.
+
+## [3.26.3] - 2026-09-26
+
+-   Removed Python 3.15 test for `lxml` 6.0.4 from `tox` and github actions. 
+
+## [3.26.2] - 2026-09-26
+
+-   Added `-i` / `--input` and `-o` / `--output` options to the `odfdo-markdown` CLI script.
+-   Added support and testing for Python 3.15 and lxml 7.0.0.
+
+### Added
+
+-   Added `-i` / `--input` and `-o` / `--output` options to the `odfdo-markdown` CLI script.
+-   Add tests for `odfdo-markdown`.
+-   Add Python 3.15 classifier in `pyproject.toml` and CI matrix in `.github/workflows/main.yml`.
+-   Add tox test environments for Python 3.15 and `lxml` 7.0.0.
+
+### Changed
+
+-   Updated test matrix in `tox.ini` for `lxml` and Python versions
+
+### Fixed
+
+-   Resolve `ty` warnings in `table.py`, `element.py`, `element_strip.py` about iterable truthiness.
+
+## [3.26.1] - 2026-09-19
+
+-   Comprehensive docstring documentation and formatting improvements across all code.
+-   Added unit tests.
+-   Added explicit `match_string` parameter to paragraph mixin signatures.
+
+### Added
+
+-   Added explicit `match_string` parameter to paragraph mixin signatures (`set_span`, `set_link`).
+-   Added missing unit tests and improved test coverage for annotations, settings, and tracked changes.
+
+### Changed
+
+-   Standardized and refactored exception error messages across the library, scripts, and test suite.
+-   Updated Ruff linter configuration and code quality rules.
+
+## [3.26.0] - 2026-09-12
+
+-   Added Python dictionary import and export support for spreadsheets in `Document` and `Table` APIs (`to_dict()`, `from_dict()`).
+-   Added `TableSerializer` and `serialize_table()` for unified table data serialization across Python, JSON, and CSV modes.
+-   Added `Table.lstrip()`, `Table.strip()`, `Row.lstrip()`, and `Row.strip()` methods for trimming empty rows and columns.
+-   Added properties `Table.shape` and `Table.headers`.
+-   Added interoperability recipes for Pandas, Polars, PyExcel, DuckDB, Tabulate, NumPy, and OpenPyXL.
+
+### Added
+
+-   Add methods `Table.to_dict()` and `Table.from_dict()`, supporting `"list"`, `"records"`, and `"matrix"` orientations.
+-   Add methods `Document.to_dict()` and `Document.from_dict()`, supporting multi-sheet and single-table dictionary import and export.
+-   Add `TableSerializer` class and `serialize_table()` function in `odfdo.table_serializer` providing unified serialization across Python, JSON, and CSV modes.
+-   Add methods `Table.lstrip()` and `Table.strip()` to strip leading and trailing empty rows and columns.
+-   Add methods `Row.lstrip()` and `Row.strip()` to strip leading and trailing empty cells.
+-   Add property `Table.shape` returning the `(height, width)` tuple of the table after trailing empty rows/columns optimization.
+-   Add property `Table.headers` returning the list of column header values.
+-   Add interoperability recipes:
+    -   `recipes/pandas_dataframe_interoperability.py` for Pandas DataFrame interoperability.
+    -   `recipes/polars_dataframe_interoperability.py` for Polars DataFrame interoperability.
+    -   `recipes/pyexcel_interoperability.py` for PyExcel Sheet and Book interoperability.
+    -   `recipes/duckdb_sql_interoperability.py` for DuckDB SQL querying and multi-sheet joins.
+    -   `recipes/tabulate_interoperability.py` for multi-format text, Markdown, and HTML table rendering.
+    -   `recipes/numpy_interoperability.py` for NumPy 1D, 2D, and structured array conversions.
+    -   `recipes/openpyxl_interoperability.py` for bidirectional ODS and XLSX conversion.
+
+### Changed
+
+-   Refined empty cell detection in `Cell` and table stripping methods to preserve `False`, `0`, and boolean/numeric zero values.
+-   `Table.to_csv()` now uses the unified `serialize_table()` serialization engine.
+
+### Refactored
+
+-   Updated Ruff linter rules and type checking imports across modules and test suite.
+
+## [3.25.0] - 2026-09-06
+
+-   Added JSON export and import support for spreadsheets in `Document` and `Table` APIs (`to_json()`, `from_json()`).
+-   Added CLI scripts `odfdo-to-json` and `odfdo-from-json` for JSON conversion.
+-   Added helper function `get_default_language()` for system locale detection with RFC 3066 validation.
+
+### Added
+
+-   Add methods `Table.to_json()` and `Table.from_json()`.
+-   Add methods `Document.to_json()` and `Document.from_json()`, accepting either a dict of tables or a list of tables.
+-   Add CLI script `odfdo-to-json` to export `.ods` spreadsheets to JSON files.
+-   Add CLI script `odfdo-from-json` to generate `.ods` spreadsheets from JSON input.
+-   Add helper function `get_default_language()` in `odfdo.datatype` for RFC 3066-compliant system language detection.
+-   Add helper class `NameUnifyer` to generate unique table names.
+-   Add `format_json()` utility function in `odfdo.utils`.
+
+### Changed
+
+-   Methods `Document._get_table`, `get_cell_style_properties`, `get_cell_background_color`, and `get_table_style` now accept a `Table` instance directly as their table argument.
+-   Default table names are in the format "Sheet1".
+-   `Table.clear()` now preserves the existing table name.
+
+## [3.24.7] - 2026-08-29
+
+-   Added Markdown export support for `.ods` spreadsheets in `Document.to_markdown()` and the `odfdo-markdown` CLI script.
+-   Added `Table.to_markdown()` method along with `Table.optimize_height()` and `Row.has_values()`.
+-   Added Markdown export safety limits (`MAX_MD_LINES`, `MAX_MD_COLUMNS`) and ensured export operations do not mutate in-memory documents.
+-   Added support for `table-cell` and `graphic` style families in `Styles.default_language`.
+-   Added `_decode_time_string()` helper for decoding time strings to `timedelta`.
+-   Fixed formatting of float special values (`NaN`, `INF`, `-INF`) to canonical ODF XML standard casing.
+
+### Added
+
+-   Add Markdown export support for `.ods` files to `Document.to_markdown()` and `odfdo-markdown` script. Output table identifiers follow the `document#sheet_name` naming convention.
+-   Add method `Table.to_markdown()`.
+-   Add method `Table.optimize_height()` to trim trailing empty rows from a table in-place.
+-   Add method `Row.has_values()` to check whether a row contains actual cell values or text content.
+-   Add safety limits `MAX_MD_LINES` (50,000) and `MAX_MD_COLUMNS` (2,048) in `const.py`, raising a `RuntimeError` if a table exceeds these limits when exporting to Markdown.
+-   Add support for `table-cell` and `graphic` style families in `Styles.default_language`.
+-   Add `_decode_time_string()` helper function for parsing time strings to `timedelta` objects in `odfdo.datatype`.
+ 
+### Fixed
+
+-   Better detection of wrong string for `Duration`.
+-   Explicit detection and canonical ODF XML standard formatting (`NaN`, `INF`, `-INF`) for special float values in `Cell`.
+
+## [3.24.6] - 2026-08-22
+
+-   Allow the creation of unnamed `Table` objects and add a warning to the `Table` docstring regarding unnamed tables.
+-   `Date.decode()` now returns `datetime.date` instead of `datetime.datetime` for date-only values.
+-   Added heuristic date decoders (`decode_heuristic()`, `date_decode_heuristic()`, `DateDecoder`) for flexible conversion of string values to `datetime`, `date`, or `timedelta`.
+-   Metadata date fields (`meta:date`, `dc:date`, `meta:user-defined`) now support `datetime.date` and `datetime.datetime` objects interchangeably.
+
+### Added
+
+-   Add `decode_heuristic()`, `date_decode_heuristic()`, and `DateDecoder` in `odfdo.datatype` for string-to-date/datetime/duration conversion heuristics.
+
+### Fixed
+
+-   Allow the creation of unnamed `Table` objects (issue #55).
+
+### Changed
+
+-   `Date.decode()` returns a `datetime.date` object on Python >= 3.10.
+-   `Meta.from_dict()`, `Meta.as_dict()`, `Meta.as_json()`, and `MetaUserDefined` now accept and preserve both `datetime.date` and `datetime.datetime` values.
+
+## [3.24.5] - 2026-08-15
+
+Fixes: 
+
+-   Fix of error when `Document.meta.from_dict()` argument does not contain optional keys.
+-   `str` object was treated as iterable in `Table.set_values()` and `Row.set_values()`.
+-   Markdown export now ignores whitespace-only tails caused by pretty-printed XML.
+
+### Fixed
+
+-   Use default values for `Document.meta.from_dict()` when the meta dict is missing optional fields.
+-   For `Table.set_values()`, `Row.set_values()` and their values setters, objects of type str are not treated as iterable.
+-   Markdown export now ignorse whitespace-only tails from pretty-printed XML.
+
+## [3.24.4] - 2026-08-14
+
+-   Finalized fixes for preserving styles and spans when changing a cell's value, and verified the handling of repeated cells.
+-   Added argument "formula" to methods `Table.set_value()` and `Row.set_value()`.
+-   Added the `Body.get_table_by_name()` function and its alias `Body.get_sheet_by_name()`.
+-   Added the `Row.values` and `Table.values` properties.
+
+### Added
+
+-   Add argument "formula" to methods `Table.set_value()` and `Row.set_value()`.
+-   Add methods `Body.get_table_by_name()` and `Body.get_sheet_by_name()`.
+-   Add properties `Row.values` and `Table.values` (getters and setters for cell values).
+
+### Fixed
+
+-   `Table.set_value()` and `Row.set_value()` now preserve the `table:number-columns-spanned`, `table:number-rows-spanned`, and existing `table:style-name` attributes of replaced cells.
+-   `Row.set_value()`, `Table.set_value()`, `Row.set_values()`, and `Table.set_row_values()` now properly handle repeated cells (`table:number-columns-repeated`).
+
+## [3.24.3] - 2026-08-09 
+
+The manifest version is now updated upon saving. Fix yanked version 3.24.2 (issue #71).
+
+### Fixed
+
+-   Now updates `manifest:version` to `1.4` alongside `office:version`, fixing LibreOffice "corrupt file" errors when saving
+    older documents as ODF 1.4.
+
+## [3.24.2] - 2026-08-09 (yanked)
+
+Fixes for cell value handling, breaking changes:
+
+- The Cell.value setters now create a paragraph in the cell to store the representation of its value.
+- The method Cell.set_value() preserves the cell style (issue #71).
+    
+Ensure migration of Document version to ODF 1.4 when saving document, except when using FOLDER packaging (ie: odfdo-folder script) where original content is preserved.
+
+### Added
+
+-   Older ODF documents (1.0/1.1/1.2/1.3) are automatically upgraded to ODF 1.4
+    when saved; missing core parts (`content.xml`, `styles.xml`, `meta.xml`,
+    `settings.xml`) are recreated from the document-type template.
+-   New `ElementTyped.delete_children()` method and extended list of attributes
+    cleared by `ElementTyped` operations.
+-   `Table.set_values()`, `set_row_values()`, `set_row_cells()`, `set_cells()`,
+    `set_column_cells()`, and `set_column_values()` now accept an iterable
+    argument.
+-   `Row.set_cells()` and `Row.set_values()` now accept an iterable argument.
+
+### Changed
+
+-   `Cell.value = None` now deletes all value content while preserving the cell
+    style.
+-   `Cell.value` setter creates a `text:p` paragraph in the cell and preserves
+    the existing cell style.
+-   `Container.get_part()` raises `KeyError` for missing parts in ZIP packaging
+    and `FileNotFoundError` for missing parts in folder packaging.
+-   FOLDER packaging now preserves the original document: no generator rewrite,
+    no ODF version bump, no missing-part creation, and no `manifest.rdf`
+    adjustment. XML parts are still pretty-printed when requested.
+-   Refactored type hints and docstrings for `Cell`, `Element.text_content`,
+    `ElementTyped`, and internal row helpers.
+
+### Fixed
+
+-   `Cell.set_value()` preserves the cell style (issue #71).
+-   Opening malformed files with missing core parts no longer crashes.
+-   `Container._read_folder()` handles a missing `mimetype` file without
+    crashing.
+-   `Document.save()` no longer fails when `_ensure_odf14()` cannot upgrade a
+    document.
+
+## [3.24.1] - 2026-08-08
+
+Improvements to type hints and minor refactoring.
+
+### Added
+
+-   New `CellValue` type alias in `odfdo.const` for the union of Python types
+    accepted as cell values.
+
+### Changed
+
+-   `Boolean.decode()` accepts `bool` and `None`, `Boolean.encode()` accepts any number.
+-   Type hints across `Cell`, `Row`, `element_typed`, and `Table` use the
+    new `CellValue` alias.
+-   `convert_coordinates()` has been rewritten.
+
+## [3.24.0] - 2026-08-01
+
+Migrate odfdo to ODF 1.4. New documents are saved with `office:version="1.4"`. (Encryption features are not currently supported.)
+
+### Added
+
+-   Load and save as 1.4 regression tests for ODF 1.0/1.1/1.2/1.3 documents.
+-   Preservation of digital-signature XML parts (`META-INF/*signatures*.xml`) on round-trip.
+-   Preservation of encrypted XML parts on round-trip when credentials are not supplied.
+-   ODF 1.3/1.4 attributes added to the allowed-attributes lists (e.g. `draw:enhanced-path`, `svg:viewBox`, `draw:decorative`, `draw:transform`, `dr3d:transform`, …).
+-   Support for the ODF 1.4 `draw:decorative` accessibility property on graphic styles (`Style("graphic", decorative=True)`).
+-   Support for list numbering starting at 0 (`Style(..., start_value=0)`).
+-   Support for the ODF 1.4 `draw:allow-overlap` property on graphic styles (`Style("graphic", allow_overlap=False)`).
+-   Support for ODF 1.4 odd/even page breaks (`Style("paragraph", break_before="odd-page")`).
+-   Support for the ODF 1.4 page-layout gutter margin (`StylePageLayout(...).set_properties(margin_gutter="1cm")`).
+-   Support for slide/page numbering from zero via `StylePageLayout(..., first_page_number=0)`.
+-   Support for tables inside shapes via `Frame.table_frame(table)` and `Frame.set_table(table)`.
+-   Documentation and tests for frame positioning relative to page margins (`page-start-margin`, `page-end-margin`).
+-   Support for inserting elements without a `style:family` attribute (such as `<draw:marker>`, `<draw:gradient>`, `<draw:hatch>`, `<draw:opacity>`, etc.) via `Document.insert_style()`.
+
+### Changed
+
+-   Default `office:version` emitted by odfdo is now `"1.4"`.
+-   Built-in ODF templates refreshed to ODF 1.4.
+-   The RDF metadata namespaces (`odf` and `pkg`) are kept at their fixed `1.2` URI while the document itself is saved as ODF 1.4.
+
+## [3.23.1] - 2026-07-22
+
+Add missing dependency `typing-extensions` (issue #70).
+
+### Fixed
+
+-   Fix missing dependency `typing-extensions`.
+
+## [3.23.0] - 2026-07-18
+
+Add security-related limits for ODF document processing. Checks total uncompressed size, compression ratio, and file count
+against security configuration. Modify attributes at runtime to customize security thresholds.
+
+### Added
+
+-   New class `SecurityConfig` holding security-related limits.
+
+### Changed
+
+-   ZIP files are now loaded incrementally to mitigate the risk of stack overflow associated with "zip bombs".
+ 
+## [3.22.12] - 2026-07-14
+
+Fix the `pyproject.toml` to ensure `LICENSE` and `NOTICE.txt` in the source distribution and wheel, and no remaining `.DS_Store` (issue #69)
+
+### Fixed
+
+-   Included `LICENSE` and `NOTICE.txt` in the source distribution and wheel.
+-   Removed `.DS_Store` files from the package and excluded them from future builds.
+
+## [3.22.11] - 2026-07-11
+
+-   Continued the migration from mypy to ty: `Element.clone()` now returns
+    `Self`, recipe files are included in ty and ruff checks, and the
+    remaining mypy configuration was removed.
+-   Minor fixes and refactoring.
+
+### Changed
+
+-   Updated `Element.clone` type hint to return `Self` instead of `Element`.
+-   Included the `recipes` directory in ty and ruff checks via the
+    `justfile` and `pyproject.toml`.
+-   Added `tool.ty.overrides` rules for the `recipes` directory.
+-   Updated `justfile` with `code` and `all` targets.
+-   Removed remaining mypy and mypy-extensions dependencies and the
+    `[tool.mypy]` configuration from `pyproject.toml`.
+-   Added `Paragraph.style` type annotation.
+-   Updated recipe type hints and added null checks in
+    `recipes/change_paragraph_styles_methods.py`.
+
+### Fixed
+
+-   Guarded against a `None` level style when setting the outline text style
+    in `Style._set_outline_style()`.
+-   Fixed `ConfigItem.config_type` getter and setter to handle a missing or
+    `None` `config:type` attribute without triggering a ty type error.
+
+## [3.22.10] - 2026-07-05
+
+-   Migrated type-checker configuration and inline suppressions from mypy to
+    ty.
+-   Minor fixes and refactoring.
+
+### Changed
+
+-   Updated `justfile` to use ty for static type checking.
+-   Replaced mypy-style `# type: ignore` comments with ty-style `# ty: ignore`
+    comments across the codebase.
+-   Adjusted type annotations and casts for compatibility with ty, including
+    `Style.__new__`, `ListHeader` argument types, `Element.__append` return
+    type, and `ConfigItem.as_dict`/`from_dict`.
+-   Replaced `hasattr` checks followed by dynamic method calls with
+    `getattr(..., None)` and `callable()` guards in several modules.
+
+### Fixed
+
+-   Fixed the `TOC.body` setter return type to respect the property setter
+    contract.
+
+## [3.22.9] - 2026-07-04
+
+-   Update of dependencies, include lxml v6.1.1 in test matrix.
+
+### Changed
+
+-   Include lxml v6.1.1 in test matrix.
+
+## [3.22.8] - 2026-05-08
+
+-   The `Note.note_body` setter now accepts an `Iterable` of `Element`
+    objects, allowing multiple paragraphs (or other elements) in a note
+    body (PR #67).
+-   Added missing docstring for `Header.get_formatted_text`.
+-   Completed parameter documentation for `StyleMasterPage.set_font`.
+-   Fixed undocumented parameters in `Style.__init__` docstring.
+
+### Added
+
+-   Allow multiple elements in `Note.note_body` (PR #67).
+-   Tests for `Note.note_body` with multiple elements, empty list, and
+    non-element filtering.
+
+### Fixed
+
+-   Add missing docstring to `Header.get_formatted_text`.
+-   Add missing parameter docs to `StyleMasterPage.set_font`.
+-   Fix undocumented parameters in `Style.__init__`.
+
+## [3.22.7] - 2026-05-04
+
+-   Improve the Note class: a note can now be either auto-numbered or have a fixed label (PR #66).
+-   **Auto-numbered** notes: the consumer (e.g. LibreOffice) generates the citation number from<text:notes-configuration>. Create this by providing only "citation" (pre-filled display text) or nothing at all. No "text:label" attribute is written. That was the previous behaviour, no change required.
+
+-   **Labeled** notes: the note carries a fixed label. Create this by providing "label" (sets the "text:label" attribute). If "citation" is not given, the display text defaults to the label value.
+
+### Added
+
+-   Add `Note.label` property.
+-   Add tests for `Note.label`.
+
+### Fixed
+
+-   Fix missing labeled `Note` feature.
+ 
+## [3.22.6] - 2026-04-18
+
+-   Documentation now split into multiple smaller pages, one per module.
+-   One more test for markdown export.
+
+### Changed
+
+-   Documentation generation split into individual module pages for easier navigation.
+-   `mkdocs.yml` navigation now auto-generated from module list.
+-   Test file for markdown export (`test_md.py`).
+-   Include lxml v6.1.0 in test matrix.
+
+## [3.22.5] - 2026-04-11
+
+-   Improved test coverage across multiple modules.
+-   Small refactoring for code clarity.
+
+### Added
+
+-   Add tests for `table` module: rows, columns, cells, named ranges, cell spans, CSV import/export, string representation, formatted text.
+-   Add tests for `document` module.
+-   Add tests for `element` module.
+-   Add tests for `element_strip` module.
+-   Add tests for `tracked_changes` module.
+-   Add tests for `reference` module.
+-   Add tests for `Content` class.
+-   Add tests for `remove_tree` function.
+-   Add tests for `DrawGroup`, `DrawImage`, and `DrawFillImage`.
+-   Add tests for `get_styles()` methods.
+-   Add tests for `Style` and style-related modules: `style_props`, `style_utils`, `BackgroundImage`, master page.
+-   Add tests for `mixin_paragraph` and `mixin_paragraph_formatted` modules.
+-   Add tests for `elements_between` module.
+-   Add tests for `odfdo-flat` script.
+
+### Changed
+
+-   Refactor `elements_between` module for simplification.
+-   Refactor `Document` for clarity using `get()` method.
+-   Refactor internal util method `Element._canonicalize()` to not use tail.
+
+### Fixed
+
+-   Fix `Frame` to use tuple for width and height parameters.
+
+## [3.22.4] - 2026-04-04
+
+-   Detection of style properties from ODF extensions (LibreOffice loext, etc.) to not issue unwanted warnings.
+-   Small fixes in `Document.delete_styles()`, `Document.set_part()`, `Element.get_text_change_deletions()`, and document's backup.
+-   Improve tests coverage.
+
+### Added
+
+-   Add tests for `Container` module methods: `_save_as_folder`, `_save_as_xml`, `_clean_save_target`, `_do_unlink`, `_do_backup`, `_get_part` on folders, `get_parts`, `_xml_content` edge cases, `_encoded_object`, `_encoded_fill_image`, `_parse_folder`, `_save_zip`, `_get_zip`.
+-   Add edge case test for exception handling in `_save_zip` mimetype write.
+
+### Changed
+
+-   Refactor `Element.get_style()` for improved clarity.
+-   Refactor `table.py` for better code structure.
+-   Refactor `element_strip.py` for improved maintainability.
+-   Refactor `reference.py` for cleaner implementation.
+-   Optimize `set_default_styles_language_country()`.
+
+### Fixed
+
+-   Fix `Document.delete_styles()` to ensure default styles are not deleted.
+-   Fix `Document.set_part()`.
+-   Fix `Element.get_text_change_deletions()` xpath request.
+-   Fix `_do_backup()` to write backup in original directory.
+
+## [3.22.3] - 2026-03-29
+
+-   Drop Python 3.9 support. A `support/python3.9` branch is maintained for critical fixes.
+
+### Changed
+
+-   Update type hint syntax to Python 3.10+ style (`|` union operator, `list[]` instead of `List[]`).
+
+## [3.22.2] - 2026-03-29
+
+-   Internal refactoring of `container.py` for improved code clarity and maintainability.
+-   Enhanced test coverage for the `container` module.
+
+### Added
+
+-   Improve test coverage for `container.py` module, covering XML related methods and edge cases for empty paths.
+-   Add tests for `const.py` module.
+
+### Changed
+
+-   Refactor `container.py` by splitting `_read_xml()` into smaller focused helper methods.
+
+## [3.22.1] - 2026-03-22
+
+-   Toggle for LibreOffice/OpenOffice extension namespaces via `USE_LO_EXTENSIONS` constant.
+-   Improved ODF 1.2 standard compliance with additional namespaces and properties.
+
+### Added
+
+-   Add `USE_LO_EXTENSIONS` constant to control inclusion of LibreOffice/OpenOffice extension namespaces (default: `True`).
+-   Add missing ODF 1.2 standard namespaces: `rdf`, `pkg`, `dsig`.
+-   Add LibreOffice/OpenOffice extension namespaces: `ooo`, `oooc`, `ooow`, `officeooo`, `tableooo`, `drawooo`, `calcext`, `loext`, `field`, `formx`, `css3t`, `rpt`, `presentationooo`, `formooo`, `chartooo`.
+-   Add `text:s`, `text:tab`, `text:line-break`, and `text:soft-page-break` to `TEXT_CONTENT` set.
+-   Add `office:database` and `office:image` to `BODY_ALLOW_NAMED_RANGE_TAGS`.
+-   Add numerous form-related and other ODF standard properties to `ODF_PROPERTIES`.
+-   Add tests for `container` module.
+-   Add tests for `Cell` class.
+
+### Changed
+
+-   Refactor `OFFICE_PREFIX` to support toggling extension namespaces.
+-   Refactor `ODF_NAMESPACES` to separate core and extension namespaces.
+
+## [3.22.0] - 2026-03-07
+
+-   **New Feature**: Support for Flat ODF format (plain XML files with extensions .fodt, .fods, .fodp, .fodg, etc.).
+-   New command-line script `odfdo-flat` to convert between ZIP ODF and Flat ODF formats.
+
+### Added
+
+-   Add support for reading and writing Flat ODF XML format (`.fodt`, `.fods`, `.fodp`, `.fodg`, `.fodc`, `.fodi`, `.fodf`).
+-   Add `ODF_FLAT_EXTENSIONS` constant with supported flat ODF extensions.
+-   Add `ODF_MIMETYPE_TO_FLAT_EXTENSION` mapping for converting mimetypes to flat extensions.
+-   Add automatic detection of Flat ODF format from file content.
+-   Add command-line script `odfdo-flat` to convert between ZIP ODF and Flat ODF formats.
+-   Add tests for Flat ODF format support.
+
+### Changed
+
+-   `Document.save()` now preserves existing Flat ODF extensions when saving.
+-   Improve docstrings in `frame.py` module.
+
+## [3.21.0] - 2026-02-28
+
+-   ODF standard compliance: style properties are now validated against the ODF standard attribute list.
+-   Improved type safety for style properties with new `PropDict` type alias.
+
+### Added
+
+-   Add `STYLE_ATTRIBUTES` dictionary in `utils/style_constants.py` containing all ODF standard attributes organized by style area.
+-   Add dynamic property mapping based on actual attributes allowed by the ODF standard.
+-   Add validation of style properties against ODF standard attribute list, with warnings for non-compliant attributes.
+
+### Changed
+
+-   Refactor `style.Style()` class for improved attribute validation.
+-   Refactor `StyleProps` methods to use `PropDict` type alias for better type consistency.
+-   Refactor `StyleBase`, `StyleProps`, and `StylePageLayout` type annotations.
+-   Improve style-related docstrings.
+-   Move `_BASE_PROPERTY_MAPPING` to `utils/style_constants.py`.
+
+### Fixed
+
+-   Fix issue #16 "border and padding attributes are ignored when style is used for text_frame"
+-   Fix `StyleBase` properties type annotations.
+
+## [3.20.2] - 2026-02-07
+
+-  Improvements of docstrings documentation.
+
+### Changed
+
+-   Improve docstrings in module `config_elements`
+-   Improve docstrings in module `meta`
+-   Improve docstrings in module `form_control_mixin`
+
+## [3.20.1] - 2026-02-07
+
+-  Improvements of docstrings documentation.
+-  Refactoring of the `Unit` class.
+
+### Added
+
+-   Add docstring for module `utils`
+-   Add docstring for module `templates`
+-   Add docstring for module `scripts`
+-   Add `doclint.py` developement util script.
+
+### Changed
+
+-   Refactor `Unit` class.
+-   Improve docstrings for `Container`.
+-   Improve docstrings for `Document`.
+-   Improve docstrings for `Annotation`.
+-   Improve docstrings for `ReferenceMarkStart` and `ReferenceMarkEnd`.
+-   Improve docstrings for `Row.iter_cells`.
+-   Improve docstrings for `SvgDescription`.
+-   Improve docstrings for `SvgTitle`.
+-   Improve docstrings for `Table` iterators.
+-   Improve docstrings for `TextChange`.
+-   Improve docstring for `default_frame_position_style()`.
+-   Apply linter to tests files.
+
+### Fixed
+
+-   Fix `user_field_declaration.get_user_field_decl()` docstring.
+-   Fix `shapes.DrawCaption` docstring.
+
+## [3.20.0] - 2026-02-01
+
+-   **Breaking Change**: The `Cell.value` property no longer automatically clears the cell's style when a new value is set. Previously, setting `Cell.value` would remove existing styling, and other properties like cell span, xml:id .... Now, styling and other properties are preserved. If the old behavior of clearing styles is desired, explicitly call `Cell.clear()` before setting the new value (issue #63).
+-   Enhanced element manipulation with `Element.del_attribute_list()` and `ElementTyped.clear_attributes()` methods.
+
+### Added
+
+-   Add method `Element.del_attribute_list()`.
+-   Add method `ElementTyped.clear_attributes()`.
+
+### Changed
+
+-   The `Cell.value` property now preserves the cell's style and other properties when setting a new value across all data types (date, datetime, timedelta, int, decimal, float, boolean, string).
+-   `ElementTyped._erase_text_content()` changed to wipe all paragraphs.
+
+### Fixed
+-   The `Cell.value` property no longer automatically clears the cell's style when a new value is set.
+
+## [3.19.0] - 2026-01-02
+
+-   New classes for handling configuration settings (the rarely used `settings.xml` is now fully managed).
+-   Major refactoring of frame and shape classes.
+-   Addition of many new drawing and shape classes.
+-   Rework of styles for more precise return types.
+-   Extensive addition of tests for new features.
+
+### Added
+ 
+ -   Add new drawing classes: `DrawMarker`, `DrawPageThumbnail`, `DrawControl`, `DrawMeasure`, 
+`DrawCaption`, `DrawPath`.
+ -   Add new shape classes: `CircleShape`, `RegularPolygonShape`, `PolygonShape`, `PolylineShape` (issue #44).
+ -   Add new settings-related classes for `settings.xml` content: `Settings`, `OfficeSettings`, `ConfigItem`, `ConfigItemSet`, `ConfigItemMapNamed`, `ConfigItemMapEntry`, `ConfigItemMapIndexed`.
+-   Add `as_dict()` and `from_dict()` methods for `Settings` classes.
+-   Add class `ListHeader`.
+-   Add mixin classes `ListMixin`, `SvgMixin`.
+-   Add SVG-related classes: `SvgTitle` and `SvgDescription`.
+-   Add many tests for new features.
+ 
+### Changed
+ 
+-   Refactor `DrawGroup`, `ConnectorShape`, `EllipseShape`, `LineShape`.
+-   Refactor `frame.py` and `shapes.py` for more completeness.
+-   Refactor `DrawImage` and `DrawFillImage` for missing attributes.
+-   Refactor mixin classes: `AnchorMix`, `ZMix`, `PosMix`.
+-   Refactor `list.py` module.
+-   Update many docstrings.
+ 
+### Fixed
+ 
+-   Fix `Element.get_styles()` and `.get_style()` to return more precise types (issues #30, #61).
+-   Move `py.typed` to the package directory (issue #62).
+-   Fix `ConfigItemSet.name` property.
+-   Fix typo in shape docstrings.
+
+## [3.18.3] - 2025-12-20
+
+-   Refactoring of Element, create mixins `UserDefinedMixin`, `UserFieldDeclContMixin`, `UserFieldDeclMixin`, `TocMixin`.
+-   Refactoring of module `toc.py`.
+-   Refactoring of docstrings.
+
+### Added
+
+-  Add classes `UserDefinedMixin`, `UserFieldDeclContMixin`, `UserFieldDeclMixin`.
+-  Add class `TocMixin`.
+
+### Changed
+-  Split `UserFieldDecl` and `UserFieldDecls` from `user_field.py` module to their own module.
+-  Move `Element.get_user_field_value()` to module `user_field_declaration.py`.
+-  Refactor module `toc.py`.
+-  Move `IndexBody`, `IndexTitle`, `IndexTitleTemplate` to `toc.py` module. 
+-  Refactor docstrings.
+
+## [3.18.2] - 2025-12-13
+
+-   Refactoring of Element, create mixins `VarDeclMixin`, `LinkMixin`.
+-   Minor refactoring of `Blob`, `Document`.
+-   Minor updated of docstrings.
+
+### Added
+
+-   Add `LinkMixin` class.
+-   Add `VarDeclMixin` class.
+-   Add property `Body.allow_named_range`, used by `Table`.
+-   Add tests for `element.py` module.
+
+### Changed
+
+-   Refactor `Document.merge_styles_from()` method.
+-   Refactor `Blob` class.
+-   Split `VarDecls` and `VarDecl` from `variable.py` module to their own module.
+-   Remove some `__str__` and `__repr__` docstrings.
+
+## [3.18.1] - 2025-12-07
+
+-   Updated missing docstrings in module `odfdo.document`.
+-   Minor refactoring in `odfdo.document`.
+
+### Added
+
+-   New `odfdo.utils.blob` module for managing binary large objects (BLOBs).
+
+### Changed
+
+-   Refactored `Blob` class from `odfdo.document` into the new `odfdo.utils.blob` module.
+-   Renamed private function `container_from_template()` to `_container_from_template()`.
+
+## [3.18.0] - 2025-12-07
+
+-   Major refactoring of docstrings for all modules to Google format.
+-   Major refactoring of Form classes and addition of many new Form-related classes.
+-   Added extensive tests for Form classes.
+-   Switch GitHub repository's default branch from master to main.
+
+### Added
+
+-   Add many new Form-related classes: `FormValueRange`, `FormImageFrame`, `FormFrame`, `FormRadio`, `FormImage`, `FormCheckbox`, `FormButton`, `FormOption`, `FormListBox`, `FormItem`, `FormCombobox`, `FormFixedText`, `FormTime`, `FormDate`, `FormFormattedText`, `FormFile`, `FormPassword`, `FormTextarea`, `FormText`, `FormGenericControl`, `FormColumn`, `FormGrid`, `FormHidden`.
+-   Add many new mixin classes for Forms: `FormImageAlignMixin`, `FormImagePositionMixin`, `OfficeTargetFrameMixin`, `FormSizetMixin`, `FormSourceListMixin`, `FormControlAsDictMixin`, `FormDelayRepeatMixin`, `FormMaxLengthMixin`, `FormNumber`.
+-   Add extensive tests for new Form classes.
+-   Add module docstrings to all scripts in `odfdo/scripts`.
+
+### Changed
+
+-   Refactor all docstrings in the library to Google format.
+-   Major refactoring of `form_controls.py` and related modules.
+-   Refactor tests for forms.
+-   Improve descriptions and epilogs of all scripts.
+-   Reformat all source files using a consistent style.
+-   Update `README.md`.
+
+## [3.17.6] - 2025-11-23
+
+-   Refactor `Element`, moving some access methods to relevant mixin classes.
+-   Add new mixin classes `SectionMixin`, `NoteMixin`, `AnnotationMixin`, `BookmarkMixin`, `ReferenceMixin`, `TrackedChangesMixin` and some auxiliary classes to use the new mixins.
+-   Start working on the ODF standard form classes, adding new classes `OfficeForms`, `OfficeFormsMixin`, `Form`, `FormMixin`, `PresentationNotes`.
+
+### Changed
+
+-   Refactor `Element`.
+-   Refactor many classes to add inheritance from the new mixin classes.
+
+### Added
+
+-   Add tests for module `element.py`.
+-   Add classes `NoteBody`, `SectionMixin`.
+-   Add classses `NoteMixin`, `MetaField`, `RubyBase`, `TextMeta`.
+-   Add classes `AnnotationMixin`, `BookmarkMixin`, `ReferenceMixin`, `TrackedChangesMixin`.
+-   Add classses `StyleFooterFirst`, `StyleHeaderFirst`.
+-   Add classes `OfficeForms`, `OfficeFormsMixin`, `Form`, `FormMixin`, `PresentationNotes`.
+-   Add unit tests for the new classes.
+
+## [3.17.5] - 2025-11-15
+
+-   Refactor `table.py` and add tests.
+-   Refactor `meta.py` using a new class `MetaUserDefined`.
+-   Refactor `page_layout.py` and `StylePageLayout`, add property `OfficeAutomaticStyles.page_layouts`.
+
+### Changed
+
+-   Use `MetaUserDefined` in `meta.py`.
+-   Refactor `page_layout.py` for type hints.
+-   Refactor `StylePageLayout`, add allowed `page-usage` set.
+-   Refactor `Table`, add tests for `Table`.
+-   Refactor `Table._get_python_value()`.
+-   Refactor `Table()` for protection key attribute.
+-   Refactor `Table` coordinates methods.
+-   Refactor `Table.tanspose`, reorganize tests.
+
+### Added
+
+-   Add class `MetaUserDefined`.
+-   Add `test_meta_user_defined.py`.
+-   Add property `OfficeAutomaticStyles.page_layouts`.
+-   Add `test_style_page_layout.py`.
+-   Add `test_table_unit.py`, `test_table_rstrip.py`, `test_table_transpose.py`. 
+-   Add tests for `table.py` and `page_layout.py`.
+-   Add basic `jusfile`.
+
+### Fixed
+
+-   Fix return value of `StylePageLayout.page_usage`.
+
+## [3.17.4] - 2025-11-9
+
+-   Refactor all scripts and their tests to expand coverage.
+-   Refactor the `NRMixin` class, with a new module `mixin_named_range.py` for it.
+-   Refactor `tox.py` and separate the `IndexBody` and `IndexTitle` classes into their own module.
+-   Refactor modules for type hints.
+
+### Changed
+
+-   Refactor scripts and their test units: `diff.py`, `folder.py`, `from_csv.py`, `headers.py`, `highlight.py`, `show.py`, `replace.py`, `styles.py`, `table_shrink.py`, `to_csv.py`, `to_markdown.py`, `userfield.py`.
+-   Refactor `NRMixin` class.
+-   Refactor modules `body.py`, `toc.py`, `table.py`, `row.py`, `elements_between.py`, `element_strip.py`, `styles.py`, `page_layout.py`.
+
+### Added
+
+-   Add module `mixin_named_range.py` for `NRMixin` class.
+-   Add module `text_index.py` for classes `IndexBody`, `IndexBody`, `IndexTitle`.
+-   Add tests for imports `__all__` check.
+-   Add tests for script `folder.py`, `meta.py`.
+-   Add internal utils `Element._xml_append()` method and `Element._xml_element` property.
+
+## [3.17.3] - 2025-11-1
+
+-   Refactor scripts and their tests to extend coverage.
+
+### Changed
+
+-   Use the `script_utils` functions `read_document()`, `save_document()` and `detect_stdin_timeout()` in all scripts.
+-   Refactor scripts `meta_print.py` and `meta_update.py`.
+-   Refactor tests for `meta_print.py` and `meta_update.py`.
+
+### Added
+
+-   Add `utils/script_utils.py` file.
+
+## [3.17.2] - 2025-10-25
+
+-   Add a new script `odfdo-meta-update`, which allows you to update metadata from a JSON file.
+-   Refactor `odfdo-meta-print` and its test suite for better coverage.
+
+### Changed
+
+-   Small refactoring of script `meta_print.py`.
+-   Refactoring of tests for `meta_print.py`.
+
+### Added
+
+-   Add script `odfdo-meta-update` and tests for it.
+
+## [3.17.1] - 2025-10-18
+
+-   Add a new script `odfdo-meta-print`, which prints the document metadata.
+-   Fix many typos in docstrings and information strings (thanks to @metemaddar).
+-   Reintroduce support for Python 3.9, as some Linux distributions still use it.
+
+### Changed
+
+-   Adapt configuration of `tox` and `github actions` for Python 3.9 reintroduction.
+
+### Added
+
+-   Add property `Meta.odf_office_version`.
+-   Add script `odfdo-meta-print` and tests for it.
+-   Add optional message to `Meta.as_text()` when no user defined metadata fields.
+
+### Fixed
+
+-   Fix typos in `README.md`, docstrings and information strings (by @metemaddar).
+
+## [3.17.0] - 2025-10-11
+
+-   Add Python 3.14 to the test suite, remove support for Python 3.9.
+-   Add some tests for `NamedRange`, `Row` and styles functions.
+
+### Changed
+
+-   Adapt configuration of `tox` and `github actions` for Python 3.14.
+-   Small refactor refactor of `NRMixin`.
+
+### Added
+
+-   Add tests for `NamedRange`, `Row`, `style_utils._map_key()` and `style_defaults`.
+
+## [3.16.8] - 2025-10-5
+
+-   Add dedicated style classes and modules for container classes `OfficeMasterStyles`, `OfficeAutomaticStyles` and related style elements.
+-   Refactor style classes in several modules (utils, defaults, properties).
+-   Small refactoring of code.
+-   Latest version with support for Python 3.9.
+
+### Changed
+
+-   Relocate some internal style method in `style_utils.py`.
+-   Relocate default styles to module `style_defaults.py`
+-   Refactor `Style.set_background()` method to use new style classes and utils.
+-   Refactor some type hints to use new style classes.
+-   Small refactoring of `Document` to use `contextlib.suppress`.
+-   Refactor `Style` class to insure `StylePageLayout` instance creation is compatible with previous versions.
+-   Reorganize and rename test files, adapt tests for styles to new style classes structure.
+-   Refactor recipe `add_a_custom_footer_to_a_text_document.py`.
+
+### Added
+
+-   Add `style_containers.py` module.
+-   Add container class `OfficeMasterStyles`, `OfficeAutomaticStyles`.
+-   Add `page_layout.py` module.
+-   Add class `StylePageLayout`.
+-   Add Element methods `_get_attribute_str_default()` and `_set_attribute_str_default()`.
+-   Add modules `style_utils.py`, `style_props.py`, `style_defaults.py`.
+-   Add mixin class `StyleProps` for Style properties methods.
+-   Add tests for new style classes.
+
+### Fixed
+
+-   Fix method `Style.get_properties()` when a bad style area string is provided.
+
+## [3.16.7] - 2025-09-20
+
+-   Refactor style classes to make it easier to manage page styles in the future.
+-   Add dedicated style classes and modules for Master Page and related style elements.
+
+### Changed
+
+-   Move method `Styles.get_master_pages()` to the property `Styles.master_pages`.
+-   Refactor style classes by using a `StyleBase` base class.
+-   Reorganize and rename many test files, adapt tests for styles to new style classes structure.
+-   Refactor recipe `add_a_custom_footer_to_a_text_document.py`.
+
+### Added
+
+-   Add Element methods `_get_attribute_bool_default()` and `_set_attribute_bool_default()`.
+-   Add classes `StyleBase`, `OfficeMasterStyles`, `StyleMasterPage`, `StyleHeader`, `StyleHeaderLeft`, `StyleFooter`, `StyleFooterLeft`.
+-   Add `master_page.py` and `style_base.py` modules.
+-   Add tests for new style classes (master pages related styles).
+
+## [3.16.6] - 2025-09-13
+
+-   `NamedRange` can now be used locally on a table, not only at a global document level, as required by ODF standard.
+-   Refactor of some functions and methods, including `Element.xpath()`, `Element.get_office_names()`.
+-   Fix style detection for `TabStopStyle`.
+-   Refactor and add tests for `Element`, `element_strip.py`, `Image`, `NamedRange`, `Annotation` for better coverage.
+
+### Changed
+
+-   Refactor `NamedRange` using mixin class, allow NamedRange use in local table.
+-   Move `Element.strip_elements` and `strip_tags` from element module to their own module.
+-   Refactor `Element.xpath()`.
+-   Apply `mypy` to `elements_between.py`, `scripts/to_csv.py`.
+-   Refactor `Element.get_office_names()`.
+-   Enforce unicity of class declaration (internal).
+
+### Added
+
+-   Add tests for modules `element`, `element_strip`.
+-   Add tests for method `Element.xpath()`.
+-   Add tests for class `Image`, `NamedRange`, `Annotation`.
+
+### Fixed
+
+-   Make "named:expression" compliant with ODF standard.
+-   Fix style detection for `TabStopStyle`.
+
+### Removed
+
+-   Remove `element._add_text()` (move to embeded function).
+-   Remove unused internal `Element.__cut_text_tail()`.
+
+## [3.16.5] - 2025-09-6
+
+-   Add new recipe `define_margins_and_position_for_a_table_in_a_text_document.py` for positioning a table in a text document.
+-   Add two scripts `odfdo-from-csv` and `odfdo-to-csv` for import/export CSV files (minimal implementation based on Python CSV module).
+-   Refactor some internal functions and methods using `Xpath` and matching parts of ODF elements.
+
+### Changed
+
+-   Refactor internal method `Element.get_between` and move method to its own module.
+-   Refactor `table.py` to use `xpath_return_elements`.
+-   Refactor `row.py` to use `xpath_return_elements`.
+-   Refactor `element.py` (coding style, doc strings).
+-   Small refactoring of recipe `accessing_a_list_of_elements.py`.
+
+### Added
+
+-   Add scripts `odfdo-from-csv` and `odfdo-to-csv`.
+-   Add recipe `define_margins_and_position_for_a_table_in_a_text_document.py`.
+-   Add internal functions in `element.py` module: `xpath_return_elements` and `xpath_return_strings`.
+-   Add tests for class `Element`.
+-   Add module `elements_between.py`.
+
+### Fixed
+
+-   Fix `Table.from_csv()` arguments.
+
+### Removed
+
+-   Comment out unused xpath definition `_xpath_text_descendant`.
+
+## [3.16.4] - 2025-08-30
+
+-   Add new recipes `add_an_image_to_a_table_inside_text_document.py` and `add_an_image_to_a_table_inside_spreadsheet.py` to explain how to place an image in a table cell, either in a spreadsheet or in a text document.
+-   Add deprecation warning on buggy `Table.set_cell_image()` method (issue #58).
+-   Refactor and add tests for the `element` and `styles` module for better coverage and clarity.
+-   Include `lxml v6.0.1` in test suite.
+
+### Changed
+
+-   `Table.set_cell_image()` is deprecated.
+-   Rename internal method `Element.make_etree_element` to `_make_etree_element`.
+-   Refactor `Element._insert()` method.
+-   Improve some doc strings and apply `docformatter`.
+
+### Added
+
+-   Add recipe `add_an_image_to_a_table_inside_text_document.py`.
+-   Add recipe `add_an_image_to_a_table_inside_spreadsheet.py`.
+-   Add tests for `Styles`, `Element`.
+-   Include `lxml v6.0.1` in test suite.
+
+### Removed
+
+-   Remove unused `Element._insert_between()` method.
+
+## [3.16.3] - 2025-08-16
+
+-   Small improvements to metadata handling such as loading metadata from dictionaries.
+-   Add test for the Styles module for better coverage.
+
+### Changed
+
+-   `MetaTemplate.as_dict()` now export date as a datetime object.
+-   Improve some doc strings in `odfdo.meta`.
+
+### Added
+
+-   Add method `Meta.delete_user_defined_metadata_of_name()`.
+-   Add methods `MetaTemplate.from_dict()`, add `MetaAutoReload.from_dict()`, `MetaHyperlinkBehaviour.from_dict()`.
+-   Add tests for `Styles`, `Meta`. `MetaAutoReload`.
+
+## [3.16.2] - 2025-08-15
+
+-   Code refactoring for type hints and improved test coverage.
+
+### Changed
+
+-   Refactor `odfdo` modules for type hints: `meta`, `content`, `mixin_paragraph`, `tracked_change`, `user_field.py`, `frame.py`, `toc`, `xmlpart`, `document`, `table`, `row`, `element_typed`, `highlight`.
+-   Add tests for `table` and `element_typed`, `tab`, `line_break`.
+
+## [3.16.1] - 2025-08-09
+
+-   Add a new recipe: `how_to_change_default_language.py` showing the use of the `document.language` property.
+-   Refactor of code (type hints).
+-   Migrate to the `uv_build` build system.
+
+### Changed
+
+-   Refactor `odfdo` modules for type hints: `cell`, `row`, `annotation`, `styles`, `body`, `element`, `meta`, `xmlpart`.
+-   Improve some doc strings in `odfdo.element` and `odfdo.xmlpart`.
+
+### Added
+
+-   Add class `body.Metadata`, for type hint purpose.
+
+## [3.16.0] - 2025-08-02
+
+-   Added methods to set the default document language, both in the default styles (the value used by LibreOffice) and in the metadata. In short: using the new property `Document.language = "en-US"` will make `Document.langusge` value to "en-US", both the default styles and meta fields now have this value.
+-   Small fixes in the Style properties management.
+
+### Changed
+
+-   Move `is_RFC3066()` test from `Meta._is_RFC3066()` to `utils.is_RFC3066()`.
+
+### Added
+
+-   Add warnings in `meta.py` docstring methods about default language.
+-   Add methods `styles.set_default_styles_language_country()`, `styles.get_default_styles()`, `Document.get_language()`, `Document.set_language()`.
+-   Add properties `styles.default_styles`, `styles.default_language`, `Document.language`.
+-   Add tests for `Document.language`.
+
+### Fixed
+
+-   Fix `style:use-window-font-color` beeing a color, which is not.
+-   Fix `style.set_properties()` broken for unknown properties.
+
+## [3.15.1] - 2025-07-26
+
+-   Refactor of code (type hints).
+
+### Changed
+
+-   Refactor `odfdo` modules for type hints: `reference`, `container`, `named_range`, `mixin_paragraph`, `mixin_paragraph_formatted`, `element`, `mixin_dc_creator`, `line_break`, `element_typed`, `container`, `body`, `xmlpart`.
+
+## [3.15.0] - 2025-07-20
+
+-   For concept clarity, rename iterator methods `Table.traverse()` to `Table.iter_rows()`, `Table.traverse_columns()` to `Table.iter_columns()`, `Row.traverse()` to `Row.iter_cells()`, maintaining compatibility with aliases on previous names.
+-   Add alias names for `Body.get_table()`, `tables`, `get_table()`: `get_sheets()`, `sheets`, `get_sheet()`.
+-   Add the `Meta.strip()` method to clean all metadata from a document and a recipe showing how it works.
+-   Improve the `remove_tree()` utility function (used in recipes) by adding the `keep_children` argument.
+-   Optimize access to columns in tables.
+-   Refactor of code (type hints) and improvement of the tests coverage.
+
+### Changed
+
+-   Rename `Table.traverse()` -> `Table.iter_rows()`, keep compatibility (alias nane).
+-   Rename `Table.traverse_columns()` -> `Table.iter_columns()`, keep compatibility (alias nane).
+-   Rename `Row.traverse()` -> `Row.iter_cells()`, keep compatibility (alias nane).
+-   Refactor methods `set_span()` and `set_link()`.
+-   Refactor `Tab.text` property.
+-   Refactor modules `odfdo.table_cache`. `odfdo.container`. `odfdo.named_range`.
+-   Refactor generic getter/setter in module `odfdo.element`.
+-   Use the cache to iterate over columns in tables.
+
+### Added
+
+-   Add aliases for `Body.get_table`, `tables`, `get_table`: `get_sheets`, `sheets`, `get_sheet`.
+-   Add argument "keep_children" to `remove_tree()` utility function, add tests for `remove_tree()`.
+-   Add recipe `how_to_remove_all_meta_data.py`.
+-   Add method `Meta.strip()`.
+-   Add tests for module `odfdo.TOC`.
+-   Add test for `Column`.
+-   Add tests for module `odfdo.table_cache`.
+-   Add tests for module `odfdo.named_range`.
+-   Add tests for module `odfdo.spacer`.
+
+### Fixed
+
+-   Fix crashing test in test suite for markdown.
+
+## [3.14.10] - 2025-07-14
+
+-   Improve documentation and docstrings.
+-   Move classes `Column`, `Annotation`,user fields, `Spacer`, `Tab`,`Spacer`,`LineBreak`, and `Span` to their own module (compatibilty maintained with previous versions).
+-   Minor fixes on classes `odfdo.variable.VarSet` and `odfdo.variable.VarTime`.
+-   Refactor of code and improvement of the tests coverage.
+
+### Changed
+
+-   Improve test coverage for module `odfdo.meta`.
+-   Improve test coverage for module `odfdo.xpath_query`.
+-   Improve test coverage for module `odfdo.utils`.
+-   Improve test coverage for module `odfdo.mixin_paragraph`.
+-   Improve test coverage for module `odfdo.header`.
+-   Improve test coverage for module `odfdo.variable`.
+-   Improve test coverage for module `odfdo.user_field`.
+-   Improve test coverage for module `odfdo.image`.
+-   Improve test coverage for module `odfdo.list`.
+-   Improve test coverage for module `odfdo.draw_page`.
+-   Improve test coverage for module `odfdo.xmlpart`.
+-   Improve test coverage for module `odfdo.datatype`.
+-   Improve test coverage for module `odfdo.styles`.
+-   Improve test coverage for markdown mixin.
+-   Replace `ParagraphBase` by a mixin.
+-   Move class `Annotation` from `odfdo.note` module to module `odfdo.annotation`.
+-   Move classes about user fields from `odfdo.variable` module to module `odfdo.user_field`.
+-   Move class `Spacer` from `odfdo.paragraph_base` module to module `odfdo.spacer`.
+-   Move class `Tab` from `odfdo.paragraph` module to module `odfdo.tab`.
+-   Move class `LineBreak` from `odfdo.paragraph` module to module `odfdo.line_break`.
+-   Move class `Span` from `odfdo.paragraph` module to module `odfdo.span`.
+-   Refactor module `odfdo.variable`.
+-   Refactor module `odfdo.xmlpart`.
+-   Refactor module `odfdo.datatype`.
+-   Refactor module `odfdo.mixin_paragraph`.
+-   Update some docstrings.
+-   Update Readme.
+
+### Added
+
+-   Add tests for typed elements classes (variables).
+-   Add more `Unit` conversions to pixel, add test for `Unit` class.
+-   Add argument `node_type` to `DrawPage.set_transition()`.
+
+### Fixed
+
+-   Fix `odfdo.variable.VarSet`: keep style when set a value.
+-   Fix `odfdo.variable.VarTime` attribute time_adjust.
+
+## [3.14.9] - 2025-07-08
+
+-   Improve documentation and docstrings.
+-   Move classes `Column` and `NamedRange` to their own module (compatibilty maintained with previous versions).
+-   Refactor of code and improvement of the tests coverage.
+
+### Changed
+
+-   Move class `Column` from `odfdo.table` module to module `odfdo.column`.
+-   Move class `NamedRange` from `odfdo.table` module to module `odfdo.named_range`.
+-   Refactor classes `NamedRange`.
+-   Refactor module `odfdo.tracked_changes`.
+-   Refactor module `odfdo.note`.
+-   Improve test coverage of tracked changes related classes.
+-   Improve test coverage for module `odfdo.note`.
+-   Documentation: show table of contents for recipes, add logo.
+-   Update many docstrings.
+-   Update Readme.
+
+### Added
+
+-   Add tests for modules `odfdo.smil`, `odfdo.reference`.
+
+### Removed
+
+-   Remove deprecated `gen_doc.sh`.
+
+### Fixed
+
+-   Fix style argument of function `import_from_csv()`.
+-   Fix `dc_creator` and `dc_date` for tracked changes use.
+
+## [3.14.8] - 2025-07-06
+
+-  Publish documentation on https://jdum.github.io/odfdo/
+-  The previous ./doc directory is removed, documentation can be generated locally, see README.md
+
+### Changed
+
+-   documentation now generated by script `generate_doc.py` in directory `doc_src`.
+
+## [3.14.7] - 2025-07-06
+
+-   Fixes for rare situations on table of contents without title, creation of `Annotation`, empty `Tables` optimization.
+-   Cosmetic improvement of Markdown export of small tables.
+-   Added the `util.remove_tree()` function, used in a few recipes, to recursively remove a tag
+-   Technical updates: refactor all recipes to have the same structure, small refactoring of code and tests.
+
+### Changed
+
+-   Refactor all recipes.
+-   Small refactoring of `Element`class for better type hints.
+-   Improve markdown export of small tables.
+-   Configure test coeverage.
+
+### Added
+
+-   Added the `util.remove_tree()` function.
+-   Add tests for `odfdo.toc` module
+
+### Fixed
+
+-   Allow `Table.optimize_width()` to optimize an empty table.
+-   Fix `Annotation` creation with a name passed as argument.
+-   Fix `TOC` having empty title.
+
+## [3.14.6] - 2025-06-29
+
+-   Add support for the `lxml` library version 6.0.0.
+-   Fix a slowness of `odfdo-show`on big tables.
+-   Technical updates: refactor internal cache for `Table` and `Row`, add tests for `Row` class, improve typing and doc strings on module `odfdo.element`, improve test suite speed.
+
+### Changed
+
+-   Refactor cache system in `Row` and `Table` methods.
+-   Refactor `Element`class for better type hints.
+-   Configure test suite using `pytest-xdist`
+
+### Added
+
+-   Add internal module `odfdo.table_cache` with classes `RowCache`, `TableCache`.
+
+### Fixed
+
+-   Fix `odfdo-show` slowness on big tables.
+
+## [3.14.5] - 2025-06-28
+
+-   Improve CVS conversion: refactor `Table.to_csv()`, `import_from_csv()`, add classmethod `Table.from_csv()`, and add recipes `export_tables_to_csv_format` and `import_csv_content_into_a_table`.
+-   Add recipe `how_to_add_a_right_aligned_picture_to_a_text_document`.
+-   Technical updates: refactoring of Table iterators and some recipes' code, configure `mypy` code analysis and refactoring.
+
+### Changed
+
+-   Refactor `Table.to_csv()`, `import_from_csv()`.
+-   Refactor recipes: `change_paragraph_styles_methods`, `change_values_of_a_chart_inside_a_document`, `concatenate_presentations`, `copy_style_from_another_document`.
+-   Refactor `Table.traverse_columns()` iterator.
+-   Refactor `Row.traverse()`.
+-   Remove unused cache for columns.
+-   start work on mypy configuration and analysis.
+
+### Added
+
+-   Add classmethod `Table.from_csv()`.
+-   Add recipes `export_tables_to_csv_format.py` and `import_csv_content_into_a_table.py`.
+-   Add recipe `how_to_add_a_right_aligned_picture_to_a_text_document`.
+
+## [3.14.4] - 2025-06-21
+
+-   Technical updates: refactoring of some recipes' code and improvement of test coverage.
+-   Improve `README.md`
+
+### Changed
+
+-   Refactor recipes: `remove_span_styles`, `make_a_presentation_from_text_with_different_styles`, `how_to_add_a_table_to_a_document`, `get_text_content_from_odt_file`, `change_image_in_many_documents`, `basic_presentation_hello_world`, `add_text_span_styles`, `add_private_annotations_to_a_document`, `add_logo_on_presentation`, `add_a_custom_footer_to_a_text_document`, `accessing_other_element_from_element_like_list`, `accessing_a_single_element.py accessing_a_list_of_elements`, `accessibility_check_on_a_document`.
+-   Improve tests for table coordinates, `MetaAutoReload`, `Link`, `Manifest`, `Meta`, `Content`, `MetaHyperlinkBehaviour`, `Row`.
+
+## [3.14.3] - 2025-06-14
+
+-   The rarely used `RowGroup` class is moved to a dedicated module and tests are added for this class. A new property `Table.row_groups` returning the list of row groups of the table is available.
+-   A new recipe explains how to add a page footer by using the method `Style.set_page_footer()`.
+-   Compatibility with previous versions is maintained.
+
+### Changed
+
+-   The `RowGroup` class is moved to a dedicated module.
+-   Refactoring of the `RowGroup` class.
+-   Small refactoring of `Cell.repeated` setter.
+-   Refactor recipe `create_a_text_document_with_tables_in_it.py`.
+-   Update versions of development dependencies.
+
+### Added
+
+-   Add a new property `Table.row_groups`.
+-   Add tests for the `RowGroup` class.
+-   Add recipe `add_a_custom_footer_to_a_text_document.py`.
+
+### Fixed
+
+-   Fix some `Xpath` commands to fetch rows inside row groups.
+-   Fix `Style.set_page_footer()` when the new footer is a string.
+
+## [3.14.2] - 2025-06-07
+
+-   The `Style` class for the `table` area accepts two new arguments useful for a table in a text context: 'width' and 'align'. Example: `Style("table", "style_name", width="5cm", align="left", margin_left="2cm")`.
+-   `Cell.date` property now returns `datetime.date` type (was `datetime.datetime`). `Cell.value` still returns a `datetime.datetime`. Note: OpenDocument format does not differentiate between "date" and "datetime", so `Cell.date` and `Cell.datetime` are best guesses in case the user expects such a specific value.
+-   Allow to use string to define width and height in Table creation, ie `table = Table("table", width="4")`
+-   Compatibility with previous versions is maintained, at the exception of `Cell.date` type.
+
+### Changed
+
+-   `Cell.date` property now returns `datetime.date`.
+-   Allow use of string when defining Table height and width.
+
+### Added
+
+-   Style class for area 'table' accepts two new argumaents: 'width' and 'align'.
+-   Add more tests for Cell class coverage.
+
+### Fixed
+
+-   Allow decode boolean from bytes (mostly for test coverage).
+-   An Exception type was missing in `Cell.decimal`.
+-   Fix docstrings of modules.
+
+## [3.14.1] - 2025-06-01
+
+-   Technical updates: code refactoring. Compatibility with previous versions is maintained.
+
+### Changed
+
+-   Refactor `Paragraph._by_regex_offset` method.
+-   Move `CSS3_COLORMAP` constant in utils directory. Link with previous location in `odfdo.const` is kept for compatibility.
+-   Refactor `Element.text_content` property.
+
+### Added
+
+-   Add `utils/css3_colormap.py` file.
+
+## [3.14.0] - 2025-05-26
+
+-   Improve methods for retrieving information from cells spanned in tables.
+
+    -   Add boolean argument `covered` to the method `Cell.is_spanned()`. If `covered` is set to True (the default), all covered cells of the spanned area return True, otherwise, only the top-left cell returns True. The top-left cell in the spanned area contains the `"table:number-columns-spanned"` and `"table:number-rows-spanned "` attributes. The default behavior of `Cell.is_spanned()` remains unchanged from previous versions.
+
+    -   Add `Cell.is_covered()` method: returns whether the cell is covered (`table:covered-table-cell` tag), meaning it is part of a spanned area of cells, but not the top-left one.
+
+    -   Add `Cell.span_area()` method:  returns the tuple (number of columns, number of rows) of the area covered by a spanned cell. If the cell is not spanned, returns (0, 0).
+
+-   Small refactoring in `coordinates.py`.
+
+### Changed
+
+-   Add boolean argument `covered` to the method `Cell.is_spanned()`. The default behavior of `Cell.is_spanned()` remains unchanged from previous versions.
+-   Small refactoring in `coordinates.py`.
+-   Update test suite.
+
+### Added
+
+-   Add `Cell.is_covered()` method.
+-   Add `Cell.span_area()` method.
+
+## [3.13.12] - 2025-05-17
+
+Technical updates: refactor code for isiterable() function, define Unit class in its own file, apply ruff.
+
+### Changed
+
+-   Define Unit class in its own file odfdo.unit.py (previous import from odfdo.datatype is still allowed to maintain compatibility).
+-   Refactor code of isiterable() function.
+
+## [3.13.11] - 2025-05-10
+
+Added `lxml` version 5.4.0 to the test suite.
+Technical updates: refactor code for get_formatted_text() and Element.get_value().
+
+### Changed
+
+-   Refactor code for get_formatted_text().
+-   Refactor code for Element.get_value().
+
+### Added
+
+-   Version 5.4.0 of `lxml` added to `tox.ini`.
+
+## [3.13.10] - 2025-04-20
+
+Add a method to set the metadata of the document from a Python dict.
+Added `lxml` version 5.3.2 to the test suite.
+Fix incorrect docstring of DrawImage (issue 56).
+Technical update: apply more ruff's style recommendations.
+
+### Changed
+
+-   Apply ruff's style recommendations.
+
+### Added
+
+-   Add methods: `Meta.from_dict()`.
+-   Version 5.3.2 of `lxml` added to `tox.ini`.
+
+### Fixed
+
+-   Update incorrect docstring of DrawImage.
+
+## [3.13.9] - 2025-03-22
+
+Technical update: migrate from `poetry` build environment to `uv`, and reorganize tests.
+
+### Changed
+
+-   Migrate from `poetry` build environment to `uv`
+-   Organize tests with more fixtures and sub directories.
+
+## [3.13.8] - 2025-03-15
+
+Technical update: update `poetry` to version 2.1, reformat `pyproject.toml`, move source code in the `src` directory.
+
+### Changed
+
+-   The source code is now in the `src` sub directory.
+-   Build of the library requires `poetry` version 2.0 or more.
+
+## [3.13.7] - 2025-03-08
+
+Improved filter on allowed characters in a table name (for compatibility with allowed names in LibreOffice). Forbidden characters are now `\n` `\` `/` `*` `?` `:` `[` `]`, and `"'"` as first or last character. Previously forbidden characters were simply `\n` `/` `\` `"'"`.
+
+Added `lxml` version 5.3.1 to the test suite.
+
+### Changed
+
+-   The regex for unauthised characters in table names is now: `r"^\'|[\n\\/\*\?:\][]|\'$"`.
+
+### Added
+
+-   Version 5.3.1 of `lxml` added to `tox.ini`.
+
+
+## [3.13.6] - 2025-02-04
+
+Fix corrupted ODF file due to incoherent manifest files, especially in .odg files (issue 54).
+
+### Fixed
+
+-   Fixed `Document.save()` check for `manifest.rdf` listed in `manifest.xml`
+
+## [3.13.5] - 2025-01-25
+
+Add the option `formatted` to script `odfdo-replace` and method `Element.replace()` to interpret the `<space>`, `<tab>` and `<CR>` of the replacement string.
+
+### Added
+
+-   Add `Element.replace()` optional argument `formatted`
+-   Add `odfdo-replace` optional option `--formatted`
+
+## [3.13.4] - 2025-01-22
+
+-   Fix a bug on `Document.insert_style()` and related methods that prevented
+the loading of styles from the family `number:*`, like `number:currency-style` (issue #53).
+
+### Fixed
+
+-   Fixed `Document.insert_style()` and `CONTEXT_MAPPING` in `styles.py` for a better detection of styles pseudo-families.
+
+## [3.13.3] - 2025-01-01
+
+-   Refactor cell properties to get easier and more consistent access to cell values. Some new properties added: Cell.decimal, Cell.int, Cell.bool, Cell.duration, Cell.datetime, Cell.date.
+-   Add a `.rdf` manifest file if it is missing (this should only happen in very rare manipulations).
+
+### Changed
+
+-   Refactoring of Cell properties.
+-   Refactoring of Container class to ensure creation of manifest file.
+
+### Added
+
+-   Add properties: `Cell.decimal`, `Cell.int`, `Cell.bool`, `Cell.duration`, `Cell.datetime`, `Cell.date`.
+
+## [3.13.2] - 2024-12-15
+
+-   Refactor Table and Row caching, removing useless `_caching` attribute from many classes.
+-   Remove module scriptutils.
+
+### Changed
+
+-   Refactoring of Table and Row caching.
+-   Replace in `container.py` and scripts `show.py` and `styles.py` the previous functions of scriptutils.
+
+### Removed
+
+-   `odfdo.scriptutils.py` removed.
+
+## [3.13.1] - 2024-12-14
+
+-   Allow XML export of base64 encoded images (preparing for flat ODF export).
+-   Update XML propertires to ODF 1.2.
+
+### Changed
+
+-   Refactoring of Document.add_file() and export to XML format.
+
+## [3.13.0] - 2024-12-07
+
+-   The `Meta` class which manages the `meta.xml` part has two new methods `as_dict()` and `as_json()` to export its content.
+-   Improved "pretty" export of documents.
+
+### Added
+
+-   Add methods: `Meta.as_dict()`, `Meta.as_json()`, `MetaTemplate.as_dict()`, `MetaAutoReload.as_dict()`, `MetaHyperlinkBehaviour.as_dict()`.
+
+### Changed
+
+-   Small XML file formatting changes when saving with "pretty=True".
+
+## [3.12.1] - 2024-11-30
+
+Fix some small rendering issues for Markdown export.
+
+### Fixed
+
+-   Better Markdown export for strike style, non break space, successive tags, line breaks, footnotes
+
+## [3.12.0] - 2024-11-30
+
+-   Change in `str(Paragraph)` which now includes a `'\n'` at the end of the string.
+-   The `odfdo-to-md` script is renamed to `odfdo-markdown` and should be functional. Markdown export of .odt files supports all standard formatting features (including tables) except quoted text (no clear semantic equivalent in the ODF standard).
+-   Improved `__str__` methods for many classes: Document.body, Paragraph, Span, Link, Unit, Note, Annotation.
+-   Some added methods: `Document.get_parent_style()`, `Document.get_list_style()`, `Style.get_list_style_properties()`, `Style.get_text_properties()`.
+-   The new `Element.inner_text` property is now the preferred way to access an element's inner text.
+
+### Added
+
+-   Add methods: `Document.get_parent_style()`, `Document.get_list_style()`, `Style.get_list_style_properties()`, `Style.get_text_properties()`.
+-   Add propterty `Element.inner_text`.
+
+### Changed
+
+-   Script `odfdo-to-md` renamed to `odfdo-markdown`.
+-   `str(Paragraph)` now includes a `'\n'` at the end of the string.
+-   Output of the __str__ method modified for many elements.
+
+
+## [3.11.0] - 2024-11-23
+
+-   New script `odfdo-to-md` to export text document in markdown format to stdout (experimental, do not export images links neither tables).
+-   Fix `VarTime` initialization: class can now be initialized without mandatory time argument.
+
+### Added
+
+-   Add script `odfdo-to-md`.
+
+### Changed
+
+-   `odfdo-folder` script now writes XML files with the "pretty" option by default.
+
+### Fixed
+
+-   Fix `VarTime` initialization.
+
+## [3.10.1] - 2024-11-23
+
+The HTML documentation in `/doc` (mostly auto generated) contains now all recipes, sorted by relevance.
+
+### Changed
+
+-   Improvement of documentation.
+
+## [3.10.0] - 2024-11-23
+
+-   Fix a bug of `Paragraph.set_span()` when using an offset argument of zero (the  Span was not created). Added 3 methods related to searching strings in paragraphs: `search_first()`, `search_all()` and `text_at()`. These methods permit to search some string with regex in a paragraph and get their position, `text_at()` returns the text content at a given position.
+-   Fix the "pretty" option of `Document.save()`. "pretty" is now the default for odfdo-folder.
+
+Added a new recipe showing several methods to change the style of a paragraph or words in a pragraph with the use of `Paragraph.style = style.name` and `Paragraph.set_span()`.
+
+### Added
+
+-   Added `Element.search_first()`, `Element.search_all()` , `Element.text_at()`.
+-   Added `change_paragraph_styles_or_spans.py` recipe (issue #21).
+
+### Changed
+
+-   `odfdo-folder` script now writes XML files with the "pretty" option by default.
+
+### Fixed
+
+-   Fix `Paragraph.set_span()` when using an offset argument of zero (issue #21).
+-   Fix the "pretty" option of `Document.save()` (issue #28).
+
+## [3.9.4] - 2024-11-06
+
+Fix a performance bug on huge .ods tables when number of rows is a large (several thousand).
+See issue #46 for a table of about ~83k. Table.traverse() on such a table is expected to be ~2 sec.
+
+### Changed
+
+-   Rewrite the method Table.traverse().
+
+### Fixed
+
+-   Fix the performance bug on huge .ods tables (issue #46).
+
+## [3.9.3] - 2024-10-14
+
+Add support for Python 3.13 final in test suite.
+
+### Added
+
+-   Add support for Python3.13 in tox.ini
+
+## [3.9.2] - 2024-10-05
+
+Add support for Python 3.13.0.rc3 in test suite.
+
+### Added
+
+-   Add support for Python3.13.0.rc3 in tox.ini, add requirement for lxml version 5.3 or higher for Python 3.13.
+
+## [3.9.1] - 2024-09-29
+
+When creating a Document() allow alias "odt" for "Text", "ods" for "spreadsheet".
+
+Add a recipe showing how to remove parts from a text document.
+
+### Added
+
+-   Aliases "odt", "ods", "odp" and "odg" for Document creation.
+
+-   Add recipe `delete_parts_of_a_text_document.py`.
+
+## [3.9.0] - 2024-09-22
+
+Two changes in this version:
+
+-    Fix of the broken `Table.displayed` property.
+-    Fix the way spaces are represented for better compliance with the ODF standard and word processors.
+
+The `Table.displayed` property was broken and is removed. The functionality is replaced by the `Document.get_table_displayed` and `Document.set_table_displayed` methods. This change should not affect anyone since the previous implementation was unusable.
+
+In previous version 3 spaces were translated into 1 space followed by `'<text:s text:c="2"/>'` unconditionally. However, the standard specifies that at the beginning and end of a paragraph spaces must be discarded by word processors, so 3 spaces should be coded `'<text:s text:c="3"/>'` and a single space as `'<text:s/>'`. This change should fix the bug of "disappearing" spaces at the beginning of paragraphs.
+
+### Added
+
+-   Methods Document.get_table_displayed(), Document.set_table_displayed(), Document.get_table_style().
+
+-   The Spacer() class has 2 new properties: Spacer.length and Spacer.text.
+
+### Changed
+
+-   XML generation of spaces at beginning and end of Paragraph content.
+
+-   Update of dependency versions.
+
+### Removed
+
+-   Table.displayed property.
+
+### Fixed
+
+-   Fix the "disappearing" spaces at the beginning of paragraphs bug.
+
+## [3.8.0] - 2024-08-25
+
+Changed the default behavior for appending text to a `Paragraph`: the behavior of the `Paragraph.append_plain_text()` method is now the default. A `"formatted"` argument is added, `True` by default, which applies the recognition of "\n", "\t" or a sequence of several spaces and converts them to ODF tags (`text:line-break`, `text:tab`, `text:s`)). To ignore this text formatting, set `"formatted=False"`.
+
+This change affects you if you create paragraphs from text containing line breaks or tabs and you don't want them to appear. In this case, add the argument `"formatted=False"`
+
+Details:
+
+- `Paragraph("word1     word2")`
+
+    - previous behavior:
+        - product XML:  `'<text:p>word1     word2</text:p>'`
+        - expected display: `word1 word2` (single space, the ODF standard does not recognize space sequences)
+
+    - new behavior:
+        - product XML:  `'<text:p>word1 <text:s text:c="4"/>word2</text:p>'`
+        - expected display: `word1     word2` (5 spaces)
+
+- `Paragraph("word1     word2", formatted=False)`
+
+    - new behavior:
+        - product XML:  `'<text:p>word1 word2</text:p>'`
+        - expected display: `word1 word2`
+
+- `Paragraph("word1\nword2")`
+
+    - previous behavior:
+        - product XML:  `'<text:p>word1\nword2</text:p>'`
+        - expected display: `word1 word2` (single space, the ODF standard does not recognize "\n" in XML content)
+
+    - new behavior:
+        - product XML:  `'<text:p>word1<text:line-break/>word2</text:p>'`
+        - expected display:
+            ```
+            word1
+            word2
+            ```
+
+- `Paragraph("word1\nword2", formatted=False)`
+
+    - new behavior:
+        - product XML:  `'<text:p>word1 word2</text:p>'`
+        - expected display: `word1 word2`
+
+On the same principle the `"formatted"` argument is available for `Pararaph.append(text)`, `Header(text)`, `Span(text)`.
+
+The `Paragraph.append_plain_text(text)` method is retained for compatibility with previous versions and has the same behavior as `Paragraph.append(text, formatted=True)`, the default.
+
+### Changed
+
+-   `Paragraph()`, `Paragraph.append()` and subclasses `Header()` and `Span()` have a new `"formatted"` argument True by default that translates into ODF format "\n", "\t" and multiples spaces.
+
+-   Updating dependency versions.
+
+## [3.7.13] - 2024-08-17
+
+-   Fix parsing of Date and Datetime for a better compliance with ISO8601.
+
+### Changed
+
+-   Updating dependency versions.
+
+### Fixed
+
+-   Fix datetime encoding/decoding for ISO8601 compliance and different Python versions.
+
+-   Move from strptime() to date.isoformat() for class Date and DateTime.
+
+## [3.7.12] - 2024-08-11
+
+-   Update dependencies and test suite, support of `lxml` version 5.3.0.
+
+### Changed
+
+-   Updating dependency versions.
+
+### Fixed
+
+-   Fix a type hint in element.py
+
+-   Fix missing .venv in gitconfig
+
+## [3.7.11] - 2024-05-25
+
+-   New script `odfdo-userfield` to show or set the user-field content in an ODF file.
+
+### Added
+
+-   Add script `odfdo-userfield`.
+
+### Changed
+
+-   Updating dependency versions.
+
+## [3.7.10] - 2024-05-4
+
+-   Refactor to add property getter for some common methods. Original get\_\*
+    method is still available and permits detailed requests with parameters.
+
+        -   Body.tables -> Body.get_tables()
+        -   Element.tocs -> Element.get_tocs()
+        -   Element.toc -> Element.get_toc()
+        -   Element.text_changes -> Element.get_text_changes()
+        -   Element.tracked_changes -> Element.get_tracked_changes()
+        -   Element.user_defined_list -> Element.get_user_defined_list()
+        -   Element.images -> Element.get_images()
+        -   Element.frames -> Element.get_frames()
+        -   Element.lists -> Element.get_lists()
+        -   Element.headers -> Element.get_headers()
+        -   Element.spans -> Element.get_spans()
+        -   Element.paragraphs -> Element.get_paragraphs()
+        -   Element.sections -> Element.get_sections()
+        -   Table.rows -> Table.get_rows()
+        -   Table.cells -> Table.get_cells()
+        -   Table.columns -> Table.get_columns()
+        -   Row.cells -> Row.get_cells()
+        -   Document.parts -> Document.get_parts()
+        -   Container.parts -> Container.get_parts()
+
+-   Refactor to add property getter/setter for some common methods. Original get\_\*
+    and set\_\* methods are still available and permit detailed requests with parameters.
+
+        -   Column.default_cell_style -> Column.get/set_default_cell_style()
+
+### Added
+
+-   Added `Body.tables`
+-   Added `Element.tocs`
+-   Added `Element.toc`
+-   Added `Element.text_changes`
+-   Added `Element.tracked_changes`
+-   Added `Element.images`
+-   Added `Element.frames`
+-   Added `Element.lists`
+-   Added `Element.headers`
+-   Added `Element.spans`
+-   Added `Element.paragraphs`
+-   Added `Element.sections`
+-   Added `Column.default_cell_style`
+-   Added `Table.rows`
+-   Added `Table.cells`
+-   Added `Table.columns`
+-   Added `Row.cells`
+-   Added `Document.parts`
+-   Added `Container.parts`
+
+## [3.7.9] - 2024-05-3
+
+-   Refactor the Body access methods, creating relevant a Body class and related sub-classes. Moved some access method from the Element class to relevant Body sub-classes.
+
+-   Refactor metadata methods to permit access throuh @property (the legacy get\_\* and set\_\* methods are still available).
+
+-   Added a few metadata elements from the ODF standard (hyperlink-behaviour, auto-reload, template, print-dateprinted-by)
+
+### Added
+
+-   Added `MetaAutoReload` class
+-   Added `MetaHyperlinkBehaviour` class
+-   Added `MetaTemplate` class
+-   Added `DcCreatorMixin` class
+-   Added `DcDateMixin` class
+-   Added `Body` class
+-   Added `Chart` class
+-   Added `Database` class
+-   Added `Drawing` class
+-   Added `Image` class
+-   Added `Presentation` class
+-   Added `Spreadsheet` class
+-   Added `Text` class (renaming the previous internal `Text` class to `EText`)
+
+## [3.7.8] - 2024-05-2
+
+Fix embedded chart analysis in documents, see recipe `change_values_of_a_chart_inside_a_document.py`.
+
+### Added
+
+-   Added `change_values_of_a_chart_inside_a_document.py` recipe
+
+### Changed
+
+-   The "pretty" setting when saving the file always defaults to False. This setting should only be used for debugging purposes
+
+-   `meta.generator` can be used via a @property accessor
+
+-   (Internal change) move body() definition to xmlpart
+
+-   (Internal change) refactoring for future XML feature
+
+### Fixed
+
+-   Fix parsing of Table when parent uses "table:table-rows" kind of wrapper
+
+-   Fix a bug when a Cell contains the valid 'NaN' Decimal number
+
+## [3.7.7] - 2024-04-1
+
+Improvement of the `lxml` dependency support.
+
+### Added
+
+-   Added a `CHANGES.md` file
+
+-   Automatic tests for ubuntu-latest, macos-latest, windows-latest
+
+### Changed
+
+-   Now supports a wider range of `lxml` versions:
+
+    -   python 3.9: lxml version 4.8.0 to 4.9.4
+
+    -   python 3.10: lxml version 4.8.0 to 5.1.1
+
+    -   python 3.11: lxml version 4.9.4 to 5.2.0 and beyond
+
+    -   python 3.12: lxml version 4.9.4 to 5.2.0 and beyond
+
+-   autogenerated documentation now uses `mkdocs`
+
+### Fixed
+
+-   Use `sys.executable` to ensure all tests can pass in a github virtualenv on Windows.
+
+-   Remove import of `lxml` internal `\_ElementUnicodeResult` and `\_ElementUnicodeResult` classes.
+
+## [3.7.6] - 2024-03-30
+
+Quick fix for the crash with new `lxml` version 5.1.1
+
+### Fixed
+
+    - Fix crash with `lxml` 5.1.1 by restricting version do 5.1.0
+
+## [3.7.5] - 2024-03-23
+
+Add the method `get_cell_background_color` to retrieve the background color of a cell in a table.
+
+### Added
+
+-   Tables: some users need to easily access the background color of cells, including cells without "value" content. That was requiring a complex parsing of styles. So a new method: `Document.get_cell_background_color(sheet_id, cell_coords)`.
+
+-   See the corresponding recipe `recipes/get_cell_background_color.py` for an exemple of usage.
+
+-   Tables: (related to previous). It is often useful to reduce the table size before working on it, especially if styles apply to whole rows. A method called `Table.rstrip()` already permitted to remove empty bottom rows and empty right columns. However, a `Cell` mays have no value but a style (color background for example), and `rstrip()` was removing such cells. So an new clever method is provided: `Table.optimize_width()` that shrink the table size, still keeping styled empty cells.
+
+-   To test the actual result of this method, you can use the new script `odfdo-table-shrink` which is basically a wrapper upon this method. (Note: all this stuff aims to facilitate some feature for the related github project `odsparsator`).
+
+-   `repr()` method for `Cell`, `Row` and `Column`.
+
+-   Ancillary methods related to above features.
+
+### Fixed
+
+-   `Document(path)` now accepts a `str` path starting with `~` as the path relative to the user home.
+
+### Changed
+
+-   Tables: (related to previous), change the `Cell.is_empty()` test. A cell is now considered as not empty if part of a `span` (a cell spanned on several rows or columns). This may induce some changes for parsing scripts. Before that, only the first cell of the span (which actually contains the value) was considered as non empty. Now other cells of the span are not empty (but contain a null value).
+
+-   Minor refactor of code, version updates of dependencies.
+
+## [3.7.4] - 2024-03-17
+
+Add a recipe as example of programmatically setting text styles for headers and paragraphs, with basic font and color properties.
+
+### Added
+
+-   Add recipe `create_basic_text_styles`.
+
+-   All style fields related to color accept a color name from the CSS list of color.
+
+### Changed
+
+-   Updating dependency versions.
+
+## [3.7.3] - 2024-03-10
+
+Internal maintenance release.
+
+### Fixed
+
+-   Fix logo link on `Pypi` page.
+
+### Changed
+
+-   Technical updates from `optparse` to `argparse`.
+
+-   Updating dependency versions.
+
+## [3.7.2] - 2024-03-9
+
+Internal maintenance release.
+
+### Changed
+
+-   Use `pdoc` for autogenerated documentation.
+
+-   Refactor some recipes to use them in a test suit.
+
+-   Code refactor, Updating dependency versions.
+
+## [3.7.1] - 2024-03-3
+
+Minor performance improvement of script `odfdo-headers`.
+
+### Changed
+
+-   Use better algorithm for script `odfdo-headers`.
+
+## [3.7.0] - 2024-03-2
+
+New script `odfdo-headers` to print the headers of a `ODF` file.
+
+### Added
+
+-   Add script `odfdo-headers`.
+
+### Changed
+
+-   Updating dependency versions.
+
+## [3.6.0] - 2024-02-25
+
+New script `odfdo-highlight` to highlight the text matching a pattern (regex) in a `ODF` file.
+
+### Added
+
+-   Add script `odfdo-highlight`.
+
+### Changed
+
+-   Updating dependency versions.
+
+## [3.5.1] - 2024-02-20
+
+Fix the update method of `Table of Content` and add a recipe to show how to update a `TOC`.
+
+### Added
+
+-   Add recipe `update_a_text_document_with_a_table_of_content`.
+
+### Changed
+
+-   Refactor of TOC related code.
+
+-   Updating dependency versions.
+
+## [3.5.0] - 2024-01-27
+
+2024 release, updated ODF templates and better test suit.
+
+### Changed
+
+-   Update `ODF` templates.
+
+-   Refactor many Python files for use of type hints.
+
+-   Updates for year 2024, updating dependency versions.
+
+## [3.4.7] - 2024-01-15
+
+Updade to `lxml` version 5.
+
+### Changed
+
+    - Update `lxml` from version 4 to 5.
+
+## [3.4.6] - 2023-12-25
+
+Add script `odfdo-replace` to find a pattern (regex) in an `ODF` file and replace by some string.
+
+### Fixed
+
+-   Fix reading content from a `BytesIO`.
+
+### Changed
+
+-   Add script `odfdo-replace`.
+
+## [3.4.5] - 2023-12-24
+
+Add recipes showing how to save/read document from `io.BytesIO`.
+
+### Added
+
+-   Add recipes `read_document_from_bytesio.py` and `save_document_as_bytesio.py`.
+
+### Changed
+
+-   Refactoring of code.
