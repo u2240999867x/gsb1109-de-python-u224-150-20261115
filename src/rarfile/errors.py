@@ -10,6 +10,7 @@ __all__ = (
     "PasswordRequired",
     "BadSymLinkError",
     "NeedFirstVolume",
+    "MissingVolumeError",
     "NoCrypto",
     "RarExecError",
     "RarWarning",
@@ -71,6 +72,20 @@ class NeedFirstVolume(Error):
     def __init__(self, msg: str, volume: int | None):
         super().__init__(msg)
         self.current_volume = volume
+
+
+class MissingVolumeError(Error):
+    """A middle volume of multi-volume archive is missing.
+
+    Attributes:
+
+        volume
+            Volume number that is missing or None if not known.
+    """
+
+    def __init__(self, msg: str, volume: int | None = None):
+        super().__init__(msg)
+        self.volume = volume
 
 
 class NoCrypto(Error):

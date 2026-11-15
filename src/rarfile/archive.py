@@ -23,7 +23,7 @@ from .errors import (
     PasswordRequired, UnsupportedWarning,
 )
 from .format import RAR3Parser, RAR5Parser
-from .info import RarEntry, RarInfo
+from .info import RarEntry, RarInfo, SupplyEntry
 from .stream import RarExtFile
 from .utils import (
     FileLike, PathLike, XFile, is_filelike, sanitize_filename, to_nsecs,
@@ -220,11 +220,54 @@ class RarFile:
         """Returns filenames of archive volumes.
 
         In case of single-volume archive, the list contains
-        just the name of main archive file.
+        just the name of main archive file.  Volumes that were
+        not found are not included; see :meth:`missing_volumes`.
         """
         if self._file_parser is None:
             return []
         return self._file_parser.volumelist()
+
+    def missing_volumes(self) -> list[int]:
+        """Returns volume numbers that are referenced by the archive
+        but were not found while parsing.
+
+        Parsing skips over missing volumes, so files fully stored
+        in later volumes remain accessible.
+
+        .. versionadded:: 5.0
+        """
+        if self._file_parser is None:
+            return []
+        return self._file_parser.missing_volumes()
+
+    def supply_table(self) -> list[SupplyEntry]:
+        """File-level supplement table for archives with missing volumes.
+
+        Each row tells whether the file header is visible, whether its
+        payload is complete in available volumes, and which volumes
+        are still missing for it.  Files whose headers sit in a missing
+        volume cannot be enumerated; use :meth:`missing_volumes` for
+        the archive-level gap list.
+
+        .. versionadded:: 5.0
+        """
+        if self._file_parser is None:
+            return []
+        return self._file_parser.supply_table()
+
+    def update_volumes(self) -> bool:
+        """Re-scan for previously missing volumes.
+
+        Only volumes that have become available since the last scan
+        are read; entries and already extracted data from other
+        volumes are not re-processed.  Returns True if any missing
+        volume was found and processed.
+
+        .. versionadded:: 5.0
+        """
+        if self._file_parser is None:
+            return False
+        return self._file_parser.update_volumes()
 
     def getinfo(self, name: str | Path | RarInfo) -> RarInfo:
         """Return RarInfo for file.

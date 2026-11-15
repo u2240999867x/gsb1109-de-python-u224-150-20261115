@@ -52,13 +52,14 @@ from .crypto import (
     HeaderDecrypt, NoHashContext, rar3_s2k, rar5_s2k,
 )
 from .errors import (
-    BadRarFile, BadRarName, NeedFirstVolume,
+    BadRarFile, BadRarName, MissingVolumeError, NeedFirstVolume,
     NoRarEntry, NotRarFile, RarWrongPassword,
 )
 from .info import (
     FileEncryption, Rar3EndArcInfo, Rar3GenericInfo, Rar3Info, Rar3MainInfo,
     Rar3SubInfo, Rar5BaseFile, Rar5EncryptionInfo, Rar5EndArcInfo,
     Rar5FileInfo, Rar5MainInfo, Rar5ServiceInfo, RarEntry, RarInfo,
+    SupplyEntry,
 )
 from .stream import BytesReader, DirectReader, PipeReader, RarExtFile
 from .utils import (
@@ -74,6 +75,10 @@ else:
 
 # export only interesting items
 __all__ = ("CommonParser", "RAR3Parser", "RAR5Parser")
+
+
+# how many missing volumes to skip over when looking for the next one
+_MAX_VOLUME_GAP = 256
 
 
 #
@@ -131,7 +136,11 @@ class InfoArgs(CommonArgs):
 class CommonParser:
     """Shared parser parts."""
     _main: RarEntry | None = None
+    _volnaming_main: RarEntry | None = None
     _hdrenc_main: Rar5EncryptionInfo | None = None
+    _vol_snapshot: tuple[int, int, str | None, bool,
+                         list[tuple[RarInfo, list[int], int | None,
+                                    int | None, int | bytes | None, bytes | None, bool]]] | None = None
 
     _needs_password: bool = False
     _fd: XFile | None = None
@@ -151,6 +160,9 @@ class CommonParser:
         self._info_list: list[RarInfo] = []
         self._info_map: dict[str, RarInfo] = {}
         self._vol_list: list[PathLike | FileLike] = []
+        self._vol_map: dict[int, PathLike | FileLike] = {}
+        self._missing_vols: list[int] = []
+        self._orphan_parts: list[RarInfo] = []
         self._sfx_offset = sfx_offset
         self._part_only = part_only
 
@@ -247,6 +259,7 @@ class CommonParser:
         endarc = False
         volfile = self._rarfile
         self._vol_list = [self._rarfile]
+        self._vol_map = {0: self._rarfile}
         raise_need_first_vol = False
         while True:
             if endarc:
@@ -258,31 +271,33 @@ class CommonParser:
                     # did not find ENDARC with VOLNR
                     raise NeedFirstVolume("Need to start from first volume", None)
                 if more_vols and not self._part_only:
-                    volume += 1
-                    fd.close()
-                    try:
-                        volfile = self._next_volname(volfile)
-                        fd = XFile(volfile)
-                    except OSError:
-                        self._set_error("Cannot open next volume: %s", str(volfile))
+                    nxt = self._chain_next_volume(fd, volfile, volume)
+                    if nxt is None:
+                        # ENDARC promised another volume, it is missing
+                        self._missing_vols.append(volume + 1)
                         break
-                    self._fd = fd
-                    sig = fd.read(len(self._expect_sig))
-                    if sig != self._expect_sig:
-                        self._set_error("Invalid volume sig: %s", volfile)
-                        break
+                    fd, volfile, volume = nxt
                     more_vols = False
                     endarc = False
-                    self._vol_list.append(volfile)
-                    self._main = None
-                    self._hdrenc_main = None
                     continue
                 break
             h.volume = volume
             h.volume_file = volfile
 
             if h.type == RAR_BLOCK_MAIN and not self._main:
+                if volume > 0 and not self._verify_volume_sequence(h, volume):
+                    # same volume name, but sequence evidence does
+                    # not match - cannot join it to this set
+                    nxt = self._reject_volume(fd, volfile, volume, False)
+                    if nxt is None:
+                        break
+                    fd, volfile, volume = nxt
+                    more_vols = False
+                    endarc = False
+                    continue
                 self._main = h
+                if self._volnaming_main is None:
+                    self._volnaming_main = h
                 if volume == 0 and (h.flags & RAR_MAIN_NEWNUMBERING) and not self._part_only:
                     # RAR 2.x does not set FIRSTVOLUME,
                     # so check it only if NEWNUMBERING is used
@@ -312,6 +327,20 @@ class CommonParser:
                         % (h.endarc_volnr,),
                         h.endarc_volnr
                     )
+                if (
+                    volume > 0
+                    and isinstance(h, Rar3EndArcInfo)
+                    and h.endarc_volnr is not None
+                    and h.endarc_volnr != volume
+                ):
+                    # end-of-volume evidence contradicts the chained name
+                    nxt = self._reject_volume(fd, volfile, volume, True)
+                    if nxt is None:
+                        break
+                    fd, volfile, volume = nxt
+                    more_vols = False
+                    endarc = False
+                    continue
             elif h.type == RAR_BLOCK_FILE:
                 # RAR 2.x does not write RAR_BLOCK_ENDARC
                 if h.flags & RAR_FILE_SPLIT_AFTER:
@@ -369,11 +398,322 @@ class CommonParser:
         """
         if is_filelike(volfile):
             raise OSError("Working on single FD")
-        assert self._main is not None
+        main = self._volnaming_main or self._main
+        assert main is not None
         name = cast(str, volfile)
-        if self._main.flags & RAR_MAIN_NEWNUMBERING:
+        if main.flags & RAR_MAIN_NEWNUMBERING:
             return _next_newvol(name)
         return _next_oldvol(name)
+
+    def _open_next_volume(self, volfile: PathLike | FileLike, volume: int
+                          ) -> tuple[XFile, PathLike | FileLike, int] | None:
+        """Open next volume, skipping over missing ones.
+
+        Returns (fd, volfile, volume) of the next available volume,
+        or None if no usable later volume was found.
+        """
+        pending: list[int] = []
+        candidate = volfile
+        expected = volume + 1
+        for _ in range(_MAX_VOLUME_GAP):
+            try:
+                candidate = self._next_volname(candidate)
+            except BadRarName:
+                break
+            try:
+                fd = XFile(candidate)
+            except OSError:
+                # volume not (yet) available, probe the one after it
+                pending.append(expected)
+                expected += 1
+                continue
+            sig = fd.read(len(self._expect_sig))
+            if sig != self._expect_sig:
+                fd.close()
+                self._set_error("Invalid volume sig: %s", str(candidate))
+                return None
+            if pending:
+                self._missing_vols.extend(pending)
+                self._set_error("Missing volume(s): %s",
+                                ", ".join(str(v) for v in pending))
+            return fd, candidate, expected
+        try:
+            candidate = self._next_volname(volfile)
+        except BadRarName:
+            pass
+        self._set_error("Cannot open next volume: %s", str(candidate))
+        return None
+
+    def _chain_next_volume(self, fd: XFile, volfile: PathLike | FileLike, volume: int
+                           ) -> tuple[XFile, PathLike | FileLike, int] | None:
+        """Advance parsing to the next available volume."""
+        nxt = self._open_next_volume(volfile, volume)
+        if nxt is None:
+            return None
+        fd.close()
+        fd, volfile, volume = nxt
+        self._fd = fd
+        self._vol_list.append(volfile)
+        self._vol_map[volume] = volfile
+        self._main = None
+        self._hdrenc_main = None
+        # snapshot state that a foreign volume could touch,
+        # so it can be rolled back if sequence evidence rejects it
+        self._vol_snapshot = (
+            len(self._info_list),
+            len(self._orphan_parts),
+            self.comment,
+            self._needs_password,
+            [(
+                inf, inf._split_vols[:], inf.compress_size, inf.CRC,
+                inf._md_expect, inf.blake2sp_hash, inf._split_done,
+            ) for inf in self._info_list if not inf._split_done],
+        )
+        return fd, volfile, volume
+
+    def _rollback_volume(self) -> None:
+        """Undo entries and merges that came from a rejected volume."""
+        assert self._vol_snapshot is not None
+        n_list, n_orphans, comment, needs_password, saved = self._vol_snapshot
+        del self._info_list[n_list:]
+        del self._orphan_parts[n_orphans:]
+        self.comment = comment
+        self._needs_password = needs_password
+        for inf, vols, csize, crc, md_expect, blake, done in saved:
+            inf._split_vols = vols
+            inf.compress_size = csize
+            inf.CRC = crc
+            inf._md_expect = md_expect
+            inf.blake2sp_hash = blake
+            inf._split_done = done
+        self._info_map = {inf.filename.rstrip("/"): inf for inf in self._info_list}
+
+    def _reject_volume(self, fd: XFile, volfile: PathLike | FileLike, volume: int, rollback: bool
+                       ) -> tuple[XFile, PathLike | FileLike, int] | None:
+        """Reject a chained volume whose sequence evidence does not match."""
+        if rollback:
+            self._rollback_volume()
+        self._vol_list.pop()
+        self._vol_map.pop(volume, None)
+        self._missing_vols.append(volume)
+        self._set_error("Volume sequence mismatch: %s", str(volfile))
+        return self._chain_next_volume(fd, volfile, volume)
+
+    def _verify_volume_sequence(self, h: RarEntry, volume: int) -> bool:
+        """Check that main header of a chained volume carries
+        evidence of being the expected volume in sequence."""
+        raise NotImplementedError("_verify_volume_sequence")
+
+    def _entry_expects_part(self, old: RarInfo, volnr: int) -> bool:
+        """Can a split part from given volume belong to this entry?"""
+        vols = old._split_vols
+        if not vols or volnr in vols:
+            return False
+        if volnr > vols[-1]:
+            # continuation in a later volume, possibly after a gap
+            return not old._split_done
+        # late arrival of a previously missing middle volume
+        return vols[0] < volnr < vols[-1] and volnr in self._missing_vols
+
+    def _merge_split_part(self, item: RarInfo) -> None:
+        """Merge continuation part into the entry it belongs to.
+
+        Parts that cannot be joined are kept as orphan parts - their
+        first part sits in a missing volume.
+        """
+        for old in reversed(self._info_list):
+            if old.orig_filename != item.orig_filename:
+                continue
+            if not self._entry_expects_part(old, item.volume):
+                continue
+            old._split_vols.append(item.volume)
+            assert old.compress_size is not None and item.compress_size is not None
+            old.compress_size += item.compress_size
+            if (item.flags & RAR_FILE_SPLIT_AFTER) == 0:
+                # final crc is in last block
+                old._split_done = True
+                old.CRC = item.CRC
+                old._md_expect = item._md_expect
+                old.blake2sp_hash = item.blake2sp_hash
+            return
+        self._orphan_parts.append(item)
+
+    def _retry_orphan_parts(self) -> None:
+        """Try to join orphan continuation parts again."""
+        pending = self._orphan_parts
+        self._orphan_parts = []
+        for part in pending:
+            self._merge_split_part(part)
+
+    def missing_volumes(self) -> list[int]:
+        """Volume numbers that are referenced by the archive
+        but were not found while parsing."""
+        return list(self._missing_vols)
+
+    def _file_missing_vols(self, inf: RarInfo) -> list[int]:
+        """Missing volumes that given entry depends on."""
+        if not self._missing_vols:
+            return []
+        vols = inf._split_vols or [inf.volume]
+        lo = vols[0]
+        hi = vols[-1]
+        if not inf._split_done:
+            # tail of file sits in some later, unavailable volume
+            hi = max(hi, self._missing_vols[-1])
+        return [v for v in self._missing_vols if lo <= v <= hi]
+
+    def supply_table(self) -> list[SupplyEntry]:
+        """File-level supplement table for archives with missing volumes.
+
+        Files whose headers sit in a missing volume cannot be enumerated
+        at all; use missing_volumes() for the archive-level gap list.
+        """
+        table: list[SupplyEntry] = []
+        for inf in self._info_list:
+            missing = self._file_missing_vols(inf)
+            vols = inf._split_vols or [inf.volume]
+            table.append(SupplyEntry(
+                filename=inf.filename,
+                header_visible=True,
+                payload_complete=inf._split_done and not missing,
+                volumes=sorted(set(vols) | set(missing)),
+                missing_volumes=missing,
+            ))
+        for part in self._orphan_parts:
+            table.append(SupplyEntry(
+                filename=part.filename,
+                header_visible=True,
+                payload_complete=False,
+                volumes=[part.volume],
+                missing_volumes=[v for v in self._missing_vols if v < part.volume],
+            ))
+        return table
+
+    def update_volumes(self) -> bool:
+        """Re-scan for previously missing volumes.
+
+        Only volumes that have become available since the last scan
+        are read and processed; entries from other volumes are left
+        untouched.  Returns True if any missing volume was found
+        and processed.
+        """
+        changed = False
+        while True:
+            todo = [v for v in sorted(self._missing_vols) if v not in self._vol_map]
+            if not todo:
+                break
+            progressed = False
+            for volnr in todo:
+                if self._update_one_volume(volnr):
+                    changed = progressed = True
+            if not progressed:
+                break
+        if changed and not self._missing_vols:
+            self._parse_error = None
+        return changed
+
+    def _update_one_volume(self, volnr: int) -> bool:
+        """Try to process a single missing volume."""
+        name = self._vol_name_for(volnr)
+        if name is None:
+            return False
+        try:
+            fd = XFile(name)
+        except OSError:
+            return False
+        try:
+            sig = fd.read(len(self._expect_sig))
+            if sig != self._expect_sig:
+                return False
+            parsed = self._parse_single_volume(fd, volnr, name)
+        finally:
+            fd.close()
+        if parsed is None:
+            # sequence evidence does not match, cannot join
+            return False
+        entries, more_vols = parsed
+        self._integrate_volume(volnr, name, entries)
+        self._missing_vols.remove(volnr)
+        if more_vols and volnr + 1 not in self._vol_map and volnr + 1 not in self._missing_vols:
+            # the volume promises a further one we do not have
+            self._missing_vols.append(volnr + 1)
+        return True
+
+    def _vol_name_for(self, volnr: int) -> PathLike | FileLike | None:
+        """Construct expected file name for given volume number."""
+        known = [v for v in self._vol_map if v < volnr]
+        if not known or (self._volnaming_main is None and self._main is None):
+            return None
+        name = self._vol_map[max(known)]
+        if is_filelike(name):
+            return None
+        try:
+            for _ in range(volnr - max(known)):
+                name = self._next_volname(name)
+        except BadRarName:
+            return None
+        return name
+
+    def _parse_single_volume(self, fd: XFile, volnr: int, volfile: PathLike | FileLike
+                             ) -> tuple[list[RarInfo], bool] | None:
+        """Parse file entries of a single volume.
+
+        Returns (entries, more_vols) or None if the volume does
+        not belong to this archive set.
+        """
+        entries: list[RarInfo] = []
+        more_vols = False
+        while True:
+            h = self._parse_header(fd)
+            if not h:
+                break
+            h.volume = volnr
+            h.volume_file = volfile
+            if h.type == RAR_BLOCK_MAIN:
+                if not self._verify_volume_sequence(h, volnr):
+                    return None
+            elif h.type == RAR_BLOCK_ENDARC:
+                if (
+                    isinstance(h, Rar3EndArcInfo)
+                    and h.endarc_volnr is not None
+                    and h.endarc_volnr != volnr
+                ):
+                    return None
+                more_vols = (h.flags & RAR_ENDARC_NEXT_VOLUME) > 0
+                break
+            elif h.type == RAR_BLOCK_FILE:
+                assert isinstance(h, RarInfo)
+                entries.append(h)
+                if h.flags & RAR_FILE_SPLIT_AFTER:
+                    more_vols = True
+            if h.add_size > 0:
+                fd.seek(h.data_offset + h.add_size, 0)
+        return entries, more_vols
+
+    def _integrate_volume(self, volnr: int, volfile: PathLike | FileLike,
+                          entries: list[RarInfo]) -> None:
+        """Merge entries of a newly arrived volume into parsed state."""
+        self._vol_map[volnr] = volfile
+        self._vol_list = [self._vol_map[v] for v in sorted(self._vol_map)]
+
+        # fresh entries belong before entries of later volumes
+        pos = len(self._info_list)
+        for i, inf in enumerate(self._info_list):
+            if inf.volume > volnr:
+                pos = i
+                break
+        for item in entries:
+            if item.file_version or item.flags & RAR_FILE_VERSION:
+                continue    # skip old versions
+            if item.flags & RAR_FILE_SPLIT_BEFORE:
+                self._merge_split_part(item)
+            else:
+                item._split_vols = [item.volume]
+                item._split_done = (item.flags & RAR_FILE_SPLIT_AFTER) == 0
+                self._info_map[item.filename.rstrip("/")] = item
+                self._info_list.insert(pos, item)
+                pos += 1
+        self._retry_orphan_parts()
 
     def _set_error(self, msg: str, *args: str | int) -> None:
         if args:
@@ -401,6 +741,13 @@ class CommonParser:
         if inf.flags and inf.flags & RAR_FILE_SPLIT_BEFORE:
             raise NeedFirstVolume(
                 "Partial file, please start from first volume: " + inf.filename, None)
+
+        missing = self._file_missing_vols(inf)
+        if missing:
+            raise MissingVolumeError(
+                "Cannot open %r, missing volume(s): %s" % (
+                    inf.filename, ", ".join(str(v) for v in missing)),
+                missing[0])
 
         # is temp write usable?
         use_hack = 1
@@ -498,6 +845,10 @@ class RAR3Parser(CommonParser):
     """
     _expect_sig = RAR_ID
     _last_aes_key: tuple[bytes, bytes, bytes] | None = None   # (salt, key, iv)
+
+    def _verify_volume_sequence(self, h: RarEntry, volume: int) -> bool:
+        # non-first volumes must not claim to be first
+        return (h.flags & RAR_MAIN_FIRSTVOLUME) == 0
 
     def _decrypt_header(self, fd: FileLike) -> FileLike:
         AES_CBC_Decrypt.load()
@@ -804,15 +1155,12 @@ class RAR3Parser(CommonParser):
             if item.flags & RAR_FILE_VERSION:
                 pass    # skip old versions
             elif (item.flags & RAR_FILE_SPLIT_BEFORE) == 0:
+                item._split_vols = [item.volume]
+                item._split_done = (item.flags & RAR_FILE_SPLIT_AFTER) == 0
                 self._info_map[item.filename.rstrip("/")] = item
                 self._info_list.append(item)
-            elif len(self._info_list) > 0:
-                # final crc is in last block
-                old = self._info_list[-1]
-                old.CRC = item.CRC
-                old._md_expect = item._md_expect
-                assert old.compress_size is not None and item.compress_size is not None
-                old.compress_size += item.compress_size
+            else:
+                self._merge_split_part(item)
 
         # parse new-style comment
         elif item.type == RAR_BLOCK_SUB:
@@ -858,6 +1206,11 @@ class RAR5Parser(CommonParser):
 
     # AES encrypted headers
     _last_aes256_key: tuple[int, bytes, bytes] | None = None   # (kdf_count, salt, key)
+
+    def _verify_volume_sequence(self, h: RarEntry, volume: int) -> bool:
+        # chained volumes always carry explicit volume number
+        assert isinstance(h, Rar5MainInfo)
+        return h.main_volume_number is not None and h.main_volume_number == volume
 
     def _get_utf8_password(self) -> bytes:
         pwd = self._password
@@ -1254,16 +1607,12 @@ class RAR5Parser(CommonParser):
                 pass    # skip old versions
             elif (item.block_flags & RAR5_BLOCK_FLAG_SPLIT_BEFORE) == 0:
                 # use only first part
+                item._split_vols = [item.volume]
+                item._split_done = (item.block_flags & RAR5_BLOCK_FLAG_SPLIT_AFTER) == 0
                 self._info_map[item.filename.rstrip("/")] = item
                 self._info_list.append(item)
-            elif len(self._info_list) > 0:
-                # final crc is in last block
-                old = self._info_list[-1]
-                old.CRC = item.CRC
-                old._md_expect = item._md_expect
-                old.blake2sp_hash = item.blake2sp_hash
-                assert old.compress_size is not None and item.compress_size is not None
-                old.compress_size += item.compress_size
+            else:
+                self._merge_split_part(item)
         elif item.block_type == RAR5_BLOCK_SERVICE:
             assert isinstance(item, Rar5BaseFile)
             if item.filename == "CMT":

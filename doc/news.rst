@@ -16,6 +16,13 @@ Breaking changes:
 
 Features:
 
+* Tolerate missing middle volumes of multi-volume archives: parsing skips
+  over them, files fully stored in available volumes stay extractable, and
+  :meth:`RarFile.missing_volumes` / :meth:`RarFile.supply_table` report
+  what is still needed.  :meth:`RarFile.update_volumes` re-processes only
+  newly arrived volumes.  Volumes whose sequence evidence does not match
+  are not joined to the set.
+
 * Move to multi-file module.
   [`#137 <https://github.com/markokr/rarfile/pull/137>`_]
 

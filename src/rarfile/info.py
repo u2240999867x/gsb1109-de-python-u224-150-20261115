@@ -1,7 +1,7 @@
 """RAR entry records.
 """
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import datetime
 from typing import TypeAlias
 
@@ -18,7 +18,7 @@ from .crypto import HashContext
 from .utils import DateTuple, FileLike, PathLike
 
 __all__ = (
-    "RarEntry", "RarInfo",
+    "RarEntry", "RarInfo", "SupplyEntry",
     "Rar3Info", "Rar3SubInfo", "Rar3MainInfo", "Rar3EndArcInfo",
     "Rar3GenericInfo",
     "Rar5BaseFile", "Rar5FileInfo", "Rar5ServiceInfo",
@@ -27,6 +27,44 @@ __all__ = (
 
 
 FileEncryption: TypeAlias = tuple[int, int, int, bytes, bytes, bytes | None]
+
+
+@dataclass(kw_only=True, eq=False)
+class SupplyEntry:
+    """Per-file row of the supplement table for archives with missing volumes.
+
+    Returned by :meth:`RarFile.supply_table`.  Files whose headers reside
+    in a missing volume cannot be enumerated at all; use
+    :meth:`RarFile.missing_volumes` for the archive-level gap list.
+
+    Attributes:
+
+        filename
+            File name with relative path.
+
+        header_visible
+            True if the file header was found in an available volume,
+            so name and metadata are known.  Continuation parts whose
+            first part sits in a missing volume still have visible headers.
+
+        payload_complete
+            True if all data parts of the file are present in available
+            volumes and the file can be extracted.
+
+        volumes
+            Volume numbers the file data is known or believed to occupy,
+            including missing ones.
+
+        missing_volumes
+            Missing volume numbers that must be supplied before this
+            file becomes extractable.  Empty when payload is complete.
+    """
+
+    filename: str
+    header_visible: bool
+    payload_complete: bool
+    volumes: list[int]
+    missing_volumes: list[int]
 
 
 @dataclass(kw_only=True, eq=False)
@@ -207,6 +245,11 @@ class RarInfo(RarEntry):
     # internal hashing fields
     _md_class: type[HashContext] | None = None
     _md_expect: int | bytes | None = None
+
+    # internal split-file tracking: volumes the data occupies
+    # and whether the final part has been seen
+    _split_vols: list[int] = field(default_factory=list)
+    _split_done: bool = True
 
     # zipfile compat
     def is_dir(self) -> bool:

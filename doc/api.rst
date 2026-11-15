@@ -29,6 +29,12 @@ RarEntry class
 .. autoclass:: RarEntry()
    :members:
 
+SupplyEntry class
+-----------------
+
+.. autoclass:: SupplyEntry()
+   :members:
+
 RarExtFile class
 ----------------
 
@@ -80,6 +86,7 @@ Exceptions
 .. autoclass:: PasswordRequired
 .. autoclass:: BadSymLinkError
 .. autoclass:: NeedFirstVolume
+.. autoclass:: MissingVolumeError
 .. autoclass:: NoCrypto
 .. autoclass:: RarExecError
 .. autoclass:: RarWarning

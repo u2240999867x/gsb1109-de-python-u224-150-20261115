@@ -11,7 +11,7 @@ from . import config
 from .backend import check_returncode, custom_popen, empty_read, tool_setup
 from .bits import RAR_BLOCK_MAIN, RAR_BLOCK_MARK, RAR_FILE_SPLIT_AFTER
 from .crypto import HashContext, NoHashContext
-from .errors import BadRarFile
+from .errors import BadRarFile, MissingVolumeError
 from .info import RarInfo
 from .utils import PathLike, RawFileLike, WritableBuffer, XFile
 
@@ -389,7 +389,11 @@ class DirectReader(RarExtFile):
         # open next part
         assert self._volfile is not None
         self._volfile = self._parser._next_volname(self._volfile)
-        fd = open(self._volfile, "rb", 0)
+        try:
+            fd = open(self._volfile, "rb", 0)
+        except OSError:
+            raise MissingVolumeError(
+                "Missing volume: %s" % (self._volfile,)) from None
         self._fd = fd
         sig = fd.read(len(self._parser._expect_sig))
         if sig != self._parser._expect_sig:
