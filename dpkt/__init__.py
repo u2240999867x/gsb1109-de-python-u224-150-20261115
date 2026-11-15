@@ -15,6 +15,7 @@ from . import ah
 from . import aoe
 from . import aim
 from . import arp
+from . import arpwatch
 from . import asn1
 from . import bgp
 from . import cdp

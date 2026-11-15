@@ -47,6 +47,14 @@ dpkt.arp module
     :undoc-members:
     :show-inheritance:
 
+dpkt.arpwatch module
+--------------------
+
+.. automodule:: dpkt.arpwatch
+    :members:
+    :undoc-members:
+    :show-inheritance:
+
 dpkt.asn1 module
 ----------------
 
