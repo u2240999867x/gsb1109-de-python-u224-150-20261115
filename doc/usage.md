@@ -143,6 +143,18 @@ underlying file object.
   of `PlyData.read`.
 - To confirm whether a given element has been memory-mapped or not,
   check the type of `element.data`.
+- The `mmap` mode determines what the mapped arrays can do to the
+  original file:
+  - `'c'` (the default) is copy-on-write.  In-place modifications stay
+    private to the array and never reach the file.
+  - `'r'` is read-only.  The arrays are write-protected.
+  - `'r+'` is write-through.  In-place modifications and `flush()`
+    write back to the file.  This is the only mode that can modify the
+    original file.
+  - `False` (or any other falsy value) disables memory mapping and
+    returns an independent in-memory copy.
+  - Unrecognized strings, and `'r+'` when write-back cannot be
+    guaranteed, raise `ValueError` rather than silently falling back.
 
 This is all illustrated below:
 
@@ -159,18 +171,21 @@ True
 >>> plydata = PlyData.read('tet_binary.ply', mmap=False)
 >>> isinstance(plydata['vertex'].data, numpy.memmap)
 False
->>> # Strings can also be given to fine-tune memory-mapping.
->>> # For example, with 'r+', changes can be written back to the file.
->>> # In this case, the file must be explicitly opened with read-write
->>> # access.
->>> with open('tet_binary.ply', 'r+b') as f:
-...     plydata = PlyData.read(f, mmap='r+')
+>>> # With 'r+', changes can be written back to the file.  A filename
+>>> # is opened for read-write automatically.
+>>> plydata = PlyData.read('tet_binary.ply', mmap='r+')
 >>> isinstance(plydata['vertex'].data, numpy.memmap)
 True
 >>> plydata['vertex']['x'] = 100
 >>> plydata['vertex'].data.flush()
 >>> plydata = PlyData.read('tet_binary.ply')
 >>> all(plydata['vertex']['x'] == 100)
+True
+>>> # With 'c', the same assignment is private.
+>>> plydata = PlyData.read('tet_binary.ply', mmap='c')
+>>> plydata['vertex']['x'] = 7
+>>> plydata['vertex'].data.flush()
+>>> all(PlyData.read('tet_binary.ply')['vertex']['x'] == 100)
 True
 >>>
 ```
@@ -193,13 +208,32 @@ True
 
 The implementation will validate the data: if any instance of the list
 property has a length other than the value specified, then
-`PlyParseError` will be raised.
+`PlyElementParseError` will be raised.  Declared lengths must be
+non-negative integers; anything else raises `ValueError`.  Validation
+happens before any mapped array is returned, so a rejected layout never
+leaves a partially mapped result.
 
 Note that in order to enable memory mapping for a given element,
 *all* list properties in the element must have their lengths in the
 `known_list_len` dictionary. If any list property does not have its
 length given in `known_list_len`, then memory mapping will not be
-attempted, and no error will be raised.
+attempted, and no error will be raised: the element is read into an
+independent in-memory `object` array instead.
+
+A declared fixed length describes a *layout* of the on-disk data.  It is
+only usable when the list length is genuinely constant for every row.
+If the declaration does not fit the remaining data (for example, the
+length would run past the end of the file), or if the per-row length
+fields disagree with the declaration, the read is rejected.  Do not use
+`known_list_len` to coerce variable-length data into a fixed layout.
+
+With `mmap='r'`, the resulting fixed-layout array is write-protected, so
+the original file cannot be modified through it.  With `mmap='r+'`,
+write-back is attempted whenever the stream and layout allow it.  If the
+stream cannot be mapped at all, an element with a complete fixed layout
+raises `ValueError`; an element with variable-length list properties is
+read into independent arrays instead, because it has no writable mapped
+representation.
 
 #### Memory-mapping very large files
 
@@ -226,9 +260,15 @@ True
 Read-only and write-through
 memory mappings behave very differently from `plyfile`'s default.
 
-- Read-only mappings (`mmap='r'`) disallow in-place modification entirely.
-- Write-through mappings (`mmap='r+'`) transparently mirror all
-  modifications back to the original file.
+- Read-only mappings (`mmap='r'`) disallow in-place modification
+  entirely.  If a read-only request cannot be mapped, the fallback is
+  still write-protected.
+- Write-through mappings (`mmap='r+'`) mirror modifications back to the
+  original file.  Use this only when changing the archive is intended;
+  to modify a working copy without touching the original, use the
+  default `'c'` mapping.
+- If you need the original to remain byte-for-byte unchanged, verify its
+  digest after any operation, or use `'c'`, `False`, or a separate copy.
 
 Thus, these modes must be used with caution.
 ```

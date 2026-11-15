@@ -21,6 +21,7 @@ NumPy-based PLY format input and output for Python.
 
 import io as _io
 from itertools import islice as _islice
+import operator as _operator
 
 import numpy as _np
 from sys import byteorder as _byteorder
@@ -136,9 +137,26 @@ class PlyData(object):
         ----------
         stream : str or readable open file
         mmap : {'c', 'r', 'r+'} or bool, optional (default='c')
-            Configures memory-mapping. Any falsy value disables
-            memory mapping, and any non-string truthy value is
-            equivalent to 'c', for copy-on-write mapping.
+            Configures memory-mapping.
+
+            - ``'r'`` maps read-only.  The returned arrays are
+              write-protected.
+            - ``'c'`` maps copy-on-write.  Modifications are private to
+              the returned arrays and are never written back to the
+              file.
+            - ``'r+'`` maps read-write and writes modifications through
+              to the file.  This is the only mode that can affect the
+              original file; if it cannot be honored, `ValueError` is
+              raised rather than silently falling back.
+            - Any falsy value disables memory mapping.  Any other
+              non-string truthy value is equivalent to ``'c'``.
+            - String values other than the three modes above are
+              rejected with `ValueError`.
+
+            When `stream` is a filename and ``mmap='r+'``, the file is
+            opened for reading and writing.  When `stream` is an
+            already-open file, the caller is responsible for opening it
+            in a compatible mode.
         known_list_len : dict, optional
             Mapping from element names to mappings from list property
             names to their fixed lengths.  This optional argument is
@@ -146,15 +164,33 @@ class PlyData(object):
             list properties. (Note that elements with variable-length
             list properties cannot be memory-mapped.)
 
+            Each declared length must be a non-negative integer.  If a
+            declaration covers only some of an element's list
+            properties, that element is loaded with the ordinary binary
+            reader (a fallback, not an error).  If a declared layout
+            does not fit the remaining file, a `PlyElementParseError`
+            is raised, and if the lengths disagree with the file
+            contents, a `PlyElementParseError` is raised as well.
+            Layouts are validated before any array referencing the file
+            is returned, so a rejected declaration never exposes
+            partially mapped data.
+
         Raises
         ------
         PlyParseError
             If the file cannot be parsed for any reason.
         ValueError
             If `stream` is open in text mode but the PLY header
-            indicates binary encoding.
+            indicates binary encoding, if `mmap` is an unrecognized
+            string, or if ``mmap='r+'`` cannot be honored for an open
+            stream.
+        OSError
+            If ``mmap='r+'`` is requested for a filename that cannot be
+            opened for writing.
         """
-        (must_close, stream) = _open_stream(stream, 'read')
+        mmap_mode = _normalize_mmap_mode(mmap)
+        (must_close, stream) = _open_stream(
+            stream, 'read-write' if mmap_mode == 'r+' else 'read')
         try:
             data = PlyData._parse_header(stream)
             if isinstance(stream.read(0), str):
@@ -169,7 +205,7 @@ class PlyData(object):
                 else:
                     data_stream = stream
             for elt in data:
-                elt._read(data_stream, data.text, data.byte_order, mmap,
+                elt._read(data_stream, data.text, data.byte_order, mmap_mode,
                           known_list_len=known_list_len.get(elt.name, {}))
         finally:
             if must_close:
@@ -506,24 +542,41 @@ class PlyElement(object):
         stream : readable open file
         text : bool
         byte_order : {'<', '>', '='}
-        mmap : {'c', 'r', 'r+'} or bool
+        mmap : {'r', 'c', 'r+'} or None
         known_list_len : dict
         """
         if text:
+            if mmap == 'r+':
+                raise ValueError("write-through memory mapping requires "
+                                 "a binary-format PLY file")
             self._read_txt(stream)
+            if mmap == 'r':
+                _make_readonly(self._data)
         else:
-            list_prop_names = set(p.name for p in self.properties
-                                  if isinstance(p, PlyListProperty))
-            can_mmap_lists = list_prop_names <= set(known_list_len)
-            mmap_mode = mmap if isinstance(mmap, str) else 'c'
-            if mmap and _can_mmap(stream, mmap_mode) and can_mmap_lists:
+            list_props = [p for p in self.properties
+                          if isinstance(p, PlyListProperty)]
+            declared_len = {
+                p.name: _check_list_length(p.name,
+                                           known_list_len[p.name])
+                for p in list_props if p.name in known_list_len
+            }
+            can_mmap_lists = len(declared_len) == len(list_props)
+            can_mmap = (mmap and self.count > 0 and can_mmap_lists
+                        and _can_mmap(stream, mmap))
+            if can_mmap:
                 # Loading the data is straightforward.  We will memory
                 # map the file in the requested mode.
-                self._read_mmap(stream, byte_order, mmap_mode,
-                                known_list_len)
+                self._read_mmap(stream, byte_order, mmap, declared_len)
             else:
-                # A simple load is impossible.
+                if mmap == 'r+' and self.count > 0 and can_mmap_lists:
+                    raise ValueError(
+                        "write-through memory mapping is not available "
+                        "for element %r from this stream" % self.name)
+                # A simple load is impossible or the element cannot be
+                # laid out for memory mapping.  Read an independent copy.
                 self._read_bin(stream, byte_order)
+                if mmap == 'r':
+                    _make_readonly(self._data)
 
         self._check_sanity()
 
@@ -580,6 +633,7 @@ class PlyElement(object):
         offset = stream.tell()
         stream.seek(0, 2)
         max_bytes = stream.tell() - offset
+        stream.seek(offset)
         if max_bytes < num_bytes:
             raise PlyElementParseError("early end-of-file", self,
                                        max_bytes // dtype.itemsize)
@@ -597,6 +651,8 @@ class PlyElement(object):
                     self, row, self.ply_property(prop))
         props = [p.name for p in self.properties]
         self._data = self._data[props]
+        if mmap_mode == 'r':
+            _make_readonly(self._data)
 
     def _read_txt(self, stream):
         """
@@ -1335,7 +1391,8 @@ def _open_stream(stream, read_or_write):
     ----------
     stream : str or open file-like object
     read_or_write : str
-        `"read"` or `"write"`, the method to be used on the stream.
+        `"read"`, `"write"`, or `"read-write"`, the method to be used
+        on the stream.
 
     Returns
     -------
@@ -1350,12 +1407,95 @@ def _open_stream(stream, read_or_write):
         If `stream` is neither a string nor has the
         `read_or_write`-indicated method.
     """
-    if hasattr(stream, read_or_write):
+    if read_or_write == 'read-write':
+        if hasattr(stream, 'read'):
+            return (False, stream)
+    elif hasattr(stream, read_or_write):
         return (False, stream)
     try:
-        return (True, open(stream, read_or_write[0] + 'b'))
+        open_mode = {'read': 'rb', 'write': 'wb',
+                     'read-write': 'r+b'}[read_or_write]
+        return (True, open(stream, open_mode))
     except TypeError:
         raise TypeError("expected open file or filename")
+
+
+def _normalize_mmap_mode(mmap):
+    """
+    Normalize the `mmap` argument of `PlyData.read`.
+
+    Parameters
+    ----------
+    mmap : {'c', 'r', 'r+'} or bool
+
+    Returns
+    -------
+    str or None
+        `'r'`, `'c'`, `'r+'`, or `None` if memory mapping is disabled.
+
+    Raises
+    ------
+    ValueError
+        If `mmap` is a string other than the supported modes.
+    """
+    if not mmap:
+        return None
+    if isinstance(mmap, str):
+        if mmap in ('r', 'c', 'r+'):
+            return mmap
+        raise ValueError("mmap must be 'r', 'c', 'r+', or falsy; "
+                         "got %r" % mmap)
+    return 'c'
+
+
+def _check_list_length(name, length):
+    """
+    Validate a declared fixed length for a list property.
+
+    Parameters
+    ----------
+    name : str
+        Property name, used in the error message.
+    length : object
+        Declared length.
+
+    Returns
+    -------
+    int
+
+    Raises
+    ------
+    ValueError
+        If `length` is not a non-negative integer.
+    """
+    if isinstance(length, bool):
+        raise ValueError("known_list_len for property %r must be a "
+                         "non-negative integer, not %r" % (name, length))
+    try:
+        length = _operator.index(length)
+    except TypeError:
+        raise ValueError("known_list_len for property %r must be an "
+                         "integer, not %r" % (name, length))
+    if length < 0:
+        raise ValueError("known_list_len for property %r must be a "
+                         "non-negative integer, not %r" % (name, length))
+    return length
+
+
+def _make_readonly(data):
+    """
+    Make an array, including any nested object arrays, read-only.
+    """
+    try:
+        data.flags.writeable = False
+    except ValueError:
+        pass
+    if data.dtype.hasobject:
+        for value in data:
+            for column in data.dtype.names or ():
+                field = value[column]
+                if isinstance(field, _np.ndarray):
+                    field.flags.writeable = False
 
 
 def _check_name(name):

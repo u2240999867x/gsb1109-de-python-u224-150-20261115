@@ -3,6 +3,20 @@
 All notable changes to this project will be documented here.
 
 ## [Unreleased]
+### Added
+- Explicit memory-mapping modes: read-only (`'r'`), independent
+  copy-on-write (`'c'`), and opt-in write-through (`'r+'`).  Read-only
+  requests are write-protected even when mapping falls back to an
+  in-memory read.
+- `mmap='r+'` accepts a filename and opens it for reading and writing.
+
+### Changed
+- Unrecognized `mmap` strings now raise `ValueError` instead of silently
+  using copy-on-write.
+- `known_list_len` declarations are validated as non-negative integers
+  before use.  Incomplete declarations fall back to the ordinary
+  binary reader; layouts that do not fit or disagree with the data
+  raise `PlyElementParseError`.
 
 ## [1.1.5] - 2026-07-25
 ### Fixed

@@ -3,6 +3,7 @@ from __future__ import print_function
 import doctest
 from io import (BytesIO, StringIO, TextIOWrapper)
 import gzip
+import hashlib
 
 import pytest
 
@@ -161,6 +162,26 @@ def read_str(string, tmpdir, name='test.ply'):
     with filename.open('wb') as f:
         f.write(string)
     return PlyData.read(str(filename))
+
+
+def sha256_file(filename):
+    """
+    Utility: digest the exact bytes of a file.
+    """
+    with open(str(filename), 'rb') as f:
+        return hashlib.sha256(f.read()).hexdigest()
+
+
+def write_binary(ply, tmpdir, name='test.ply'):
+    """
+    Utility: write a binary PLY file and return its path.
+    """
+    ply.text = False
+    ply.byte_order = '<'
+    filename = tmpdir.join(name)
+    with filename.open('wb') as f:
+        ply.write(f)
+    return filename
 
 
 def tet_ply(text, byte_order):
@@ -400,6 +421,184 @@ def test_memmap_rw(tmpdir, tet_ply_txt):
     ply2 = PlyData.read(filename)
 
     assert (ply2['vertex']['x'] == 100).all()
+
+
+def test_mmap_modes_preserve_original(tmpdir, tet_ply_txt):
+    filename = write_binary(tet_ply_txt, tmpdir)
+    digest = sha256_file(filename)
+
+    for mode in ('c', 'r'):
+        ply = PlyData.read(str(filename), mmap=mode)
+        data = ply['vertex'].data
+        assert isinstance(data, numpy.memmap)
+        assert data.mode == mode
+        assert data.flags.writeable == (mode == 'c')
+        if mode == 'r':
+            with Raises(ValueError):
+                data['x'] += 1
+        else:
+            data['x'] += 1
+        assert sha256_file(filename) == digest
+
+
+def test_mmap_r_blocks_list_mutation(tmpdir, tet_ply_txt):
+    filename = write_binary(tet_ply_txt, tmpdir)
+    digest = sha256_file(filename)
+    ply = PlyData.read(str(filename), mmap='r',
+                       known_list_len={'face': {'vertex_indices': 3}})
+
+    data = ply['face'].data
+    assert isinstance(data, numpy.memmap)
+    assert not data.flags.writeable
+    with Raises(ValueError):
+        data['vertex_indices'][0, 0] = 99
+    assert sha256_file(filename) == digest
+
+
+def test_mmap_rw_from_filename(tmpdir, tet_ply_txt):
+    filename = write_binary(tet_ply_txt, tmpdir)
+    digest = sha256_file(filename)
+
+    ply = PlyData.read(str(filename), mmap='r+')
+    data = ply['vertex'].data
+    assert isinstance(data, numpy.memmap)
+    assert data.mode == 'r+'
+    data['x'][:] = 42
+    data.flush()
+    del ply
+
+    assert sha256_file(filename) != digest
+    assert (PlyData.read(str(filename), mmap=False)['vertex']['x']
+            == 42).all()
+
+
+def test_mmap_rw_requires_writable_stream(tmpdir, tet_ply_txt):
+    filename = write_binary(tet_ply_txt, tmpdir)
+    payload = filename.read_binary()
+    digest = sha256_file(filename)
+
+    with Raises(ValueError) as e:
+        PlyData.read(BytesIO(payload), mmap='r+')
+    assert "write-through memory mapping" in str(e)
+    assert sha256_file(filename) == digest
+
+
+def test_mmap_r_fallback_is_readonly(tmpdir, tet_ply_txt):
+    filename = write_binary(tet_ply_txt, tmpdir)
+    payload = filename.read_binary()
+    digest = sha256_file(filename)
+
+    ply = PlyData.read(BytesIO(payload), mmap='r',
+                       known_list_len={'face': {'vertex_indices': 3}})
+    assert not isinstance(ply['vertex'].data, numpy.memmap)
+    assert not ply['vertex'].data.flags.writeable
+    assert not ply['face'].data['vertex_indices'][0].flags.writeable
+    with Raises(ValueError):
+        ply['vertex']['x'] += 1
+    assert sha256_file(filename) == digest
+
+
+def test_clean_working_copy_preserves_archive(tmpdir, tet_ply_txt):
+    archive = write_binary(tet_ply_txt, tmpdir, 'archive.ply')
+    digest = sha256_file(archive)
+    working = tmpdir.join('working.ply')
+    working.write_binary(archive.read_binary())
+    cleaned = str(tmpdir.join('cleaned.ply'))
+
+    src = PlyData.read(str(working), mmap='c',
+                       known_list_len={'face': {'vertex_indices': 3}})
+    src['vertex']['x'] += 1
+    src.write(cleaned)
+
+    out = PlyData.read(cleaned, mmap=False)
+    assert (out['vertex']['x'] == src['vertex']['x']).all()
+    assert sha256_file(archive) == digest
+    verify(tet_ply(False, '<'), PlyData.read(str(working), mmap=False))
+
+
+def test_mmap_invalid_mode(tmpdir, tet_ply_txt):
+    filename = write_binary(tet_ply_txt, tmpdir)
+    with Raises(ValueError) as e:
+        PlyData.read(str(filename), mmap='rw')
+    assert "mmap must be" in str(e)
+
+
+@pytest.mark.parametrize('mode', ['r', 'r+'])
+def test_mmap_fixed_list_layout(tmpdir, tet_ply_txt, mode):
+    filename = write_binary(tet_ply_txt, tmpdir)
+    digest = sha256_file(filename)
+    known_list_len = {'face': {'vertex_indices': 3}}
+
+    ply = PlyData.read(str(filename), mmap=mode,
+                       known_list_len=known_list_len)
+    data = ply['face'].data
+    assert isinstance(data, numpy.memmap)
+    assert data.mode == mode
+    verify(tet_ply(False, '<'), ply)
+    assert sha256_file(filename) == digest
+
+
+def test_mmap_rw_writes_fixed_list_layout(tmpdir, tet_ply_txt):
+    filename = write_binary(tet_ply_txt, tmpdir)
+    digest = sha256_file(filename)
+
+    ply = PlyData.read(str(filename), mmap='r+',
+                       known_list_len={'face': {'vertex_indices': 3}})
+    ply['face']['red'][:] = 9
+    ply['face'].data.flush()
+    del ply
+
+    assert sha256_file(filename) != digest
+    assert (PlyData.read(str(filename), mmap=False)['face']['red']
+            == 9).all()
+
+
+def test_mmap_layout_fallback_without_full_declaration(tmpdir,
+                                                       tet_ply_txt):
+    filename = write_binary(tet_ply_txt, tmpdir)
+
+    ply = PlyData.read(str(filename), mmap='c', known_list_len={})
+    assert not isinstance(ply['face'].data, numpy.memmap)
+    assert isinstance(ply['vertex'].data, numpy.memmap)
+    verify(tet_ply(False, '<'), ply)
+
+
+def test_mmap_layout_rejected_before_data_is_returned(tmpdir,
+                                                      tet_ply_txt):
+    filename = write_binary(tet_ply_txt, tmpdir)
+    digest = sha256_file(filename)
+
+    for length, message in [(4, "early end-of-file"),
+                            (2, "unexpected list length")]:
+        with Raises(PlyElementParseError) as e:
+            PlyData.read(str(filename), mmap='c',
+                         known_list_len={
+                             'face': {'vertex_indices': length}})
+        assert e.exc_val.message == message
+        assert sha256_file(filename) == digest
+
+
+@pytest.mark.parametrize('length', [-1, '3', 3.0, True, None])
+def test_mmap_layout_invalid_length(tmpdir, tet_ply_txt, length):
+    filename = write_binary(tet_ply_txt, tmpdir)
+    with Raises(ValueError) as e:
+        PlyData.read(str(filename), mmap='c',
+                     known_list_len={'face': {'vertex_indices': length}})
+    assert "known_list_len" in str(e)
+
+
+def test_mmap_zero_length_layout(tmpdir):
+    face = numpy.array([([], 255), ([], 0)],
+                       dtype=[('vertex_indices', 'i4', (0,)),
+                              ('red', 'u1')])
+    ply0 = PlyData([PlyElement.describe(face, 'face')],
+                   text=False, byte_order='<')
+    filename = write_binary(ply0, tmpdir)
+    ply1 = PlyData.read(str(filename), mmap='c',
+                        known_list_len={'face': {'vertex_indices': 0}})
+
+    assert isinstance(ply1['face'].data, numpy.memmap)
+    verify(ply0, ply1)
 
 
 def test_write_invalid_filename(tet_ply_txt):
