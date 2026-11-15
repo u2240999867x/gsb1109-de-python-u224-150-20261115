@@ -26,3 +26,16 @@ class TestJsonRefErrors(object):
             print(result["a"])
         e = excinfo.value
         assert e.path == ("c",)
+
+    def test_circular_refs(self):
+        json = {
+            "a": {"$ref": "#/b"},
+            "b": {"$ref": "#/a"},
+        }
+        result = replace_refs(json)
+        # Loading is lazy, no error yet
+        assert result["a"].__reference__ == json["a"]
+        # Accessing the reference raises a JsonRefError, not a RecursionError
+        with pytest.raises(JsonRefError) as excinfo:
+            result["a"].__subject__
+        assert "Circular reference" in excinfo.value.message

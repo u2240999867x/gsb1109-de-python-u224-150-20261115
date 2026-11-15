@@ -191,6 +191,33 @@ class TestJsonRef(object):
         result = replace_refs(json, proxies=False)
         assert result["b"] is result["a"]
 
+    def test_no_proxies_recursive(self):
+        json = {
+            "x": {"name": "x", "link": {"$ref": "#/y"}},
+            "y": {"name": "y", "link": {"$ref": "#/x"}},
+        }
+        result = replace_refs(json, proxies=False)
+        # The cycle should be preserved as a recursive data structure,
+        # not copied to infinite depth
+        assert result["x"]["link"] is result["y"]
+        assert result["y"]["link"] is result["x"]
+        assert result["x"]["link"]["link"]["link"] is result["y"]
+
+    def test_no_proxies_recursive_list(self):
+        json = [[1], {"$ref": "#/0"}]
+        result = replace_refs(json, proxies=False)
+        assert result[1] is result[0]
+        result[0].append(result[0])
+        assert result[0][-1] is result[0]
+
+    def test_no_lazy_load_recursive_cycle(self):
+        json = {
+            "x": {"link": {"$ref": "#/y"}},
+            "y": {"link": {"$ref": "#/x"}},
+        }
+        result = replace_refs(json, lazy_load=False)
+        assert result["x"]["link"]["link"].__subject__ is result["x"]
+
     def test_walk_refs(self):
         docs = {
             "a.json": {"file": "a", "b": {"$ref": "b.json"}},

@@ -122,6 +122,18 @@ class JsonRef(LazyProxy):
         return urlparse.urljoin(self.base_uri, self.__reference__["$ref"])
 
     def callback(self):
+        if getattr(self, "_resolving", False):
+            # We are already in the middle of resolving this reference, which
+            # means the references form a cycle with no concrete data in it
+            # (e.g. {"a": {"$ref": "#/b"}, "b": {"$ref": "#/a"}})
+            raise self._error("Circular reference detected.")
+        self._resolving = True
+        try:
+            return self._callback()
+        finally:
+            self._resolving = False
+
+    def _callback(self):
         uri, fragment = urlparse.urldefrag(self.full_uri)
 
         # If we already looked this up, return a reference to the same object
@@ -260,7 +272,7 @@ def jsonloader(uri, **kwargs):
 
 
 def _walk_refs(obj, func, replace=False, _processed=None):
-    # Keep track of already processed items to prevent recursion
+    # Keep track of already processed items to prevent infinite recursion
     _processed = _processed or {}
     if type(obj) is JsonRef:
         oid = id(obj)
@@ -270,11 +282,25 @@ def _walk_refs(obj, func, replace=False, _processed=None):
         obj = r if replace else obj
         _processed[oid] = obj
     if isinstance(obj, Mapping):
+        # Once references have been replaced with their referent data, cycles
+        # in the data are direct container cycles. Keep track of containers we
+        # have already descended into, so the structure stays a finite graph
+        # of nodes and edges rather than being copied to infinite depth.
+        if type(obj) is not JsonRef:
+            oid = id(obj)
+            if oid in _processed:
+                return obj
+            _processed[oid] = obj
         for k, v in obj.items():
             r = _walk_refs(v, func, replace=replace, _processed=_processed)
             if replace:
                 obj[k] = r
     elif isinstance(obj, Sequence) and not isinstance(obj, str):
+        if type(obj) is not JsonRef:
+            oid = id(obj)
+            if oid in _processed:
+                return obj
+            _processed[oid] = obj
         for i, v in enumerate(obj):
             r = _walk_refs(v, func, replace=replace, _processed=_processed)
             if replace:
@@ -317,7 +343,9 @@ def replace_refs(
         other libraries.
     :param proxies: If `True`, references will be replaced with transparent
         proxy objects. Otherwise, they will be replaced directly with the
-        referred data. (defaults to ``True``)
+        referred data. Documents with recursive references will produce
+        recursive python data structures, preserving the cycles rather than
+        copying data to infinite depth. (defaults to ``True``)
     :param lazy_load: When proxy objects are used, and this is `True`, the
         references will not be resolved until that section of the JSON
         document is accessed. (defaults to ``True``)
@@ -531,7 +559,8 @@ def dump(obj, fp, **kwargs):
     """
     Serialize `obj`, which may contain :class:`JsonRef` objects, as a JSON
     formatted stream to file-like `fp`. `JsonRef` objects will be dumped as the
-    original reference object they were created from.
+    original reference object they were created from. Cyclic data structures
+    will have their cycles dumped as JSON reference objects.
 
     :param obj: Object to serialize
     :param fp: File-like to output JSON string
@@ -549,12 +578,74 @@ def dumps(obj, **kwargs):
     formatted string. `JsonRef` objects will be dumped as the original
     reference object they were created from.
 
+    If `obj` contains cyclic data structures (e.g. created by using
+    :func:`replace_refs` with ``proxies=False`` on a document with recursive
+    references), the cycles will be dumped as JSON reference objects pointing
+    at the first occurrence of the repeated node, keeping the output finite.
+
     :param obj: Object to serialize
     :param kwargs: Keyword arguments are the same as to :func:`json.dumps`
 
     """
     kwargs["cls"] = _ref_encoder_factory(kwargs.get("cls", json.JSONEncoder))
-    return json.dumps(obj, **kwargs)
+    return json.dumps(_cycles_to_refs(obj), **kwargs)
+
+
+def _cycles_to_refs(obj, _path=(), _ancestors=None):
+    """
+    Returns a version of `obj` where any container which is its own ancestor
+    (a cycle) is replaced by a JSON reference object pointing at the path of
+    its first occurrence. Acyclic structures are returned untouched, and
+    :class:`JsonRef` objects are left for the encoder to handle.
+
+    """
+    if _ancestors is None:
+        _ancestors = {}
+    if hasattr(obj, "__reference__"):
+        # A JsonRef proxy. The encoder will dump the original reference
+        # object, so there is nothing to descend into here.
+        return obj
+    if isinstance(obj, Mapping):
+        oid = id(obj)
+        if oid in _ancestors:
+            return {"$ref": "#" + _format_pointer(_ancestors[oid])}
+        _ancestors[oid] = _path
+        try:
+            changed = False
+            items = []
+            for k, v in obj.items():
+                new_v = _cycles_to_refs(v, _path + (k,), _ancestors)
+                changed = changed or new_v is not v
+                items.append((k, new_v))
+            return type(obj)(items) if changed else obj
+        finally:
+            del _ancestors[oid]
+    if isinstance(obj, Sequence) and not isinstance(obj, str):
+        oid = id(obj)
+        if oid in _ancestors:
+            return {"$ref": "#" + _format_pointer(_ancestors[oid])}
+        _ancestors[oid] = _path
+        try:
+            changed = False
+            items = []
+            for i, v in enumerate(obj):
+                new_v = _cycles_to_refs(v, _path + (i,), _ancestors)
+                changed = changed or new_v is not v
+                items.append(new_v)
+            return type(obj)(items) if changed else obj
+        finally:
+            del _ancestors[oid]
+    return obj
+
+
+def _format_pointer(path):
+    """
+    Format a path of keys/indices as a JSON pointer URI fragment.
+
+    """
+    return "".join(
+        "/" + str(part).replace("~", "~0").replace("/", "~1") for part in path
+    )
 
 
 def _ref_encoder_factory(cls):

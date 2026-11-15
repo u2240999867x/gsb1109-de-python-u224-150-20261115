@@ -57,7 +57,12 @@ referenced document. This can be useful for a few reasons:
 
 If you are using a tool that does not play nicely with the :class:`JsonRef` proxy
 objects, they can be turned off completely using ``proxies=False``. This is needed e.g.
-if you want to pass the data back to the stdlib :func:`json.dump` function.
+if you want to pass the data back to the stdlib :func:`json.dump` function. Documents
+with recursive references will produce recursive python data structures in this mode,
+preserving the cycles rather than copying data to infinite depth. :func:`dump` and
+:func:`dumps` will emit such cycles as JSON reference objects pointing at the first
+occurrence of the repeated node, so the output stays finite and can be loaded back
+into an equivalent structure.
 
 ``lazy_load`` and ``load_on_repr``
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^

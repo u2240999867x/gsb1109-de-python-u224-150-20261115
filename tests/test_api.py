@@ -1,4 +1,4 @@
-from jsonref import load, loads, dump, dumps
+from jsonref import load, loads, dump, dumps, replace_refs
 
 
 class TestApi(object):
@@ -32,3 +32,28 @@ class TestApi(object):
         dump(loaded, tmpdir.join("out.json"))
         # Our dump function should write the original reference
         assert tmpdir.join("out.json").read() == json
+
+    def test_dumps_cycle(self):
+        json = """{"x": {"link": {"$ref": "#/y"}}, "y": {"link": {"$ref": "#/x"}}}"""
+        loaded = loads(json, proxies=False)
+        # The cycle should be dumped as a reference, not recursed forever
+        assert dumps(loaded) == (
+            '{"x": {"link": {"link": {"$ref": "#/x"}}}, '
+            '"y": {"link": {"link": {"$ref": "#/y"}}}}'
+        )
+
+    def test_dumps_cycle_roundtrip(self):
+        json = """{"x": {"link": {"$ref": "#/y"}}, "y": {"link": {"$ref": "#/x"}}}"""
+        loaded = loads(json, proxies=False)
+        # The dumped references should load back into an equivalent structure
+        reloaded = loads(dumps(loaded), proxies=False)
+        assert reloaded["x"]["link"]["link"] is reloaded["x"]
+        assert reloaded["y"]["link"]["link"] is reloaded["y"]
+
+    def test_dumps_root_cycle(self):
+        loaded = replace_refs({"a": 1, "b": {"$ref": "#"}}, proxies=False)
+        assert dumps(loaded) == '{"a": 1, "b": {"$ref": "#"}}'
+
+    def test_dumps_acyclic_unchanged(self):
+        json = """{"a": [1, 2], "b": {"$ref": "#/a"}}"""
+        assert dumps(loads(json)) == json
