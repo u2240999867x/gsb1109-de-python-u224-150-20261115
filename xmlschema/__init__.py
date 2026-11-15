@@ -32,6 +32,8 @@ from .validators import (
     XMLSchemaTypeTableWarning, XMLSchemaAssertPathWarning, XsdGlobals, XMLSchemaBase,
     XMLSchema, XMLSchema10, XMLSchema11, XsdComponent, XsdType, XsdElement, XsdAttribute
 )
+from .batch import BatchRecordState, BatchRecord, BatchError, BatchValidationError, \
+    DuplicateKeyError, UnresolvedKeyrefError, BatchValidator
 
 __version__ = '4.3.2'
 __author__ = "Davide Brunato"
@@ -59,4 +61,6 @@ __all__ = [
     'XMLSchemaTypeTableWarning', 'XMLSchemaAssertPathWarning',
     'XsdGlobals', 'XMLSchemaBase', 'XMLSchema', 'XMLSchema10', 'XMLSchema11',
     'XsdComponent', 'XsdType', 'XsdElement', 'XsdAttribute',
+    'BatchRecordState', 'BatchRecord', 'BatchError', 'BatchValidationError',
+    'DuplicateKeyError', 'UnresolvedKeyrefError', 'BatchValidator',
 ]
