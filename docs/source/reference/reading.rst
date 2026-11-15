@@ -6,11 +6,12 @@ Reading NRRD files
     nrrd.read
     nrrd.read_header
     nrrd.read_data
+    nrrd.read_sliced
     nrrd.reader.ALLOW_DUPLICATE_FIELD
     nrrd.SPACE_DIRECTIONS_TYPE
 
 .. automodule:: nrrd
-    :members: read, read_header, read_data
+    :members: read, read_header, read_data, read_sliced
     :undoc-members:
     :show-inheritance:
 

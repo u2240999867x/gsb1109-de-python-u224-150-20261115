@@ -10,6 +10,7 @@ from typing import IO, Any, AnyStr, Iterable, Tuple
 
 import nrrd
 from nrrd.parsers import *
+from nrrd.slices import LIST_MARKER, SLICE_LIST_FIELD, is_sliced_header, read_sliced_data
 from nrrd.types import IndexOrder, NRRDFieldMap, NRRDFieldType, NRRDHeader
 
 # Older versions of Python had issues when uncompressed data was larger than 4GB (2^32). This should be fixed in latest
@@ -262,6 +263,9 @@ def read_header(file: Union[str, Iterable[AnyStr]], custom_field_map: Optional[N
     # fields in the same order.
     header = OrderedDict()
 
+    # When 'data file: LIST' is encountered, the following non-empty lines are slice filenames until a blank line
+    slice_filenames = None
+
     # Loop through each line
     for line in it:
         header_size += len(line)
@@ -277,6 +281,11 @@ def read_header(file: Union[str, Iterable[AnyStr]], custom_field_map: Optional[N
             continue
         elif line == '':
             break
+
+        # In LIST mode, every remaining line names a slice file until the blank line separating header from data
+        if slice_filenames is not None:
+            slice_filenames.append(line.strip())
+            continue
 
         # Read the field and value from the line, split using regex to search for := or : delimiter
         field, value = re.split(r':=?', line, maxsplit=1)
@@ -298,6 +307,13 @@ def read_header(file: Union[str, Iterable[AnyStr]], custom_field_map: Optional[N
         # Place it in the header dictionary
         header[field] = _parse_field_value(value, field_type)
 
+        # A LIST marker means subsequent lines are an explicit ordered list of local slice filenames
+        if field in ['datafile', 'data file'] and value == LIST_MARKER:
+            slice_filenames = []
+
+    if slice_filenames is not None:
+        header[SLICE_LIST_FIELD] = slice_filenames
+
     # Reading the file line by line is buffered and so the header is not in the correct position for reading data if
     # the file contains the data in it as well. The solution is to set the file pointer to just behind the header.
     if hasattr(file, 'seek'):
@@ -307,13 +323,18 @@ def read_header(file: Union[str, Iterable[AnyStr]], custom_field_map: Optional[N
 
 
 def read_data(header: NRRDHeader, fh: Optional[IO] = None, filename: Optional[str] = None,
-              index_order: IndexOrder = 'F') -> npt.NDArray:
+              index_order: IndexOrder = 'F', data_root: Optional[str] = None) -> npt.NDArray:
     """Read data from file into :class:`numpy.ndarray`
 
     The two parameters :obj:`fh` and :obj:`filename` are optional depending on the parameters but it never hurts to
     specify both. The file handle (:obj:`fh`) is necessary if the header is attached with the NRRD data. However, if
     the NRRD data is detached from the header, then the :obj:`filename` parameter is required to obtain the absolute
     path to the data file.
+
+    When the header references multiple local slice files (``data file: LIST`` or a printf-style sequence template),
+    the slices are read in slowest-axis order and assembled into a single array. Missing intermediate slices keep
+    their axis position and are zero-filled, so later slices never shift forward. Use :meth:`read_sliced` to also
+    obtain the per-slice source manifest with byte counts and gap ranges.
 
     See :ref:`background/how-to-use:reading nrrd files` for more information on reading NRRD files.
 
@@ -325,11 +346,15 @@ def read_data(header: NRRDHeader, fh: Optional[IO] = None, filename: Optional[st
         File object pointing to first byte of data. Only necessary if data is attached to header.
     filename : :class:`str`, optional
         Filename of the header file. Only necessary if data is detached from the header. This is used to get the
-        absolute data path.
+        absolute data path and as the authorized root for relative slice paths.
     index_order : {'C', 'F'}, optional
         Specifies the index order of the resulting data array. Either 'C' (C-order) where the dimensions are ordered
         from slowest-varying to fastest-varying (e.g. (z, y, x)), or 'F' (Fortran-order) where the dimensions are
         ordered from fastest-varying to slowest-varying (e.g. (x, y, z)).
+    data_root : :class:`str`, optional
+        Authorized root for resolving relative slice file paths in a multi-slice header. Relative paths are only
+        resolved inside this root (or the directory of :obj:`filename` when omitted). When provided explicitly,
+        absolute slice paths are also required to stay inside this root.
 
     Returns
     -------
@@ -338,7 +363,7 @@ def read_data(header: NRRDHeader, fh: Optional[IO] = None, filename: Optional[st
 
     See Also
     --------
-    :meth:`read`, :meth:`read_header`
+    :meth:`read`, :meth:`read_header`, :meth:`read_sliced`
     """
 
     if index_order not in ['F', 'C']:
@@ -355,6 +380,11 @@ def read_data(header: NRRDHeader, fh: Optional[IO] = None, filename: Optional[st
 
     if header['dimension'] < 1 or np.any(header['sizes'] <= 0):
         raise NRRDError('Dimension and sizes must be positive')
+
+    # Multi-slice headers (LIST or sequence template) are assembled from separate local files
+    if is_sliced_header(header):
+        data, _ = read_sliced_data(header, filename=filename, index_order=index_order, data_root=data_root)
+        return data
 
     # Determine the data type from the header
     dtype = _determine_datatype(header)
@@ -494,8 +524,8 @@ def read_data(header: NRRDHeader, fh: Optional[IO] = None, filename: Optional[st
     return data
 
 
-def read(filename: str, custom_field_map: Optional[NRRDFieldMap] = None, index_order: IndexOrder = 'F') \
-        -> Tuple[npt.NDArray, NRRDHeader]:
+def read(filename: str, custom_field_map: Optional[NRRDFieldMap] = None, index_order: IndexOrder = 'F',
+         data_root: Optional[str] = None) -> Tuple[npt.NDArray, NRRDHeader]:
     """Read a NRRD file and return the header and data
 
     See :ref:`background/how-to-use:reading nrrd files` for more information on reading NRRD files.
@@ -516,6 +546,10 @@ def read(filename: str, custom_field_map: Optional[NRRDFieldMap] = None, index_o
         Specifies the index order of the resulting data array. Either 'C' (C-order) where the dimensions are ordered
         from slowest-varying to fastest-varying (e.g. (z, y, x)), or 'F' (Fortran-order) where the dimensions are
         ordered from fastest-varying to slowest-varying (e.g. (x, y, z)).
+    data_root : :class:`str`, optional
+        Authorized root for resolving relative slice file paths in a multi-slice header. Relative paths are only
+        resolved inside this root (or the directory of :obj:`filename` when omitted). When provided explicitly,
+        absolute slice paths are also required to stay inside this root.
 
     Returns
     -------
@@ -531,6 +565,46 @@ def read(filename: str, custom_field_map: Optional[NRRDFieldMap] = None, index_o
 
     with open(filename, 'rb') as fh:
         header = read_header(fh, custom_field_map)
-        data = read_data(header, fh, filename, index_order)
+        data = read_data(header, fh, filename, index_order, data_root=data_root)
 
     return data, header
+
+
+def read_sliced(filename: str, custom_field_map: Optional[NRRDFieldMap] = None, index_order: IndexOrder = 'F',
+                data_root: Optional[str] = None) -> Tuple[npt.NDArray, NRRDHeader, 'SliceManifest']:
+    """Read a multi-slice NRRD header and return the ordered data with its slice manifest.
+
+    The header must reference multiple local slice files through ``data file: LIST`` or a printf-style sequence
+    template. The returned :class:`~nrrd.slices.SliceManifest` records every ordered slice source, its byte count
+    and any gap ranges left by missing intermediate slices.
+
+    Parameters
+    ----------
+    filename : :class:`str`
+        Filename of the NRRD header file
+    custom_field_map : :class:`dict` (:class:`str`, :class:`str`), optional
+        Dictionary used for parsing custom field types.
+    index_order : {'C', 'F'}, optional
+        Index order of the resulting data array.
+    data_root : :class:`str`, optional
+        Authorized root for resolving relative slice paths. When provided explicitly, absolute slice paths are also
+        confined to it. Otherwise relative paths resolve from the directory of :obj:`filename`.
+
+    Returns
+    -------
+    data : :class:`numpy.ndarray`
+        Ordered volume data. Missing slices are zero-filled without shifting later slices.
+    header : :class:`dict` (:class:`str`, :obj:`Object`)
+        Parsed NRRD header.
+    manifest : :class:`~nrrd.slices.SliceManifest`
+        Ordered per-slice sources, byte counts and gap information.
+    """
+
+    with open(filename, 'rb') as fh:
+        header = read_header(fh, custom_field_map)
+
+    if not is_sliced_header(header):
+        raise NRRDError('Header does not reference multiple slice files (expected LIST or a sequence template)')
+
+    data, manifest = read_sliced_data(header, filename=filename, index_order=index_order, data_root=data_root)
+    return data, header, manifest
