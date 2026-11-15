@@ -718,6 +718,10 @@ class ParsingStateDeltaExtendLatexContextDb(ParsingStateDelta):
 
         if self.extend_latex_context:
 
+            if parsing_state.latex_context is None:
+                # no latex context to extend; ignore the definitions
+                return parsing_state
+
             if self.set_attributes:
                 set_attributes = self.set_attributes
             else:

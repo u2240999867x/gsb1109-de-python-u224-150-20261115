@@ -33,6 +33,8 @@ from ..latexnodes import (
 )
 from ..latexnodes.nodes import (
     LatexCharsNode,
+    LatexMacroNode,
+    LatexGroupNode,
 )
 from ..latexnodes.parsers import (
     LatexStandardArgumentParser,
@@ -53,6 +55,7 @@ from ..macrospec._spechelpers import (
 from ..macrospec import (
     MacroSpec, EnvironmentSpec, SpecialsSpec,
     LatexSpecialsCallParser,
+    ParsingStateDeltaExtendLatexContextDb,
     # MacroStandardArgsParser,
 )
 
@@ -181,6 +184,149 @@ def _finalize_lstlisting_environment_node(node):
     return node
 
 
+#
+# \newcommand & friends update the latex context as they are encountered, so
+# that invocations of the (re)defined macro or environment that follow in the
+# same scope are parsed with the argument signature that was just declared.
+# The definitions disappear again once the group (or environment) that
+# contains the declaration ends, because parsing state changes do not
+# propagate out of groups; and they never leak into other documents, because
+# the latex context is only ever extended into fresh objects.
+#
+
+def _group_node_chars(node):
+    r"""
+    Concatenate the characters that make up a group node's contents.  Returns
+    `None` if `node` is not a group node or if its contents are anything else
+    than plain characters.
+    """
+    if node is None or not node.isNodeType(LatexGroupNode):
+        return None
+    chars = ''
+    for n in node.nodelist:
+        if n is None or not n.isNodeType(LatexCharsNode):
+            return None
+        chars += n.chars
+    return chars
+
+
+def _newcommand_get_macroname(nodeargd):
+    r"""
+    Retrieve the name of the macro that a ``\newcommand``-like call declares.
+    The name is given either as a single macro token (``\newcommand\foo``) or
+    as a braced group holding a single macro token (``\newcommand{\foo}``).
+    """
+    if nodeargd is None or nodeargd.argnlist is None or len(nodeargd.argnlist) < 2:
+        return None
+    name_node = nodeargd.argnlist[1]
+    if name_node is None:
+        return None
+    if name_node.isNodeType(LatexMacroNode):
+        return name_node.macroname
+    if name_node.isNodeType(LatexGroupNode):
+        for n in name_node.nodelist:
+            if n is not None and n.isNodeType(LatexMacroNode):
+                return n.macroname
+    return None
+
+
+def _newcommand_get_numargs(nodeargd):
+    r"""
+    Retrieve the number of arguments that a ``\newcommand``-like call declares
+    in its first optional argument (``[2]``).  Returns `None` if the number
+    cannot be determined; `0` if no such optional argument was given.
+    """
+    if nodeargd is None or nodeargd.argnlist is None or len(nodeargd.argnlist) < 3:
+        return 0
+    numargs_node = nodeargd.argnlist[2]
+    if numargs_node is None:
+        return 0
+    chars = _group_node_chars(numargs_node)
+    if chars is None:
+        return None
+    try:
+        return int(chars.strip())
+    except ValueError:
+        return None
+
+
+def _newcommand_like_arguments_spec_list(nodeargd):
+    r"""
+    Compute the argument specification of the macro or environment that a
+    ``\newcommand``/``\newenvironment``-like call declares, from the call's
+    parsed arguments.  A present second optional argument (the default value
+    of the declared argument) makes the first declared argument optional.
+    Returns `None` if the declared signature cannot be determined.
+    """
+    numargs = _newcommand_get_numargs(nodeargd)
+    if numargs is None:
+        return None
+    has_optarg = (
+        nodeargd.argnlist is not None
+        and len(nodeargd.argnlist) > 3
+        and nodeargd.argnlist[3] is not None
+    )
+    arguments_spec_list = []
+    if has_optarg:
+        arguments_spec_list.append('[')
+        numargs -= 1
+    arguments_spec_list.extend(['{'] * numargs)
+    return arguments_spec_list
+
+
+def _newcommand_like_make_after_parsing_state_delta(parsed_node, latex_walker):
+    r"""
+    Extend the latex context with a spec for the macro that a
+    ``\newcommand``/``\renewcommand``/``\providecommand`` call declares, so
+    that subsequent invocations in the same scope are parsed with the declared
+    argument signature.
+    """
+    if parsed_node.nodeargd is None:
+        return None
+    macroname = _newcommand_get_macroname(parsed_node.nodeargd)
+    if macroname is None:
+        return None
+    arguments_spec_list = _newcommand_like_arguments_spec_list(parsed_node.nodeargd)
+    if arguments_spec_list is None:
+        return None
+    return ParsingStateDeltaExtendLatexContextDb(
+        extend_latex_context={
+            'macros': [
+                MacroSpec(macroname, arguments_spec_list=arguments_spec_list)
+            ],
+        }
+    )
+
+
+def _newenvironment_like_make_after_parsing_state_delta(parsed_node, latex_walker):
+    r"""
+    Extend the latex context with a spec for the environment that a
+    ``\newenvironment``/``\renewenvironment``/``\provideenvironment`` call
+    declares, so that subsequent invocations in the same scope are parsed with
+    the declared argument signature.
+    """
+    nodeargd = parsed_node.nodeargd
+    if nodeargd is None or nodeargd.argnlist is None or len(nodeargd.argnlist) < 2:
+        return None
+    environmentname = _group_node_chars(nodeargd.argnlist[1])
+    if not environmentname:
+        return None
+    environmentname = environmentname.strip()
+    if not environmentname:
+        return None
+    arguments_spec_list = _newcommand_like_arguments_spec_list(nodeargd)
+    if arguments_spec_list is None:
+        return None
+    return ParsingStateDeltaExtendLatexContextDb(
+        extend_latex_context={
+            'environments': [
+                EnvironmentSpec(environmentname,
+                                arguments_spec_list=arguments_spec_list)
+            ],
+        }
+    )
+
+
 
 specs = [
     #
@@ -211,12 +357,24 @@ specs = [
             std_macro('addlength', True, 2),
             std_macro('setcounter', True, 2),
             std_macro('addcounter', True, 2),
-            std_macro('newcommand', "*{[[{"),
-            std_macro('renewcommand', "*{[[{"),
-            std_macro('providecommand', "*{[[{"),
-            std_macro('newenvironment', "*{[[{{"),
-            std_macro('renewenvironment', "*{[[{{"),
-            std_macro('provideenvironment', "*{[[{{"),
+            MacroSpec('newcommand', '*{[[{',
+                      make_after_parsing_state_delta=\
+                          _newcommand_like_make_after_parsing_state_delta),
+            MacroSpec('renewcommand', '*{[[{',
+                      make_after_parsing_state_delta=\
+                          _newcommand_like_make_after_parsing_state_delta),
+            MacroSpec('providecommand', '*{[[{',
+                      make_after_parsing_state_delta=\
+                          _newcommand_like_make_after_parsing_state_delta),
+            MacroSpec('newenvironment', '*{[[{{',
+                      make_after_parsing_state_delta=\
+                          _newenvironment_like_make_after_parsing_state_delta),
+            MacroSpec('renewenvironment', '*{[[{{',
+                      make_after_parsing_state_delta=\
+                          _newenvironment_like_make_after_parsing_state_delta),
+            MacroSpec('provideenvironment', '*{[[{{',
+                      make_after_parsing_state_delta=\
+                          _newenvironment_like_make_after_parsing_state_delta),
 
             std_macro('DeclareMathOperator', '*{{'),
             # \operatorname{tr} and \operatorname*{ess\,sup}, for a function

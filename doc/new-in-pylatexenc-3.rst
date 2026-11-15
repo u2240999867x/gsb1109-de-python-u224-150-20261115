@@ -70,7 +70,14 @@ architecture with extended and more flexible functionality:
 - Parsing state changes are described by explicit *parsing state delta* objects
   (:py:class:`~pylatexenc.latexnodes.ParsingStateDelta`, so a construct can now
   legitimately alter how the rest of the document is parsed — including
-  extending the macro database mid-document.
+  extending the macro database mid-document.  The macros
+  ``\newcommand``/``\renewcommand``/``\providecommand`` and
+  ``\newenvironment``/``\renewenvironment``/``\provideenvironment`` do exactly
+  that: invocations that follow the declaration in the same scope are parsed
+  with the argument signature it declares.  The declaration takes effect only
+  where LaTeX scoping rules say it should — earlier invocations keep the
+  previous behavior, and the previous definition is restored once the group
+  (or environment) that contains the declaration ends.
 
 - Errors got their own little hierarchy.  `LatexWalkerParseError` now derives
   from a new

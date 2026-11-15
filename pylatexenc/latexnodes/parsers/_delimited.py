@@ -944,7 +944,7 @@ class LatexDelimitedGroupParserInfo(LatexDelimitedExpressionParserInfo):
 
 
     def make_child_parsing_state(self, parsing_state, node_class, token):
-        
+
         # as long as the child is not a group node with any
         # temporarily-promoted-group-delimiter-tokens as opening delimiter,
         # restore the parent parsing state.  (Enable constructions like "[{[}]")
@@ -953,8 +953,26 @@ class LatexDelimitedGroupParserInfo(LatexDelimitedExpressionParserInfo):
             # group with same delimiter, keep contents parsing state
             return self.contents_parsing_state
 
-        # return the outer, original parsing state.
-        return self.parsing_state
+        # If the group delimiters were temporarily promoted while parsing this
+        # group (as in "[{[}]"), revert them for child nodes; but keep any
+        # other parsing state updates that happened within the group (say, a
+        # "\renewcommand" that redefined a macro mid-group).  The delimiter
+        # list is compared by identity: any change to the delimiters, be it a
+        # temporary promotion or an update from within the group, produces a
+        # new list object.
+        if parsing_state.latex_group_delimiters is not \
+           self.parsing_state.latex_group_delimiters:
+            if parsing_state is self.contents_parsing_state:
+                # no updates happened within the group; return the original
+                # parsing state object itself
+                return self.parsing_state
+            parsing_state = parsing_state.sub_context(
+                latex_group_delimiters=self.parsing_state.latex_group_delimiters
+            )
+
+        # return the current parsing state, which accounts for any updates
+        # that happened while parsing the group contents
+        return parsing_state
 
 
 
