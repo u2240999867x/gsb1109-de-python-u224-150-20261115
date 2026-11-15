@@ -74,6 +74,7 @@ from . import tftp
 from . import tns
 from . import tpkt
 from . import udp
+from . import udp_report
 from . import vrrp
 from . import yahoo
 

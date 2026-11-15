@@ -519,6 +519,14 @@ dpkt.udp module
     :undoc-members:
     :show-inheritance:
 
+dpkt.udp_report module
+----------------------
+
+.. automodule:: dpkt.udp_report
+    :members:
+    :undoc-members:
+    :show-inheritance:
+
 dpkt.vrrp module
 ----------------
 
