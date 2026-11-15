@@ -42,6 +42,56 @@ Note the length of the `evtx_dump.py` script: its only 20 lines.  Now, review th
 Working with python-evtx is really easy!
 
 
+Clock adjustments and event ordering
+------------------------------------
+
+When a host clock is calibrated backwards, an event written after the
+calibration carries an older timestamp than events written before it. Sorting
+only on the declared timestamp then files the new event under an old shift.
+The `Evtx.TimeSkew` module keeps three facts separate and lets each caller pick
+the interpretation to query:
+
+1. the original recording order (a dense `sequence` plus the EVTX `record_num`,
+   which stays a distinct identity even when timestamps are equal);
+2. the declared time, exactly as stored;
+3. clock-adjustment intervals, each an evidence-bearing half-open window
+   `[start, end)` anchored at the physical sequence where the skewed regime
+   begins.
+
+Timestamps are never rewritten without evidence. Build a timeline without
+adjustments and every event keeps its declared time; supply intervals detected
+from backward steps (or hand-built ones) to enable the normalized basis. Equal
+timestamps are always tie-broken by recording order.
+
+    import Evtx.Evtx as evtx
+    from Evtx.TimeSkew import (
+        EventTimeline,
+        TIME_NORMALIZED,
+        ORDER_NORMALIZED,
+        detect_clock_adjustments,
+        iter_record_events,
+    )
+
+    with evtx.Evtx("Security.evtx") as log:
+        events = list(iter_record_events(log))
+
+    # no evidence, no correction: normalized time equals declared time
+    raw = EventTimeline(events)
+
+    # evidence-backed correction inferred from backward timestamp steps
+    adjustments = detect_clock_adjustments(events)
+    timeline = EventTimeline(events, adjustments)
+    rows = timeline.query(time_basis=TIME_NORMALIZED, order=ORDER_NORMALIZED)
+
+The `evtx_time_report` script exposes the same choice on the command line:
+
+    evtx_time_report Security.evtx                                  # declared time, recorded order
+    evtx_time_report Security.evtx --detect-adjustments \
+        --basis normalized --order normalized                      # corrected timeline
+    evtx_time_report Security.evtx --basis declared --order declared \
+        --start "2026-11-01 00:00:00" --end "2026-11-02 00:00:00"  # shift window on declared time
+
+
 Installation
 ------------
 Updates to python-evtx are pushed to PyPi, so you can install the module using `pip`.  For example:
