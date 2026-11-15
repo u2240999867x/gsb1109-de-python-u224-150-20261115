@@ -126,6 +126,15 @@ class RarFile:
     #: Archive comment.  Unicode string or None.
     comment: str | None = None
 
+    #: Original archive comment bytes, or None.
+    orig_comment: bytes | None = None
+
+    #: Codec used to produce :attr:`comment`.
+    comment_encoding: str | None = None
+
+    #: Undecodable byte spans in :attr:`orig_comment`, as ``(offset, bytes)`` pairs.
+    comment_invalid: tuple[tuple[int, bytes], ...] = ()
+
     _file_parser: RAR3Parser | RAR5Parser | None = None
 
     def __init__(self, file: str | Path | FileLike,
@@ -407,6 +416,9 @@ class RarFile:
 
         self._file_parser.parse()
         self.comment = self._file_parser.comment
+        self.orig_comment = self._file_parser.orig_comment
+        self.comment_encoding = self._file_parser.comment_encoding
+        self.comment_invalid = self._file_parser.comment_invalid
 
     def _extract_one(self, info: RarInfo, path: str | Path | None, pwd: str | None,
                      set_attrs: bool) -> str | None:

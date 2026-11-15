@@ -90,12 +90,55 @@ class RarInfo(RarEntry):
             File name with relative path.
             Path separator is "/".  Always unicode string.
 
+        orig_filename
+            Original filename bytes as stored in the archive.  For RAR3
+            Unicode filenames this is the legacy byte name used as fallback.
+
+        filename_raw
+            Exact filename field bytes from the archive header.  For RAR3
+            Unicode filenames this also contains the NUL separator and the
+            encoded Unicode suffix.
+
+        filename_unicode
+            RAR3 Unicode filename suffix bytes, or None if the name was not
+            stored in the RAR3 Unicode filename encoding.
+
+        filename_encoding
+            Codec used to produce :attr:`filename`, or None if no name
+            is available.  For RAR3 Unicode filenames this is ``utf-16le``,
+            decoded through the RAR Unicode filename encoding.
+
+        filename_decode_bytes
+            Exact byte stream the :attr:`filename_encoding` applies to and
+            the :attr:`filename_invalid` offsets refer to.  It equals
+            :attr:`orig_filename` for ordinary names and the decoded
+            UTF-16LE stream for RAR3 Unicode filenames.
+
+        filename_invalid
+            Undecodable byte spans, as ``(offset, bytes)`` pairs.  Offsets
+            refer to :attr:`filename_decode_bytes`.  These bytes are left
+            out of :attr:`filename` instead of being replaced.
+
         date_time
             File modification timestamp.   As tuple of (year, month, day, hour, minute, second).
             RAR5 allows archives where it is missing, it's None then.
 
         comment
             Optional file comment field.  Unicode string.  (RAR3-only)
+
+            Undecodable bytes are left out of this value, see
+            :attr:`comment_invalid`.
+
+        orig_comment
+            Original comment bytes after decompression.  (RAR3-only)
+
+        comment_encoding
+            Codec used to produce :attr:`comment`.  (RAR3-only)
+
+        comment_invalid
+            Undecodable byte spans in :attr:`orig_comment`, as
+            ``(offset, bytes)`` pairs.  Offsets refer to
+            :attr:`orig_comment`.  (RAR3-only)
 
         file_size
             Uncompressed size.
@@ -179,6 +222,11 @@ class RarInfo(RarEntry):
     # zipfile-compatible fields
     filename: str
     orig_filename: bytes
+    filename_raw: bytes = b""
+    filename_unicode: bytes | None = None
+    filename_encoding: str | None = None
+    filename_decode_bytes: bytes = b""
+    filename_invalid: tuple[tuple[int, bytes], ...] = ()
     file_size: int
     compress_size: int | None = None
     date_time: DateTuple | None = None
@@ -197,6 +245,9 @@ class RarInfo(RarEntry):
 
     # rar3-only field
     comment: str | None = None
+    orig_comment: bytes | None = None
+    comment_encoding: str | None = None
+    comment_invalid: tuple[tuple[int, bytes], ...] = ()
 
     # rar5-only fields
     blake2sp_hash: bytes | None = None
@@ -293,6 +344,9 @@ class Rar3MainInfo(RarEntry):
 
     type: int = RAR_BLOCK_MAIN
     comment: str | None
+    orig_comment: bytes | None = None
+    comment_encoding: str | None = None
+    comment_invalid: tuple[tuple[int, bytes], ...] = ()
 
     def _must_disable_hack(self) -> bool:
         if self.flags & (RAR_MAIN_SOLID | RAR_MAIN_PASSWORD):

@@ -38,6 +38,21 @@ Features:
 * Delay symlink creation in :meth:`RarFile.extractall`
   [`#148 <https://github.com/markokr/rarfile/pull/148>`_]
 
+Fixes:
+
+* RAR3: Keep the original filename and comment bytes next to their
+  decoded values, including the exact encoding used.  Undecodable bytes
+  are reported separately instead of being replaced with U+FFFD.
+  A file-comment block now stays with the entry it follows, even when
+  several entries share the same name.
+
+  New fields: :attr:`RarInfo.orig_comment`,
+  :attr:`RarInfo.comment_encoding`, :attr:`RarInfo.comment_invalid`,
+  :attr:`RarInfo.filename_raw`, :attr:`RarInfo.filename_unicode`,
+  :attr:`RarInfo.filename_encoding`,
+  :attr:`RarInfo.filename_decode_bytes` and
+  :attr:`RarInfo.filename_invalid`.
+
 Version 4.5 (2026-08-02)
 ------------------------
 

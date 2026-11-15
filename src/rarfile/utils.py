@@ -1,16 +1,18 @@
 """Various low-level utitlites.
 """
 
+import codecs
 import io
 import os
 import re
 import shutil
 import sys
+from contextvars import ContextVar
 from datetime import date, datetime, tzinfo
 from pathlib import Path
 from tempfile import mkstemp
 from types import TracebackType
-from typing import Protocol, SupportsIndex, TypeAlias, cast
+from typing import NamedTuple, Protocol, SupportsIndex, TypeAlias, cast
 
 from . import config
 
@@ -26,6 +28,7 @@ WritableBuffer: TypeAlias = bytearray | memoryview | Buffer
 
 __all__ = (
     "is_filelike", "XFile", "UnicodeFilename", "nsdatetime",
+    "DecodeResult", "decode_bytes", "decode_with_label",
     "to_nsdatetime", "to_nsecs", "to_datetime",
     "parse_dos_time", "sanitize_filename", "membuf_tempfile",
     "FileLike", "PathLike", "RawFileLike", "DateTuple",
@@ -34,6 +37,83 @@ __all__ = (
 
 PathLike: TypeAlias = str | bytes | Path
 DateTuple: TypeAlias = tuple[int, int, int, int, int, int]
+
+
+class DecodeResult(NamedTuple):
+    """Result of decoding a byte string.
+
+    ``text`` contains only the successfully decoded parts.  ``data`` is
+    the byte stream that was decoded, so ``invalid`` offsets always refer
+    to it.  ``invalid`` lists undecodable byte spans as ``(offset, bytes)``
+    pairs in source order, so callers can keep them separately instead of
+    receiving replacement characters.
+    """
+
+    text: str
+    encoding: str
+    invalid: tuple[tuple[int, bytes], ...] = ()
+    data: bytes = b""
+
+
+_INVALID_SPANS: ContextVar[list[tuple[int, int]]] = ContextVar("_INVALID_SPANS")
+
+
+def _ignore_invalid(exc: UnicodeError) -> tuple[str, int]:
+    """Record an undecodable span and tell the decoder to skip it."""
+    start = getattr(exc, "start", 0)
+    end = getattr(exc, "end", start + 1)
+    _INVALID_SPANS.get().append((start, end))
+    return "", end
+
+
+codecs.register_error("rarfile.invalid", _ignore_invalid)
+
+
+def decode_bytes(val: bytes, encoding: str, errors: str = "strict") -> DecodeResult:
+    """Decode *val* using *encoding*, separating out invalid byte spans.
+
+    With ``errors="strict"`` the returned text is built from the valid
+    parts only and each invalid span is collected in ``invalid``.  With
+    any other error handler the decoder result is returned as-is.
+    """
+    if errors != "strict":
+        return DecodeResult(val.decode(encoding, errors), encoding, data=val)
+
+    # short-circuit: valid input needs no span bookkeeping
+    try:
+        return DecodeResult(val.decode(encoding), encoding, data=val)
+    except UnicodeError:
+        pass
+
+    spans: list[tuple[int, int]] = []
+    token = _INVALID_SPANS.set(spans)
+    try:
+        text = val.decode(encoding, "rarfile.invalid")
+    finally:
+        _INVALID_SPANS.reset(token)
+
+    merged: list[tuple[int, int]] = []
+    for start, end in spans:
+        if merged and merged[-1][1] == start:
+            merged[-1] = (merged[-1][0], end)
+        else:
+            merged.append((start, end))
+    invalid = tuple((start, val[start:end]) for start, end in merged)
+    return DecodeResult(text, encoding, invalid, val)
+
+
+def decode_with_label(val: bytes, encodings: tuple[str, ...], fallback: str) -> DecodeResult:
+    """Try *encodings* in order, then decode with *fallback*.
+
+    The first codec that decodes *val* completely is used.  If none does,
+    the fallback codec is applied with invalid spans separated out.
+    """
+    for enc in encodings:
+        try:
+            return DecodeResult(val.decode(enc), enc, (), val)
+        except UnicodeError:
+            pass
+    return decode_bytes(val, fallback)
 
 
 class FileLike(Protocol):
@@ -157,8 +237,8 @@ class UnicodeFilename:
         self.buf.append(hi)
         self.pos += 1
 
-    def decode(self) -> str:
-        """Decompress compressed UTF16 value."""
+    def decode_result(self) -> DecodeResult:
+        """Decompress compressed UTF16 value, keeping invalid spans separate."""
         hi = self.enc_byte()
         flags = flagbits = 0
         while self.encpos < len(self.encdata):
@@ -183,7 +263,11 @@ class UnicodeFilename:
                 else:
                     for _ in range(n + 2):
                         self.put(self.std_byte(), 0)
-        return self.buf.decode("utf-16le", "replace")
+        return decode_bytes(bytes(self.buf), "utf-16le")
+
+    def decode(self) -> str:
+        """Decompress compressed UTF16 value."""
+        return self.decode_result().text
 
 
 # pylint: disable=arguments-differ,signature-differs,redefined-outer-name

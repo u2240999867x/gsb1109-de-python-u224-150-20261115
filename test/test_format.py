@@ -285,3 +285,100 @@ def test_newvols_err() -> None:
 def test_versions(fn: str) -> None:
     with rarfile.RarFile(fn) as rf:
         assert rf.namelist() == ["versioned.txt"]
+
+
+def test_comment_provenance() -> None:
+    with rarfile.RarFile("test/files/rar3-comment-plain.rar") as rf:
+        assert rf.comment == "RARcomment\n"
+        assert rf.orig_comment == b"RARcomment\n"
+        assert rf.comment_encoding == "windows-1252"
+        assert rf.comment_invalid == ()
+
+        inf = rf.getinfo("file1.txt")
+        assert inf.comment == "Comment1v2\n"
+        assert inf.orig_comment == b"Comment1v2\n"
+        assert inf.comment_encoding == "windows-1252"
+        assert inf.comment_invalid == ()
+
+
+def test_comment_invalid_bytes_are_separate() -> None:
+    from rarfile.utils import decode_bytes
+
+    # 0x81 is undefined in windows-1252
+    data = b"ok\x81tail"
+    res = decode_bytes(data, "windows-1252")
+    assert res.text == "oktail"
+    assert res.invalid == ((2, b"\x81"),)
+    assert "�" not in res.text
+
+
+def test_comment_stays_with_own_entry() -> None:
+    # comment bytes are decoded per entry, not looked up by filename
+    with rarfile.RarFile("test/files/rar3-comment-plain.rar") as rf:
+        names = [inf.filename for inf in rf.infolist()]
+        comments = [inf.comment for inf in rf.infolist()]
+    assert names == ["file1.txt", "file2.txt"]
+    assert comments == ["Comment1v2\n", "Comment2v2\n"]
+
+
+def _rar3_block(btype: int, flags: int, body: bytes = b"") -> bytes:
+    import struct
+    from binascii import crc32
+
+    hdr = struct.pack("<HBHH", 0, btype, flags, 7 + len(body)) + body
+    return struct.pack("<H", crc32(hdr[2:]) & 0xFFFF) + hdr[2:]
+
+
+def _rar3_file(name: bytes, flags: int = 0) -> bytes:
+    import struct
+    from binascii import crc32
+
+    fields = struct.pack("<LLBLLBBHL", 0, 0, 3, crc32(b""), 0, 29, 0x30, len(name), 0o100644)
+    return _rar3_block(0x74, flags | 0x8000, fields + name)
+
+
+def _rar3_cmt(data: bytes, solid: bool = True) -> bytes:
+    import struct
+    from binascii import crc32
+
+    name = b"CMT"
+    fields = struct.pack("<LLBLLBBHL", len(data), len(data), 3, crc32(data), 0, 29, 0x30, 3, 0o100644)
+    flags = 0x8000 | (0x10 if solid else 0)
+    return _rar3_block(0x7A, flags, fields + name) + data
+
+
+def test_comment_ownership_same_name(tmp_path: object) -> None:
+    from pathlib import Path
+
+    assert isinstance(tmp_path, Path)
+    data = b"Rar!\x1a\x07\x00" + _rar3_block(0x73, 0, b"\0" * 6)
+    data += _rar3_cmt(b"archive-note", solid=False)
+    data += _rar3_file(b"a.txt") + _rar3_cmt(b"first")
+    data += _rar3_file(b"a.txt") + _rar3_cmt(b"second")
+    data += _rar3_block(0x7B, 0x4000)
+    fn = tmp_path / "dups.rar"
+    fn.write_bytes(data)
+
+    with rarfile.RarFile(fn) as rf:
+        assert rf.comment == "archive-note"
+        assert [(inf.filename, inf.comment) for inf in rf.infolist()] == [
+            ("a.txt", "first"),
+            ("a.txt", "second"),
+        ]
+
+
+def test_comment_skipped_version_does_not_leak(tmp_path: object) -> None:
+    from pathlib import Path
+
+    assert isinstance(tmp_path, Path)
+    data = b"Rar!\x1a\x07\x00" + _rar3_block(0x73, 0, b"\0" * 6)
+    data += _rar3_file(b"v.txt", flags=0x800) + _rar3_cmt(b"old-version")
+    data += _rar3_file(b"v.txt") + _rar3_cmt(b"current")
+    data += _rar3_block(0x7B, 0x4000)
+    fn = tmp_path / "versions.rar"
+    fn.write_bytes(data)
+
+    with rarfile.RarFile(fn) as rf:
+        assert [(inf.filename, inf.comment) for inf in rf.infolist()] == [
+            ("v.txt", "current"),
+        ]

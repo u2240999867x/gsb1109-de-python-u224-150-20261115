@@ -12,7 +12,7 @@ from hashlib import sha256
 from pathlib import Path
 from struct import Struct
 from tempfile import mkstemp
-from typing import TypedDict, cast
+from typing import NamedTuple, TypedDict, cast
 
 from . import config
 from .backend import custom_popen, tool_setup
@@ -62,8 +62,9 @@ from .info import (
 )
 from .stream import BytesReader, DirectReader, PipeReader, RarExtFile
 from .utils import (
-    DateTuple, FileLike, PathLike, UnicodeFilename, XFile, is_filelike,
-    membuf_tempfile, parse_dos_time, to_datetime, to_nsdatetime,
+    DateTuple, DecodeResult, FileLike, PathLike, UnicodeFilename, XFile,
+    decode_bytes, decode_with_label, is_filelike, membuf_tempfile,
+    parse_dos_time, to_datetime, to_nsdatetime,
 )
 
 if sys.version_info < (3, 12):
@@ -106,6 +107,11 @@ class InfoArgs(CommonArgs):
 
     filename: str
     orig_filename: bytes
+    filename_raw: NotRequired[bytes]
+    filename_unicode: NotRequired[bytes | None]
+    filename_encoding: NotRequired[str | None]
+    filename_decode_bytes: NotRequired[bytes]
+    filename_invalid: NotRequired[tuple[tuple[int, bytes], ...]]
     file_size: int
     compress_size: int
     extract_version: int
@@ -119,6 +125,9 @@ class InfoArgs(CommonArgs):
     atime: NotRequired[datetime | None]
     arctime: NotRequired[datetime | None]
     comment: NotRequired[str | None]
+    orig_comment: NotRequired[bytes | None]
+    comment_encoding: NotRequired[str | None]
+    comment_invalid: NotRequired[tuple[tuple[int, bytes], ...]]
     CRC: NotRequired[int]
     blake2sp_hash: NotRequired[bytes]
     file_redir: NotRequired[tuple[int, int, str]]
@@ -126,6 +135,15 @@ class InfoArgs(CommonArgs):
     file_owner: NotRequired[tuple[bytes | None, bytes | None, int | None, int | None]]
     _md_class: NotRequired[type[HashContext]]
     _md_expect: NotRequired[int | bytes | None]
+
+
+class CommentFields(NamedTuple):
+    """Decoded and raw comment data for one comment block."""
+
+    comment: str | None
+    orig_comment: bytes | None = None
+    comment_encoding: str | None = None
+    comment_invalid: tuple[tuple[int, bytes], ...] = ()
 
 
 class CommonParser:
@@ -139,6 +157,11 @@ class CommonParser:
     _parse_error: str | None = None
     _password: str | None = None
     comment: str | None = None
+    orig_comment: bytes | None = None
+    comment_encoding: str | None = None
+    comment_invalid: tuple[tuple[int, bytes], ...] = ()
+    #: entry that a trailing file-comment block belongs to
+    _comment_target: RarInfo | None = None
 
     def __init__(self, rarfile: PathLike | FileLike, password: str | None, crc_check: bool, charset: str | None, strict: bool,
                  info_cb: Callable[[RarEntry], None] | None, sfx_offset: int, part_only: bool):
@@ -276,6 +299,7 @@ class CommonParser:
                     self._vol_list.append(volfile)
                     self._main = None
                     self._hdrenc_main = None
+                    self._comment_target = None
                     continue
                 break
             h.volume = volume
@@ -567,17 +591,26 @@ class RAR3Parser(CommonParser):
             if flags & RAR_MAIN_ENCRYPTVER:
                 pos += 1
             crc_pos = pos
-            comment = None
+            main_comment = CommentFields(None)
             if flags & RAR_MAIN_COMMENT:
-                comment, _ = self._parse_subblocks(hdata, pos)
-            h = Rar3MainInfo(comment=comment, **common_args)
+                main_comment = self._parse_subblocks(hdata, pos)
+            h = Rar3MainInfo(
+                comment=main_comment.comment,
+                orig_comment=main_comment.orig_comment,
+                comment_encoding=main_comment.comment_encoding,
+                comment_invalid=main_comment.comment_invalid,
+                **common_args,
+            )
         elif btype in (RAR_BLOCK_FILE, RAR_BLOCK_SUB):
             file_args, salt, name_size, pos = self._parse_file_header(hdata, pos - 4, common_args)
             if btype == RAR_BLOCK_FILE:
                 crc_pos = pos
                 if flags & RAR_FILE_COMMENT:
-                    comment, pos = self._parse_subblocks(hdata, pos)
-                    file_args["comment"] = comment
+                    file_comment = self._parse_subblocks(hdata, pos)
+                    file_args["comment"] = file_comment.comment
+                    file_args["orig_comment"] = file_comment.orig_comment
+                    file_args["comment_encoding"] = file_comment.comment_encoding
+                    file_args["comment_invalid"] = file_comment.comment_invalid
                 h = Rar3Info(salt=salt, _name_size=name_size, **file_args)
             else:
                 crc_pos = header_size
@@ -661,28 +694,41 @@ class RAR3Parser(CommonParser):
             add_size = compress_size
 
         name, pos = load_bytes(hdata, name_size, pos)
+        filename_raw = name
+        filename_unicode: bytes | None = None
         if flags & RAR_FILE_UNICODE and b"\0" in name:
             # stored in custom encoding
             nul = name.find(b"\0")
             orig_filename = name[:nul]
-            u = UnicodeFilename(orig_filename, name[nul + 1:])
-            filename = u.decode()
+            filename_unicode = name[nul + 1:]
+            u = UnicodeFilename(orig_filename, filename_unicode)
+            res = u.decode_result()
 
             # if parsing failed fall back to simple name
             if u.failed:
-                filename = self._decode(orig_filename)
+                res = self._decode(orig_filename)
+                filename_encoding = res.encoding
+                filename_unicode = None
+            else:
+                filename_encoding = "utf-16le"
+            filename = res.text
         elif flags & RAR_FILE_UNICODE:
             # stored in UTF8
             orig_filename = name
-            filename = name.decode("utf8", "replace")
+            res = decode_bytes(name, "utf8")
+            filename = res.text
+            filename_encoding = res.encoding
         else:
             nul = name.find(b"\0")
             if nul >= 0:
                 name = name[:nul]
             # stored in random encoding
             orig_filename = name
-            filename = self._decode(name)
+            res = self._decode(name)
+            filename = res.text
+            filename_encoding = res.encoding
         filename = filename.replace("\\", "/").rstrip("/")
+        filename_invalid = res.invalid
 
         # change separator, dir suffix is added by caller
         file_args: InfoArgs = {
@@ -704,6 +750,11 @@ class RAR3Parser(CommonParser):
             "file_size": file_size,
             "orig_filename": orig_filename,
             "filename": filename,
+            "filename_raw": filename_raw,
+            "filename_unicode": filename_unicode,
+            "filename_encoding": filename_encoding,
+            "filename_decode_bytes": res.data,
+            "filename_invalid": filename_invalid,
             "_md_class": CRC32Context,
             "_md_expect": crc,
         }
@@ -730,10 +781,10 @@ class RAR3Parser(CommonParser):
         old_sub_type: int = fields[0]
         return old_sub_type
 
-    def _parse_subblocks(self, hdata: bytes, pos: int) -> tuple[str | None, int]:
+    def _parse_subblocks(self, hdata: bytes, pos: int) -> CommentFields:
         """Find old-style comment subblock
         """
-        comment = None
+        res = CommentFields(None)
         while pos < len(hdata):
             # ordinary block header
             t = S_BLK_HDR.unpack_from(hdata, pos)
@@ -756,12 +807,12 @@ class RAR3Parser(CommonParser):
                 cmt = rar3_decompress(ver, meth, data, declen, sflags,
                                       crc, self._password)
                 if not self._crc_check or (crc32(cmt) & 0xFFFF == crc):
-                    comment = self._decode_comment(cmt)
+                    res = self._decode_comment(cmt)
 
             pos = pos_next
-        return comment, pos
+        return res
 
-    def _read_comment_v3(self, inf: Rar3Info, pwd: str | None = None) -> str | None:
+    def _read_comment_v3(self, inf: Rar3Info, pwd: str | None = None) -> CommentFields | None:
         assert inf.volume_file is not None and inf.compress_size is not None
 
         if inf.compress_size > RAR_MAX_COMMENT:
@@ -786,26 +837,48 @@ class RAR3Parser(CommonParser):
 
         return self._decode_comment(cmt)
 
-    def _decode(self, val: bytes) -> str:
-        for c in config.TRY_ENCODINGS:
-            try:
-                return val.decode(c)
-            except UnicodeError:
-                pass
-        return val.decode(self._charset, "replace")
+    def _decode(self, val: bytes) -> DecodeResult:
+        return decode_with_label(val, config.TRY_ENCODINGS, self._charset)
 
-    def _decode_comment(self, val: bytes) -> str:
-        return self._decode(val)
+    def _decode_comment(self, val: bytes) -> CommentFields:
+        """Decode comment using the configured charset.
+
+        Comments do not carry a Unicode filename marker, so trying
+        unrelated encodings would change their meaning.  Bytes that the
+        configured charset cannot represent are reported separately.
+        """
+        res = decode_bytes(val, self._charset)
+        return CommentFields(res.text, val, res.encoding, res.invalid)
+
+    def _set_comment(self, target: RarInfo | None, fields: CommentFields | None) -> None:
+        """Attach comment fields to a specific entry."""
+        if target is None or not fields:
+            return
+        target.comment = fields.comment
+        target.orig_comment = fields.orig_comment
+        target.comment_encoding = fields.comment_encoding
+        target.comment_invalid = fields.comment_invalid
+
+    def _set_archive_comment(self, fields: CommentFields | None) -> None:
+        """Attach archive comment fields."""
+        if not fields:
+            return
+        self.comment = fields.comment
+        self.orig_comment = fields.orig_comment
+        self.comment_encoding = fields.comment_encoding
+        self.comment_invalid = fields.comment_invalid
 
     def process_entry(self, fd: XFile, item: RarEntry) -> None:
         if item.type == RAR_BLOCK_FILE:
             assert isinstance(item, Rar3Info)
             # use only first part
             if item.flags & RAR_FILE_VERSION:
-                pass    # skip old versions
+                # Comments for skipped versions must not move to another entry.
+                self._comment_target = None
             elif (item.flags & RAR_FILE_SPLIT_BEFORE) == 0:
                 self._info_map[item.filename.rstrip("/")] = item
                 self._info_list.append(item)
+                self._comment_target = item
             elif len(self._info_list) > 0:
                 # final crc is in last block
                 old = self._info_list[-1]
@@ -813,31 +886,40 @@ class RAR3Parser(CommonParser):
                 old._md_expect = item._md_expect
                 assert old.compress_size is not None and item.compress_size is not None
                 old.compress_size += item.compress_size
+                # a trailing comment belongs to the logical split entry
+                self._comment_target = old
+            else:
+                self._comment_target = None
 
         # parse new-style comment
         elif item.type == RAR_BLOCK_SUB:
             assert isinstance(item, Rar3Info)
             if item.filename != "CMT":
-                pass
+                # unrelated subblock breaks the file-comment association
+                self._comment_target = None
             elif item.flags & (RAR_FILE_SPLIT_BEFORE | RAR_FILE_SPLIT_AFTER):
                 pass
             elif item.flags & RAR_FILE_SOLID:
-                # file comment
-                cmt = self._read_comment_v3(item, self._password)
-                if len(self._info_list) > 0:
-                    old = self._info_list[-1]
-                    old.comment = cmt
+                # file comment, belongs to the preceding file record only
+                fields = self._read_comment_v3(item, self._password)
+                self._set_comment(self._comment_target, fields)
             else:
                 # archive comment
-                cmt = self._read_comment_v3(item, self._password)
-                self.comment = cmt
+                fields = self._read_comment_v3(item, self._password)
+                self._set_archive_comment(fields)
 
         elif item.type == RAR_BLOCK_MAIN:
             assert isinstance(item, Rar3MainInfo)
+            self._comment_target = None
             if item.flags & RAR_MAIN_COMMENT:
-                self.comment = item.comment
+                self._set_archive_comment(CommentFields(
+                    item.comment, item.orig_comment,
+                    item.comment_encoding, item.comment_invalid,
+                ))
             if item.flags & RAR_MAIN_PASSWORD:
                 self._needs_password = True
+        else:
+            self._comment_target = None
 
     # put file compressed data into temporary .rar archive, and run
     # unrar on that, thus avoiding unrar going over whole archive
@@ -1013,12 +1095,14 @@ class RAR5Parser(CommonParser):
         file_host_os, pos = load_vint(hdata, pos)
 
         name, pos = load_vstr(hdata, pos)
+        filename_raw = name
         nul = name.find(b"\0")
         if nul >= 0:
             name = name[:nul]
 
         # use compatible values
         host_os = RAR_OS_WIN32 if file_host_os == RAR5_OS_WINDOWS else RAR_OS_UNIX
+        name_res = decode_bytes(name, "utf8")
 
         file_args: InfoArgs = {
             "flags": common_args["flags"],
@@ -1037,7 +1121,12 @@ class RAR5Parser(CommonParser):
             "host_os": host_os,
             "compress_type": RAR_M0 + ((file_compress_flags >> 7) & 7),
             "orig_filename": name,
-            "filename": name.decode("utf8", "replace").rstrip("/"),
+            "filename": name_res.text.rstrip("/"),
+            "filename_raw": filename_raw,
+            "filename_unicode": None,
+            "filename_encoding": name_res.encoding,
+            "filename_decode_bytes": name_res.data,
+            "filename_invalid": name_res.invalid,
         }
         if mtime is not None:
             file_args["mtime"] = mtime
@@ -1225,7 +1314,8 @@ class RAR5Parser(CommonParser):
         redir_type, pos = load_vint(xdata, pos)
         redir_flags, pos = load_vint(xdata, pos)
         redir_name_b, pos = load_vstr(xdata, pos)
-        redir_name = redir_name_b.decode("utf8", "replace")
+        redir_name_res = decode_bytes(redir_name_b, "utf8")
+        redir_name = redir_name_res.text
         file_args["file_redir"] = (redir_type, redir_flags, redir_name)
 
     def _parse_file_owner(self, file_args: InfoArgs, xdata: bytes, pos: int) -> None:
@@ -1295,7 +1385,11 @@ class RAR5Parser(CommonParser):
 
         # rar bug? - appends zero to comment
         cmt = cmt.split(b"\0", 1)[0]
-        self.comment = cmt.decode("utf8")
+        res = decode_bytes(cmt, "utf8")
+        self.comment = res.text
+        self.orig_comment = cmt
+        self.comment_encoding = res.encoding
+        self.comment_invalid = res.invalid
         return None
 
     def _open_hack(self, inf: RarInfo, pwd: str | None) -> RarExtFile:
