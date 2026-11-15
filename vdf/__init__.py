@@ -17,6 +17,7 @@ except:
     from collections import Mapping
 
 from vdf.vdict import VDFDict
+from vdf.merge import MergeReport, merge_sources
 
 # Py2 & Py3 compatibility
 if sys.version_info[0] >= 3:
