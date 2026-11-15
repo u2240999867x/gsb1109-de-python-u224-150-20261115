@@ -1,7 +1,10 @@
 from typing_extensions import Literal
 
 from nrrd._version import __version__
+from nrrd.errors import NRRDConflictError, NRRDGridError
 from nrrd.formatters import *
+from nrrd.merger import (DEFAULT_ALIGNMENT_TOLERANCE, DEFAULT_GEOMETRY_TOLERANCE, NRRDBlockPlacement,
+                         NRRDMergeReport, merge_nrrd, merge_nrrd_files)
 from nrrd.parsers import *
 from nrrd.reader import read, read_data, read_header
 from nrrd.types import NRRDFieldMap, NRRDFieldType, NRRDHeader
@@ -43,4 +46,6 @@ __all__ = ['read', 'read_data', 'read_header', 'write', 'format_number_list', 'f
            'format_optional_vector_list', 'parse_matrix', 'parse_number_auto_dtype', 'parse_number_list',
            'parse_optional_matrix',
            'parse_optional_vector', 'parse_vector', 'parse_vector_list', 'parse_optional_vector_list', 'NRRDFieldType',
-           'NRRDFieldMap', 'NRRDHeader', 'SPACE_DIRECTIONS_TYPE', '__version__']
+           'NRRDFieldMap', 'NRRDHeader', 'SPACE_DIRECTIONS_TYPE', 'merge_nrrd', 'merge_nrrd_files',
+           'NRRDMergeReport', 'NRRDBlockPlacement', 'NRRDGridError', 'NRRDConflictError',
+           'DEFAULT_ALIGNMENT_TOLERANCE', 'DEFAULT_GEOMETRY_TOLERANCE', '__version__']

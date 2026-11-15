@@ -96,6 +96,7 @@ Contents
 
    reference/reading
    reference/writing
+   reference/merging
    reference/parsing
    reference/formatting
 

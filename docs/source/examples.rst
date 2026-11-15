@@ -141,3 +141,47 @@ Example reading and writing NRRD files with C-order indexing
     >>> (600, 800, 70)
     print(header['sizes'])
     >>> [600 800  70]
+
+Example merging spatially tiled NRRD blocks
+-------------------------------------------
+A volume delivered as several NRRD blocks can be stitched back into one coverage volume. The blocks must share
+the same space directions and their origins must differ by an integer number of voxels; no interpolation is
+performed.
+
+.. code-block:: python
+
+    import numpy as np
+    import nrrd
+
+    # Two adjacent 2x2 blocks with unit spacing, the second one shifted by two voxels along axis 0
+    header0 = {'space directions': np.eye(2), 'space origin': np.array([0.0, 0.0])}
+    header1 = {'space directions': np.eye(2), 'space origin': np.array([2.0, 0.0])}
+    block0 = (np.ones((2, 2), dtype=np.int32), header0)
+    block1 = (np.full((2, 2), 2, dtype=np.int32), header1)
+
+    data, header, report = nrrd.merge_nrrd([block0, block1])
+
+    print(data.shape)
+    >>> (4, 2)
+    print(header['space origin'])
+    >>> [0. 0.]
+    print(report.conflict_count)
+    >>> 0
+
+If the blocks overlap, their voxel values must agree. Otherwise :class:`nrrd.NRRDConflictError` is raised and the
+attached report exposes the conflict mask::
+
+    from nrrd.errors import NRRDConflictError, NRRDGridError
+
+    try:
+        nrrd.merge_nrrd([block0, block1])
+    except NRRDConflictError as error:
+        print(error.report.conflict_count)  # number of disagreeing voxels
+
+An origin shifted by half a voxel means the blocks do not share a grid. Stitching them would require resampling,
+so :class:`nrrd.NRRDGridError` is raised instead of silently interpolating::
+
+    shifted = (np.ones((2, 2), dtype=np.int32),
+               {'space directions': np.eye(2), 'space origin': np.array([0.5, 0.0])})
+    nrrd.merge_nrrd([block0, shifted])
+    >>> nrrd.errors.NRRDGridError: Block 1 origin is offset by [0.5, 0.0] voxels ...
