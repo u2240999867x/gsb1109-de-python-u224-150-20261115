@@ -85,6 +85,19 @@ Dirname: /DIR1 , Dirlist: [] , Filelist: ['FOO.;1', 'BAR.;1']
 
 Like we saw before, the "dirname" for this level is `/DIR1`, while the "dirlist" is empty since there are no subdirectories, and the filelist contains `FOO.;1` and `BAR.;1`.
 
+## Duplicate references and cycles
+
+An ISO may reach the same directory extent through more than one directory record.  When that second path is legitimate (for example, two parents that both name the same directory), it is a *duplicate reference*: every path is real, so [walk](api/pycdlib.html#pycdlib.pycdlib.PyCdlib.walk) reports the subtree under each path.  A malformed image can also point a directory record back at one of its own ancestors; that is a *back edge* (a cycle), and it is reported as a leaf rather than expanded forever.
+
+[list_paths](api/pycdlib.html#pycdlib.pycdlib.PyCdlib.list_paths) makes the distinction explicit.  It takes one of `iso_path`, `rr_path`, `joliet_path`, or `udf_path` (the namespace to enumerate) and returns every reachable path with its record and a `reference_kind`:
+
+```python
+for entry in iso.list_paths(iso_path='/'):
+    print(entry.path, entry.reference_kind)
+```
+
+The kinds are `'canonical'` (the first path collected for a directory), `'alias'` (a legitimate duplicate reference), and `'back_edge'` (a cycle, never expanded).  [iter_paths](api/pycdlib.html#pycdlib.pycdlib.PyCdlib.iter_paths) is the generator form.  The same marks are available on the records themselves via `reference_kind`, `is_duplicate_reference`, and `is_back_edge`.
+
 ```python
 iso.close()
 ```

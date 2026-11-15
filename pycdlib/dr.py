@@ -160,7 +160,8 @@ class DirectoryRecord:
                  'file_unit_size', 'interleave_gap_size', 'len_fi', 'isdir',
                  'orig_extent_loc', 'data_length', 'data_extent_offset',
                  'seqnum', 'is_root', 'parent', 'rock_ridge', 'xa_record',
-                 'file_ident', '_sort_key')
+                 'file_ident', '_sort_key', '_reference_kind',
+                 '_canonical_dir_extent', '_canonical_dir_record')
 
     FILE_FLAG_EXISTENCE_BIT = 0
     FILE_FLAG_DIRECTORY_BIT = 1
@@ -202,6 +203,93 @@ class DirectoryRecord:
         self.rock_ridge = None  # type: Optional[rockridge.RockRidge]
         self.xa_record = None  # type: Optional[XARecord]
         self.inode = None  # type: Optional[inode.Inode]
+        # How this record reaches its extent inside its own namespace.  It is
+        # set by the directory collector and is purely in-memory; it never
+        # changes the bytes written out.
+        #
+        #   ''          - an ordinary record, or not a directory record
+        #   'canonical' - the first directory record for this extent in the
+        #                 namespace; its subtree is expanded once
+        #   'alias'     - a later, non-cyclic reference to an extent whose
+        #                 subtree was already collected (a legitimate
+        #                 multi-path reference to the same directory)
+        #   'back_edge' - a reference to an extent that is an ancestor of this
+        #                 record on the current path; following it would form
+        #                 a cycle, so it is never expanded
+        self._reference_kind = ''
+        # The extent of the canonical directory record this one aliases, or
+        # None when this record is canonical.
+        self._canonical_dir_extent = None  # type: Optional[int]
+        self._canonical_dir_record = None  # type: Optional[DirectoryRecord]
+
+    REFERENCE_NONE = ''
+    REFERENCE_CANONICAL = 'canonical'
+    REFERENCE_ALIAS = 'alias'
+    REFERENCE_BACK_EDGE = 'back_edge'
+
+    def set_reference_kind(self, kind, canonical_extent=None):
+        # type: (str, Optional[int]) -> None
+        """
+        Mark how this directory record reaches its extent in the namespace it
+        was collected from.
+
+        Args:
+            kind: One of REFERENCE_CANONICAL, REFERENCE_ALIAS, or
+                REFERENCE_BACK_EDGE (an empty string clears the mark).
+            canonical_extent: For REFERENCE_ALIAS, the extent of the canonical
+                directory record being referenced.  Ignored otherwise.
+        Returns:
+            Nothing.
+        """
+        if kind not in (self.REFERENCE_NONE, self.REFERENCE_CANONICAL,
+                        self.REFERENCE_ALIAS, self.REFERENCE_BACK_EDGE):
+            raise pycdlibexception.PyCdlibInternalError('Invalid directory reference kind')
+        self._reference_kind = kind
+        self._canonical_dir_extent = canonical_extent if kind == self.REFERENCE_ALIAS else None
+        if kind != self.REFERENCE_ALIAS:
+            self._canonical_dir_record = None
+
+    @property
+    def reference_kind(self):
+        # type: () -> str
+        """The reference kind for this record ('', 'canonical', 'alias', or 'back_edge')."""
+        return self._reference_kind
+
+    @property
+    def is_duplicate_reference(self):
+        # type: () -> bool
+        """True for a legitimate alias (a duplicate, non-cyclic directory reference)."""
+        return self._reference_kind == self.REFERENCE_ALIAS
+
+    @property
+    def is_back_edge(self):
+        # type: () -> bool
+        """True if following this directory record would revisit an ancestor on the current path."""
+        return self._reference_kind == self.REFERENCE_BACK_EDGE
+
+    @property
+    def is_canonical(self):
+        # type: () -> bool
+        """True if this is the first (expandable) record for its directory extent."""
+        return self._reference_kind == self.REFERENCE_CANONICAL
+
+    @property
+    def canonical_dir_extent(self):
+        # type: () -> Optional[int]
+        """For an alias, the extent of the directory it duplicates; None otherwise."""
+        return self._canonical_dir_extent
+
+    @property
+    def canonical_dir_record(self):
+        # type: () -> Optional[DirectoryRecord]
+        """For an alias, the canonical record whose children this path shares; None otherwise."""
+        return self._canonical_dir_record
+
+    @canonical_dir_record.setter
+    def canonical_dir_record(self, record):
+        # type: (Optional[DirectoryRecord]) -> None
+        """Set the canonical record for an alias."""
+        self._canonical_dir_record = record
 
     def parse(self, vd, record, parent, xa=False):
         # type: (headervd.PrimaryOrSupplementaryVD, bytes, Optional[DirectoryRecord], bool) -> str

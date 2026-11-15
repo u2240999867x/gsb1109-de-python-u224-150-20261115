@@ -1,5 +1,10 @@
 Changelog for PyCdlib
 
+1.23.0 (unreleased)
+-------------------
+* Distinguish directory back edges (cycles) from legitimate duplicate references when collecting directory records, mark both on the records, and keep collection finite without aborting unrelated sibling directories
+* Add iter_paths()/list_paths() to enumerate every reachable path in a selected namespace, with canonical, alias, and back-edge reference kinds
+
 1.22.0 (2026-10-09)
 -------------------
 * Fix a potential infinite loop in UDF File Entry parsing; pointed out by R0ck3t (zhangyan8216 on GitHub)

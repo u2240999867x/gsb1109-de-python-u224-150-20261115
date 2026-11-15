@@ -423,6 +423,16 @@ def _reassign_vd_dirrecord_extents(vd, current_extent, blocks_per_sector):
             continue
 
         if dir_record.is_dir():
+            if dir_record.is_duplicate_reference or dir_record.is_back_edge:
+                # A duplicate or cyclic directory reference shares the extent
+                # of the directory it points at.  Do not give it an extent of
+                # its own (that would clone the directory on disk) and do not
+                # walk into it again.
+                canonical = dir_record.canonical_dir_record
+                if canonical is not None:
+                    dir_record.set_data_location(canonical.extent_location(), 0)
+                continue
+
             aligned = _align_to_sector(current_extent)
             padding += aligned - current_extent
             current_extent = aligned
@@ -502,6 +512,16 @@ def _yield_children(rec, rr):
     if not rec.is_dir():
         raise pycdlibexception.PyCdlibInvalidInput('Record is not a directory!')
 
+    if rec.canonical_dir_record is not None and rec.is_back_edge:
+        # A back edge closes a cycle; report it as a leaf rather than
+        # expanding the ancestor's children under the cyclic path.
+        return
+
+    if rec.canonical_dir_record is not None and rec.is_duplicate_reference:
+        # A duplicate reference has no children of its own; its children
+        # are the ones collected for the directory it points at.
+        rec = rec.canonical_dir_record
+
     last = b''
     for child in rec.children:
         # If the filename of this child is the same as the last one, skip the
@@ -540,6 +560,77 @@ def _yield_children(rec, rr):
                     # moved entry, weird; just yield the one we would have anyway.
 
         yield child
+
+
+def _path_children(dir_record, path_type):
+    # type: (Any, str) -> List[Any]
+    """
+    Return the children to expand for one directory level of a walk.
+
+    A duplicate reference (an alias) is a distinct path to a directory whose
+    contents were collected under the canonical record.  Walking under the
+    alias prefix has to show that same content, so the canonical record's
+    children are returned.  Back edges are filtered by the caller, which knows
+    the current path; if one is passed here it is treated like an alias and
+    expanded through its canonical record.
+
+    Args:
+        dir_record: The directory record or UDF File Entry to expand.
+        path_type: One of 'iso_path', 'rr_path', 'joliet_path', or 'udf_path'.
+    Returns:
+        The list of children to visit.
+    """
+    if getattr(dir_record, 'is_back_edge', False):
+        # A back edge closes a cycle; it is a reachable path but a terminal
+        # one.  Expanding it would reproduce the cycle (forever, for an
+        # unbounded walk), so it contributes no children.
+        return []
+
+    if path_type == 'udf_path':
+        if not isinstance(dir_record, udfmod.UDFFileEntry):
+            raise pycdlibexception.PyCdlibInternalError('Internal error: expected UDF File Entry while walking UDF path')
+        udf_record = dir_record
+        udf_canonical = udf_record.canonical_dir_record
+        if udf_record.is_duplicate_reference and udf_canonical is not None:
+            udf_record = udf_canonical
+        if not udf_record.is_dir():
+            raise pycdlibexception.PyCdlibInvalidInput('UDF File Entry is not a directory!')
+        return [fi.file_entry for fi in udf_record.fi_descs.values() if not fi.is_parent()]
+
+    if not isinstance(dir_record, dr.DirectoryRecord):
+        raise pycdlibexception.PyCdlibInternalError('Internal error: expected ISO9660 Directory Record while walking non-UDF path')
+    dir_canonical = dir_record.canonical_dir_record
+    if dir_record.is_duplicate_reference and dir_canonical is not None:
+        dir_record = dir_canonical
+    return list(_yield_children(dir_record, path_type == 'rr_path'))
+
+
+class ReachablePath(collections.namedtuple('ReachablePath',
+                                           ['path', 'record', 'is_dir',
+                                            'reference_kind'])):
+    """
+    One path to an entry in a namespace.
+
+    Paths are yielded once per spelling: a directory that is legitimately
+    referenced from two parents produces one ReachablePath under each parent,
+    with reference_kind 'canonical' for the first and 'alias' for the second.
+    A directory record that points back at one of its ancestors produces a
+    ReachablePath with reference_kind 'back_edge'; that path is listed but is
+    not descended into, so cycles cannot expand forever.
+    """
+    __slots__ = ()
+
+    @property
+    def is_duplicate_reference(self):
+        # type: () -> bool
+        """True if this path is a legitimate alias of an already-collected directory."""
+        return self.reference_kind == dr.DirectoryRecord.REFERENCE_ALIAS
+
+    @property
+    def is_back_edge(self):
+        # type: () -> bool
+        """True if following this path would revisit an ancestor (a cycle)."""
+        return self.reference_kind == dr.DirectoryRecord.REFERENCE_BACK_EDGE
 
 
 def _find_dr_record_by_name(vd, path, encoding):
@@ -601,12 +692,19 @@ def _find_dr_record_by_name(vd, path, encoding):
             if child is None:
                 break
 
-        # We found the last child we are looking for; return it.
+        # We found the last child we are looking for; return it.  Keep the
+        # record that spells this path (in particular an alias), rather than
+        # substituting its canonical directory.
         if not splitpath:
             return child
 
         if not child.is_dir():
             break
+        if child.canonical_dir_record is not None and \
+           (child.is_duplicate_reference or child.is_back_edge):
+            # A duplicate or cyclic reference has no children of its own; look
+            # through the directory it points at.
+            child = child.canonical_dir_record
         entry = child
         currpath = splitpath.pop(0).decode('utf-8').encode(encoding)
 
@@ -895,12 +993,18 @@ class PyCdlib:
                 if child is None:
                     break
 
-            # We found the last child we are looking for; return it.
+            # We found the last child we are looking for; return it (keeping
+            # an alias's own identity, like _find_dr_record_by_name).
             if not splitpath:
                 return child
 
             if not child.is_dir():
                 break
+            if child.canonical_dir_record is not None and \
+               (child.is_duplicate_reference or child.is_back_edge):
+                # A duplicate or cyclic reference has no children of its own;
+                # look through the directory it points at.
+                child = child.canonical_dir_record
             entry = child
             currpath = splitpath.pop(0).decode('utf-8').encode('utf-8')
 
@@ -958,6 +1062,12 @@ class PyCdlib:
             if not child.is_dir():
                 break
             entry = child.file_entry
+            if entry is not None and \
+               (entry.is_duplicate_reference or entry.is_back_edge) and \
+               entry.canonical_dir_record is not None:
+                # A duplicate or cyclic File Entry reference has no File
+                # Identifiers of its own; continue through the canonical entry.
+                entry = entry.canonical_dir_record
             currpath = splitpath.pop(0)
 
         raise pycdlibexception.PyCdlibInvalidInput('Could not find path')
@@ -1378,12 +1488,66 @@ class PyCdlib:
         # are false positives (e.g. a Mac HFS-hybrid ISO whose system-use
         # area happens to start with bytes matching an RR signature).
         saw_rrip_er = False
-        # Refuse to walk the same directory extent twice, so an image
-        # whose directory records loop cannot refill this queue forever.
-        seen_dir_extents = set([root_dir_record.extent_location()])  # type: Set[int]
-        dirs = collections.deque([root_dir_record])
+        # Directory collection is breadth-first, but a directory extent may
+        # legitimately be reached by more than one path (a DAG), and a broken
+        # image may point a directory back at one of its ancestors (a cycle).
+        # Keep both the canonical record for each extent (the first one seen,
+        # whose subtree is collected once) and, for every queued record, the
+        # extents/records on the path that reached it.  That makes collection
+        # finite while telling the two cases apart:
+        #
+        #   * a reference to an ancestor on the current path is a back edge;
+        #     it is marked and never expanded, but it does not abort the walk
+        #     and so cannot hide unrelated sibling directories.
+        #   * a reference to an extent that was already collected elsewhere in
+        #     the namespace is a legitimate duplicate reference (an alias);
+        #     it is marked, linked to the canonical directory, and also never
+        #     expanded a second time.
+        #
+        # Every record is still attached to its parent and appears in
+        # list_children(); only expansion (and the path table requirement that
+        # goes with it) is skipped for the non-canonical references.
+        # A path table may carry more than one record for the same extent when
+        # a directory is referenced by more than one name; resolve records by
+        # extent *and* name so each alias keeps its own path table entry.
+        ptr_by_extent_and_name = {}  # type: Dict[Tuple[int, bytes], path_table_record.PathTableRecord]
+        ptr_by_name = {}  # type: Dict[bytes, Optional[path_table_record.PathTableRecord]]
+        for ptr in path_table_records:
+            ptr_by_extent_and_name[(ptr.extent_location, ptr.directory_identifier)] = ptr
+            if ptr.directory_identifier not in ptr_by_name:
+                ptr_by_name[ptr.directory_identifier] = ptr
+            else:
+                ptr_by_name[ptr.directory_identifier] = None
+
+        def _ptr_for_record(record, extent):
+            # type: (dr.DirectoryRecord, int) -> Optional[path_table_record.PathTableRecord]
+            """
+            Find the path table record that describes this directory record.
+
+            A conforming path table has one record per directory and keys it
+            by its position in the hierarchy, so the exact (extent, name)
+            pair is the best match.  Some images instead carry one record per
+            name with a stale extent on a duplicate reference, so fall back to
+            a unique name match before giving up.
+            """
+            ptr = ptr_by_extent_and_name.get((extent, record.file_identifier()))
+            if ptr is not None:
+                return ptr
+            ptr = ptr_by_name.get(record.file_identifier())
+            if ptr is not None:
+                return ptr
+            return None
+
+        root_extent = root_dir_record.extent_location()
+        canonical_dir_records = {root_extent: root_dir_record}  # type: Dict[int, dr.DirectoryRecord]
+        # Only anomalous images (with an alias or a back edge) can end up
+        # retaining directories whose path table records are not reachable
+        # any more; healthy images must keep their declared size untouched.
+        had_non_canonical_reference = False
+        root_dir_record.set_reference_kind(dr.DirectoryRecord.REFERENCE_CANONICAL)
+        dirs = collections.deque([(root_dir_record, {root_extent: root_dir_record})])  # type: Deque[Tuple[dr.DirectoryRecord, Dict[int, dr.DirectoryRecord]]]
         while dirs:
-            dir_record = dirs.popleft()
+            dir_record, path_ancestors = dirs.popleft()
 
             last_record = None  # type: Optional[dr.DirectoryRecord]
             for new_record, rr in self._iter_directory_records(vd, dir_record, iso_file_length):
@@ -1451,18 +1615,48 @@ class PyCdlib:
                     new_record.parent.track_child(new_record,
                                                   self.logical_block_size, True)
 
-                # Enqueue after the duplicate-name check above, so a
-                # duplicate directory keeps its specific error; a repeated
-                # extent here is a loop.
+                # Classify (and enqueue) after the duplicate-name check above,
+                # so a duplicate directory keeps its specific error.
                 if is_dir and not dots and not rr_cl:
-                    if new_extent_loc in seen_dir_extents:
-                        raise pycdlibexception.PyCdlibInvalidISO('ISO Directory Records form a loop')
-                    seen_dir_extents.add(new_extent_loc)
-                    dirs.append(new_record)
-                    ptr = extent_to_ptr.get(new_extent_loc)
-                    if ptr is None:
-                        raise pycdlibexception.PyCdlibInvalidISO('Directory record extent %d is not in the path table' % new_extent_loc)
-                    new_record.set_ptr(ptr)
+                    if new_extent_loc in path_ancestors:
+                        # The record points back at a directory on the path
+                        # that reached it.  Mark the edge so callers can see
+                        # it, but do not follow it.
+                        new_record.set_reference_kind(dr.DirectoryRecord.REFERENCE_BACK_EDGE)
+                        new_record.canonical_dir_record = path_ancestors[new_extent_loc]
+                        had_non_canonical_reference = True
+                        maybe_ptr = _ptr_for_record(new_record, new_extent_loc)
+                        if maybe_ptr is not None:
+                            new_record.set_ptr(maybe_ptr)
+                        # The directory record must point at the ancestor's
+                        # extent, not carry a separate copy of the data.
+                        new_record.set_data_location(new_extent_loc, 0)
+                    elif new_extent_loc in canonical_dir_records:
+                        # A legitimate second path to a directory that was
+                        # already collected.  Mark it and link it to the
+                        # canonical record; its subtree is not collected again.
+                        new_record.set_reference_kind(dr.DirectoryRecord.REFERENCE_ALIAS,
+                                                      new_extent_loc)
+                        new_record.canonical_dir_record = canonical_dir_records[new_extent_loc]
+                        had_non_canonical_reference = True
+                        # Keep the alias's own path table record (it carries
+                        # the alias name) and point both it and the directory
+                        # record at the canonical extent.
+                        maybe_ptr = _ptr_for_record(new_record, new_extent_loc)
+                        if maybe_ptr is not None:
+                            new_record.set_ptr(maybe_ptr)
+                        new_record.set_data_location(new_extent_loc, 0)
+                    else:
+                        new_record.set_reference_kind(dr.DirectoryRecord.REFERENCE_CANONICAL)
+                        canonical_dir_records[new_extent_loc] = new_record
+                        maybe_ptr = _ptr_for_record(new_record, new_extent_loc)
+                        if maybe_ptr is None:
+                            maybe_ptr = extent_to_ptr.get(new_extent_loc)
+                        if maybe_ptr is None:
+                            raise pycdlibexception.PyCdlibInvalidISO('Directory record extent %d is not in the path table' % new_extent_loc)
+                        new_record.set_ptr(maybe_ptr)
+                        dirs.append((new_record, dict(path_ancestors)))
+                        dirs[-1][1][new_extent_loc] = new_record
 
                 if is_pvd:
                     if new_record.is_dir():
@@ -1472,6 +1666,13 @@ class PyCdlib:
                     interchange_level = max(interchange_level, new_level)
 
                 last_record = new_record
+
+        # The declared path table may still describe directories that became
+        # unreachable once a duplicate or cyclic reference stopped expansion.
+        # Make the declared size match what will actually be written.  On a
+        # healthy image nothing was skipped, so leave it exactly as it was.
+        if had_non_canonical_reference:
+            self._recompute_path_table_size(vd)
 
         for pl in parent_links:
             if pl.rock_ridge is not None:
@@ -1495,6 +1696,44 @@ class PyCdlib:
             self.rock_ridge = ''
 
         return interchange_level, lastbyte
+
+    def _recompute_path_table_size(self, vd):
+        # type: (headervd.PrimaryOrSupplementaryVD) -> None
+        """
+        Recompute a volume descriptor's path table size from the directory
+        records actually retained in its namespace.
+
+        This matters only for anomalous images.  A directory record that
+        points back at an ancestor (or at an already-collected directory) is
+        retained as a back edge or an alias but its subtree is not expanded,
+        so any path table records that described only that subtree are no
+        longer written.  On a healthy image every directory is canonical, the
+        set below is exactly the original set, and the size is unchanged.
+
+        Args:
+            vd: The volume descriptor whose path table to recompute.
+        Returns:
+            Nothing.
+        """
+        ptrs = {}
+        dirs = collections.deque([vd.root_directory_record()])
+        while dirs:
+            curr = dirs.popleft()
+            if curr.ptr is not None:
+                ptrs[id(curr.ptr)] = curr.ptr
+            if curr.is_duplicate_reference or curr.is_back_edge:
+                continue
+            for child in curr.children:
+                # Only retained directory descendants with their own record
+                # contribute; file and dot entries have no path table record.
+                if child.is_dir() and not child.is_dot() and not child.is_dotdot():
+                    dirs.append(child)
+
+        size = 0
+        for ptr in ptrs.values():
+            size += path_table_record.PathTableRecord.record_length(ptr.len_di)
+        vd.path_tbl_size = size
+        vd.path_table_num_extents = max(2, vd._path_table_extents())
 
     def _parse_path_table(self, ptr_size, extent):
         # type: (int, int) -> Tuple[List[path_table_record.PathTableRecord], Dict[int, path_table_record.PathTableRecord]]
@@ -1682,6 +1921,19 @@ class PyCdlib:
         while udf_file_entries:
             udf_file_entry, fi_desc = udf_file_entries.popleft()
 
+            if udf_file_entry.is_duplicate_reference or udf_file_entry.is_back_edge:
+                # A duplicate or cyclic File Entry reference shares the
+                # canonical File Entry's on-disk extent; it must not get a
+                # fresh extent or be walked again here.
+                canonical = udf_file_entry.canonical_dir_record
+                if canonical is not None:
+                    udf_file_entry.set_extent_location(canonical.extent_location(),
+                                                       canonical.extent_location() - part_start)
+                    if fi_desc is not None:
+                        fi_desc.set_icb(canonical.extent_location(),
+                                        canonical.extent_location() - part_start)
+                continue
+
             # In theory we should check for and skip the work for files and
             # symlinks, but they will never be added to 'udf_file_entries'
             # to begin with so we can safely ignore them.
@@ -1717,7 +1969,8 @@ class PyCdlib:
                                       current_extent - part_start)
                 if not d.is_parent() and d.file_entry is not None:
                     if d.is_dir():
-                        udf_file_entries.append((d.file_entry, d))
+                        if not d.file_entry.is_duplicate_reference and not d.file_entry.is_back_edge:
+                            udf_file_entries.append((d.file_entry, d))
                     else:
                         udf_file_assign_list.append((d.file_entry, d))
                 offset += udfmod.UDFFileIdentifierDescriptor.length(len(d.fi))
@@ -2489,14 +2742,16 @@ class PyCdlib:
         if self.udf_root is None:
             raise pycdlibexception.PyCdlibInvalidISO('Empty UDF File Entry for the root directory is not allowed')
 
-        # Refuse to walk the same directory File Entry twice, so a
-        # malicious image whose directory File Identifiers form a loop
-        # cannot refill this queue forever.  Mirrors the seen_ce_areas
-        # guard used for the Rock Ridge continuation area chain.
-        seen_file_entries = set([abs_file_entry_extent])  # type: Set[int]
-        udf_file_entries = collections.deque([self.udf_root])
+        # As on the ISO9660 side, a File Entry may be reached by a second,
+        # non-cyclic path (an alias) or by a path that loops back to an
+        # ancestor (a back edge).  Collect each extent's File Identifiers
+        # once, but keep the path that reached every queue entry so the two
+        # cases can be told apart and collection always terminates.
+        self.udf_root.set_reference_kind(udfmod.UDFFileEntry.REFERENCE_CANONICAL)
+        canonical_file_entries = {abs_file_entry_extent: self.udf_root}  # type: Dict[int, udfmod.UDFFileEntry]
+        udf_file_entries = collections.deque([(self.udf_root, {abs_file_entry_extent: self.udf_root})])  # type: Deque[Tuple[udfmod.UDFFileEntry, Dict[int, udfmod.UDFFileEntry]]]
         while udf_file_entries:
-            udf_file_entry = udf_file_entries.popleft()
+            udf_file_entry, path_ancestors = udf_file_entries.popleft()
 
             if udf_file_entry is None:
                 continue
@@ -2547,10 +2802,25 @@ class PyCdlib:
                     next_entry.file_ident = file_ident
 
                     if file_ident.is_dir():
-                        if abs_file_entry_extent in seen_file_entries:
-                            raise pycdlibexception.PyCdlibInvalidISO('UDF File Entries form a loop')
-                        seen_file_entries.add(abs_file_entry_extent)
-                        udf_file_entries.append(next_entry)
+                        if abs_file_entry_extent in path_ancestors:
+                            # This File Identifier points back at a directory
+                            # on the path that reached it.  Mark the edge,
+                            # but do not follow it.
+                            next_entry.set_reference_kind(udfmod.UDFFileEntry.REFERENCE_BACK_EDGE)
+                            next_entry.canonical_dir_record = path_ancestors[abs_file_entry_extent]
+                        elif abs_file_entry_extent in canonical_file_entries:
+                            # A legitimate second path to an already-collected
+                            # File Entry.  Mark it and link it to the
+                            # canonical entry; its contents are not collected
+                            # again.
+                            next_entry.set_reference_kind(udfmod.UDFFileEntry.REFERENCE_ALIAS,
+                                                          canonical_file_entries[abs_file_entry_extent])
+                        else:
+                            next_entry.set_reference_kind(udfmod.UDFFileEntry.REFERENCE_CANONICAL)
+                            canonical_file_entries[abs_file_entry_extent] = next_entry
+                            next_ancestors = dict(path_ancestors)
+                            next_ancestors[abs_file_entry_extent] = next_entry
+                            udf_file_entries.append((next_entry, next_ancestors))
                     else:
                         udf_data_length = next_entry.get_data_length()
                         if udf_data_length > 0:
@@ -3107,6 +3377,12 @@ class PyCdlib:
             curr_dirrecord_offset = 0
             if curr.is_dir():
                 if curr.ptr is None:
+                    if curr.is_duplicate_reference or curr.is_back_edge:
+                        # A non-canonical reference is allowed to have no
+                        # path table record of its own (the image may only
+                        # describe the canonical directory).  Its children
+                        # are empty, so there is nothing else to write.
+                        continue
                     raise pycdlibexception.PyCdlibInternalError('Directory has no Path Table Record')
 
                 # Little Endian PTR
@@ -3171,7 +3447,10 @@ class PyCdlib:
 
                 if child.is_dir():
                     # If the child is a directory, and is not dot or dotdot,
-                    # descend into it to look at the children.
+                    # descend into it to look at the children.  Duplicate and
+                    # cyclic references have no collected children, so
+                    # descending is harmless; it still writes their path-table
+                    # entry, which the declared path table size counts.
                     if not child.is_dot() and not child.is_dotdot():
                         dirs.append(child)
 
@@ -3388,6 +3667,11 @@ class PyCdlib:
                 if udf_file_entry is None:
                     continue
 
+                if udf_file_entry.is_duplicate_reference or udf_file_entry.is_back_edge:
+                    # Shares the canonical File Entry's extent; it is written
+                    # there, not at a location of its own.
+                    continue
+
                 if udf_file_entry.inode is None or not id(udf_file_entry.inode) in written_file_entry_inodes:
                     outfp.seek(udf_file_entry.extent_location() * self.logical_block_size)
                     rec = udf_file_entry.record()
@@ -3403,12 +3687,16 @@ class PyCdlib:
                     outfp.seek(parent_fi_desc.extent_location() * self.logical_block_size)
                     # FIXME: for larger directories, we'll actually need to
                     # iterate over the alloc_descs and write them
-                    for fi_desc in udf_file_entry.fi_descs.values():
-                        rec = fi_desc.record()
+                    for child_fi_desc in udf_file_entry.fi_descs.values():
+                        rec = child_fi_desc.record()
                         self._outfp_write_with_check(outfp, rec)
                         progress.call(len(rec))
-                        if not fi_desc.is_parent():
-                            udf_file_entries.append((fi_desc.file_entry, fi_desc.is_dir()))
+                        if not child_fi_desc.is_parent():
+                            child_entry = child_fi_desc.file_entry
+                            if child_entry is not None and \
+                               (child_entry.is_duplicate_reference or child_entry.is_back_edge):
+                                continue
+                            udf_file_entries.append((child_entry, child_fi_desc.is_dir()))
 
         # Now write out the actual files.  In many cases we haven't yet read the
         # file out of the original, so do that here.
@@ -6480,6 +6768,16 @@ class PyCdlib:
             if not udf_rec.is_dir():
                 raise pycdlibexception.PyCdlibInvalidInput('UDF File Entry is not a directory!')
 
+            if udf_rec.canonical_dir_record is not None and udf_rec.is_back_edge:
+                # A back edge closes a cycle; it is a leaf and has no entries
+                # to report under this spelling.
+                return
+
+            if udf_rec.canonical_dir_record is not None and udf_rec.is_duplicate_reference:
+                # A duplicate File Entry reference shares the canonical entry's
+                # File Identifiers; report those under this path.
+                udf_rec = udf_rec.canonical_dir_record
+
             for fi_desc in udf_rec.fi_descs.values():
                 # The 'parent' File Identifier Descriptor (the UDF equivalent
                 # of '..') has no File Entry attached to it, so skip it rather
@@ -6915,31 +7213,24 @@ class PyCdlib:
             path_type = 'iso_path'
             default_encoding = 'utf-8'
 
-        dirs = collections.deque([rec])
+        start_path = self.full_path_from_dirrecord(rec,
+                                                   rockridge=path_type == 'rr_path',
+                                                   encoding=user_encoding)
+        # Track the paths we have taken, not just the directory identities:
+        # a second path to an already-collected directory is a legitimate
+        # alias and expands (through the canonical record) under its own
+        # prefix, while a path that revisits an ancestor is a cycle and stops.
+        # Identity, not extent, is what matters here: a File Entry may not
+        # have had an extent assigned yet on a freshly-created ISO, and the
+        # parser has already marked any duplicate or cyclic reference.
+        dirs = collections.deque([(rec, start_path, frozenset())])  # type: Deque[Tuple[Any, str, frozenset]]
         while dirs:
-            dir_record = dirs.popleft()
+            dir_record, relpath, ancestor_extents = dirs.popleft()
+            children_iter = _path_children(dir_record, path_type)
 
-            relpath = self.full_path_from_dirrecord(dir_record,
-                                                    rockridge=path_type == 'rr_path',
-                                                    encoding=user_encoding)
             dirlist = []
             filelist = []
             dirdict = {}
-
-            # Iterate dir_record's children directly instead of going
-            # through list_children(<path>) -- the latter would re-encode
-            # relpath for path lookup with a hardcoded encoding, which
-            # fails on ISOs whose on-disk names aren't UTF-8.
-            if path_type == 'udf_path':
-                if not isinstance(dir_record, udfmod.UDFFileEntry):
-                    raise pycdlibexception.PyCdlibInternalError('Internal error: expected UDF File Entry while walking UDF path')
-                if not dir_record.is_dir():
-                    raise pycdlibexception.PyCdlibInvalidInput('UDF File Entry is not a directory!')
-                children_iter = [fi.file_entry for fi in dir_record.fi_descs.values()]  # type: List[Any]
-            else:
-                if not isinstance(dir_record, dr.DirectoryRecord):
-                    raise pycdlibexception.PyCdlibInternalError('Internal error: expected ISO9660 Directory Record while walking non-UDF path')
-                children_iter = list(_yield_children(dir_record, path_type == 'rr_path'))
 
             for child in reversed(children_iter):
                 if child is None or child.is_dot() or child.is_dotdot():
@@ -6971,7 +7262,171 @@ class PyCdlib:
             # We allow the user to modify dirlist along the way, so we
             # add the children to dirs *after* yield returns.
             for name in dirlist:
-                dirs.appendleft(dirdict[name])
+                child = dirdict[name]
+                if relpath == '/':
+                    child_path = '/' + name
+                else:
+                    child_path = relpath + '/' + name
+                dirs.appendleft((child, child_path,
+                                 ancestor_extents | {id(dir_record)}))
+
+    def iter_paths(self, **kwargs):
+        # type: (...) -> Generator[ReachablePath, None, None]
+        """
+        Iterate over every path reachable in one namespace, with finite
+        expansion of duplicate references and cycles.
+
+        Exactly one of ``iso_path``, ``rr_path``, ``joliet_path``, or
+        ``udf_path`` must be passed.  The value is the (possibly non-root)
+        path to start from; the namespace it names is the one that is listed.
+        ``encoding`` optionally overrides the encoding used to build path
+        strings.  Each yielded :class:`ReachablePath` carries the path string,
+        the record it resolves to, whether it is a directory, and how the path
+        reaches that record:
+
+        * ``'canonical'`` - the first path collected for this directory extent;
+          its children are expanded normally.
+        * ``'alias'`` - a second, non-cyclic path to a directory already
+          collected.  It is listed and its children are expanded under this
+          path too (through the canonical records), so every legitimate path
+          appears.
+        * ``'back_edge'`` - a directory record that points back at one of its
+          ancestors.  It is listed, but not expanded, so a cyclic image is
+          finite and the cycle is visible instead of raised.
+
+        Args:
+            iso_path: The ISO9660 path to start listing from.
+            rr_path: The Rock Ridge path to start listing from.
+            joliet_path: The Joliet path to start listing from.
+            udf_path: The UDF path to start listing from.
+            encoding: The encoding to use for returned path strings.
+        Yields:
+            ReachablePath objects in breadth-first order.
+        Returns:
+            Nothing.
+        """
+        if not self._initialized:
+            raise pycdlibexception.PyCdlibInvalidInput('This object is not initialized; call either open() or new() to create an ISO')
+
+        num_paths = 0
+        path_type = 'iso_path'
+        start = ''  # type: str
+        user_encoding = None
+        for key, value in kwargs.items():
+            if key in ('joliet_path', 'rr_path', 'iso_path', 'udf_path'):
+                if value is not None:
+                    num_paths += 1
+                    path_type = key
+                    start = value
+            elif key == 'encoding':
+                user_encoding = value
+            else:
+                raise pycdlibexception.PyCdlibInvalidInput("Invalid keyword, must be one of 'iso_path', 'rr_path', 'joliet_path', or 'udf_path'")
+
+        if num_paths != 1:
+            raise pycdlibexception.PyCdlibInvalidInput("Must specify one, and only one of 'iso_path', 'rr_path', 'joliet_path', or 'udf_path'")
+
+        if path_type == 'udf_path':
+            if self.udf_root is None:
+                raise pycdlibexception.PyCdlibInvalidInput('Can only specify a UDF path for a UDF ISO')
+            default_encoding = ''
+        elif path_type == 'joliet_path':
+            if self.joliet_vd is None:
+                raise pycdlibexception.PyCdlibInvalidInput('A Joliet path can only be specified for a Joliet ISO')
+            default_encoding = 'utf-16_be'
+        elif path_type == 'rr_path':
+            if not self.rock_ridge:
+                raise pycdlibexception.PyCdlibInvalidInput('Cannot fetch a rr_path from a non-Rock Ridge ISO')
+            default_encoding = 'utf-8'
+        else:
+            default_encoding = 'utf-8'
+
+        rec = None  # type: Optional[Union[dr.DirectoryRecord, udfmod.UDFFileEntry]]
+        if path_type == 'udf_path':
+            (ident_unused, rec) = self._find_udf_record(utils.normpath(start))
+            if rec is None:
+                raise pycdlibexception.PyCdlibInvalidInput('Cannot get entry for empty UDF File Entry')
+        elif path_type == 'joliet_path':
+            rec = self._find_joliet_record(self._normalize_joliet_path(start))
+        elif path_type == 'rr_path':
+            rec = self._find_rr_record(utils.normpath(start))
+        else:
+            rec = self._find_iso_record(utils.normpath(start))
+
+        start_path = self.full_path_from_dirrecord(rec,
+                                                   rockridge=path_type == 'rr_path',
+                                                   encoding=user_encoding)
+        dirs = collections.deque([(rec, start_path, frozenset())])  # type: Deque[Tuple[Any, str, frozenset]]
+        seen_dirs = set()  # type: set
+        while dirs:
+            dir_record, relpath, ancestor_records = dirs.popleft()
+
+            kind = getattr(dir_record, 'reference_kind', '')
+            if not kind:
+                # Freshly-created images are not run through the parser, so
+                # their records carry no mark.  Derive the same classification
+                # from the spelling instead: the first path to a directory is
+                # canonical, a later one is a duplicate reference.
+                kind = dr.DirectoryRecord.REFERENCE_ALIAS if id(dir_record) in seen_dirs else dr.DirectoryRecord.REFERENCE_CANONICAL
+            seen_dirs.add(id(dir_record))
+            yield ReachablePath(relpath, dir_record, dir_record.is_dir(), kind)
+
+            if not dir_record.is_dir():
+                continue
+            if id(dir_record) in ancestor_records:
+                continue
+            if getattr(dir_record, 'is_back_edge', False):
+                continue
+
+            children_iter = _path_children(dir_record, path_type)
+            dirdict = {}
+            for child in children_iter:
+                if child is None or child.is_dot() or child.is_dotdot():
+                    continue
+                if not child.is_dir():
+                    continue
+
+                if user_encoding is not None:
+                    encoding = user_encoding
+                else:
+                    if isinstance(child, udfmod.UDFFileEntry) and child.file_ident is not None:
+                        encoding = child.file_ident.encoding
+                    else:
+                        encoding = default_encoding
+
+                if path_type == 'rr_path':
+                    name = child.rock_ridge.name()
+                else:
+                    name = child.file_identifier()
+                encoded = name.decode(encoding)
+                child_path = '/' + encoded if relpath == '/' else relpath + '/' + encoded
+                dirdict[child_path] = child
+
+            for child_path in sorted(dirdict):
+                dirs.append((dirdict[child_path], child_path,
+                             ancestor_records | {id(dir_record)}))
+
+    def list_paths(self, **kwargs):
+        # type: (...) -> List[ReachablePath]
+        """
+        Return every path reachable in one namespace, as a list.
+
+        This is the list form of :meth:`iter_paths`; it accepts the same
+        arguments.  Every legitimate alias appears under each path that
+        reaches it, while a path that would revisit an ancestor is reported
+        once with ``reference_kind == 'back_edge'`` and is not expanded, so
+        the result is always finite.
+
+        Args:
+            iso_path: The ISO9660 path to start listing from.
+            rr_path: The Rock Ridge path to start listing from.
+            joliet_path: The Joliet path to start listing from.
+            udf_path: The UDF path to start listing from.
+            encoding: The encoding to use for returned path strings.
+        Returns:
+            A list of ReachablePath objects.
+        """
+        return list(self.iter_paths(**kwargs))
 
     def open_file_from_iso(self, **kwargs):
         # type: (str) -> pycdlibio.PyCdlibIO

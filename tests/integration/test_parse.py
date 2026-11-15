@@ -3613,33 +3613,37 @@ def test_parse_udf_file_entry_loop(tmpdir):
         outfp.write(bytes(data))
 
     iso = pycdlib.PyCdlib()
-    with pytest.raises(pycdlib.pycdlibexception.PyCdlibInvalidISO) as excinfo:
-        iso.open(outfile)
-    assert(str(excinfo.value) == 'UDF File Entries form a loop')
+    iso.open(outfile)
+    cycle = iso._find_udf_record(b'/DIR')[1]
+    assert(cycle.is_back_edge)
+    assert(cycle.reference_kind == 'back_edge')
+    assert(cycle.canonical_dir_record is iso.udf_root)
+    assert([w[0] for w in iso.walk(udf_path='/')] == ['/', '/DIR'])
+    iso.close()
 
-def test_parse_iso_directory_record_loop(tmpdir):
-    # A directory record whose extent points back at an already-walked
-    # directory loops the directory walk forever without a guard.  pycdlib
-    # will not write one, so build a good image and redirect the '/AADIR'
-    # directory record's extent at the root directory extent.
-    outfile = str(tmpdir.join('isoloop.iso'))
+def _build_cycle_or_alias(tmpdir, alias):
+    # A malformed image whose '/BBDIR' directory record points at the root
+    # (a cycle) or at '/AADIR' (a duplicate reference to the same directory).
+    outfile = str(tmpdir.join('isocycle.iso'))
     iso = pycdlib.PyCdlib()
     iso.new()
     iso.add_directory('/AADIR')
+    iso.add_directory('/AADIR/SUB')
+    iso.add_directory('/BBDIR')
+    iso.add_directory('/BBDIR/SUB2')
     iso.write(outfile)
     iso.close()
 
     iso = pycdlib.PyCdlib()
     iso.open(outfile)
     root_extent = iso.pvd.root_directory_record().extent_location()
+    target_extent = root_extent if not alias else iso.get_record(iso_path='/AADIR').extent_location()
     iso.close()
 
     lbs = 2048
     with open(outfile, 'rb') as infp:
         data = bytearray(infp.read())
 
-    # Find the 'AADIR' directory record in the root directory extent and
-    # point its extent location (both-endian, no checksum) at the root.
     root_block = data[root_extent * lbs:(root_extent + 1) * lbs]
     off = 0
     patched = False
@@ -3649,21 +3653,108 @@ def test_parse_iso_directory_record_loop(tmpdir):
             break
         name_len = root_block[off + 32]
         name = bytes(root_block[off + 33:off + 33 + name_len])
-        if name == b'AADIR':
+        if name == b'BBDIR':
             abs_off = root_extent * lbs + off
-            data[abs_off + 2:abs_off + 6] = struct.pack('<I', root_extent)
-            data[abs_off + 6:abs_off + 10] = struct.pack('>I', root_extent)
+            data[abs_off + 2:abs_off + 6] = struct.pack('<I', target_extent)
+            data[abs_off + 6:abs_off + 10] = struct.pack('>I', target_extent)
             patched = True
             break
         off += reclen
     assert(patched)
     with open(outfile, 'wb') as outfp:
         outfp.write(bytes(data))
+    return outfile
+
+def test_parse_iso_directory_record_loop(tmpdir):
+    # A directory record whose extent points back at an ancestor is a cycle.
+    # The walk must terminate, mark the edge, and still collect unrelated
+    # sibling directories; it must not fail the whole image.
+    outfile = _build_cycle_or_alias(tmpdir, False)
 
     iso = pycdlib.PyCdlib()
-    with pytest.raises(pycdlib.pycdlibexception.PyCdlibInvalidISO) as excinfo:
-        iso.open(outfile)
-    assert(str(excinfo.value) == 'ISO Directory Records form a loop')
+    iso.open(outfile)
+
+    cycle = iso.get_record(iso_path='/BBDIR')
+    assert(cycle.is_back_edge)
+    assert(cycle.reference_kind == 'back_edge')
+    assert(cycle.canonical_dir_record is iso.pvd.root_directory_record())
+
+    # The broken edge does not hide the unrelated siblings.
+    assert([c.file_identifier() for c in iso.list_children(iso_path='/AADIR')] == [b'.', b'..', b'SUB'])
+    assert(iso.get_record(iso_path='/AADIR/SUB').file_identifier() == b'SUB')
+
+    assert(list(iso.walk(iso_path='/')) == [
+        ('/', ['BBDIR', 'AADIR'], []),
+        ('/AADIR', ['SUB'], []),
+        ('/AADIR/SUB', [], []),
+        ('/BBDIR', [], []),
+    ])
+
+    paths = iso.list_paths(iso_path='/')
+    assert([(p.path, p.reference_kind) for p in paths] == [
+        ('/', 'canonical'),
+        ('/AADIR', 'canonical'),
+        ('/BBDIR', 'back_edge'),
+        ('/AADIR/SUB', 'canonical'),
+    ])
+    iso.close()
+
+def test_parse_iso_directory_duplicate_reference(tmpdir):
+    # Two directory records may legitimately point at the same directory
+    # extent.  The subtree is collected once, but every reachable path is
+    # reported and both names remain usable.
+    outfile = _build_cycle_or_alias(tmpdir, True)
+
+    iso = pycdlib.PyCdlib()
+    iso.open(outfile)
+
+    aadir = iso.get_record(iso_path='/AADIR')
+    bbdir = iso.get_record(iso_path='/BBDIR')
+    assert(aadir.is_canonical)
+    assert(bbdir.is_duplicate_reference)
+    assert(bbdir.reference_kind == 'alias')
+    assert(bbdir.canonical_dir_extent == aadir.extent_location())
+    assert(bbdir.canonical_dir_record is aadir)
+
+    # Both spellings see the same children, and lookups through the alias work.
+    assert([c.file_identifier() for c in iso.list_children(iso_path='/AADIR')] == [b'.', b'..', b'SUB'])
+    assert([c.file_identifier() for c in iso.list_children(iso_path='/BBDIR')] == [b'.', b'..', b'SUB'])
+    assert(iso.get_record(iso_path='/BBDIR/SUB').file_identifier() == b'SUB')
+
+    assert(list(iso.walk(iso_path='/')) == [
+        ('/', ['BBDIR', 'AADIR'], []),
+        ('/AADIR', ['SUB'], []),
+        ('/AADIR/SUB', [], []),
+        ('/BBDIR', ['SUB'], []),
+        ('/BBDIR/SUB', [], []),
+    ])
+
+    assert([(p.path, p.reference_kind) for p in iso.list_paths(iso_path='/')] == [
+        ('/', 'canonical'),
+        ('/AADIR', 'canonical'),
+        ('/BBDIR', 'alias'),
+        ('/AADIR/SUB', 'canonical'),
+        ('/BBDIR/SUB', 'canonical'),
+    ])
+    iso.close()
+
+def test_parse_iso_directory_duplicate_reference_round_trip(tmpdir):
+    # Writing an image with a duplicate reference back out must keep it
+    # duplicate (not clone the directory) and reopen as finite.
+    outfile = _build_cycle_or_alias(tmpdir, True)
+    written = str(tmpdir.join('isodupwritten.iso'))
+
+    iso = pycdlib.PyCdlib()
+    iso.open(outfile)
+    iso.write(written)
+    iso.close()
+
+    iso = pycdlib.PyCdlib()
+    iso.open(written)
+    assert(iso.get_record(iso_path='/BBDIR').reference_kind == 'alias')
+    assert([c.file_identifier() for c in iso.list_children(iso_path='/BBDIR')] == [b'.', b'..', b'SUB'])
+    assert([w[0] for w in iso.walk(iso_path='/')] == ['/', '/AADIR', '/AADIR/SUB', '/BBDIR', '/BBDIR/SUB'])
+    iso.close()
 
 def _iso_bytes(iso):
     out = io.BytesIO()

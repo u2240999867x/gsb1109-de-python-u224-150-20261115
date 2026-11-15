@@ -3656,7 +3656,8 @@ class UDFFileEntry:
                  'log_block_recorded', 'unique_id', 'len_extended_attrs',
                  'desc_tag', 'icb_tag', 'alloc_descs', 'fi_descs', 'parent',
                  'access_time', 'mod_time', 'attr_time', 'extended_attr_icb',
-                 'impl_ident', 'extended_attrs', 'file_ident', 'inode')
+                 'impl_ident', 'extended_attrs', 'file_ident', 'inode',
+                 '_reference_kind', '_canonical_dir_record')
 
     FMT = '<16s20sLLLHBBLQQ12s12s12sL16s32sQLL'
     _FMT_SIZE = struct.calcsize(FMT)
@@ -3676,6 +3677,72 @@ class UDFFileEntry:
         self.file_ident = None  # type: Optional[UDFFileIdentifierDescriptor]
         self.inode = None  # type: Optional[inode.Inode]
         self.new_extent_loc = -1
+        # Mirrors dr.DirectoryRecord's reference marking: '' for an ordinary
+        # directory, 'canonical' for the first File Entry collected at an
+        # extent, 'alias' for a legitimate second path to it, and
+        # 'back_edge' for a reference that would close a cycle.
+        self._reference_kind = ''
+        self._canonical_dir_record = None  # type: Optional[UDFFileEntry]
+
+    REFERENCE_NONE = ''
+    REFERENCE_CANONICAL = 'canonical'
+    REFERENCE_ALIAS = 'alias'
+    REFERENCE_BACK_EDGE = 'back_edge'
+
+    def set_reference_kind(self, kind, canonical_dir_record=None):
+        # type: (str, Optional[UDFFileEntry]) -> None
+        """
+        Mark how this File Entry is reached in the UDF namespace.
+
+        Args:
+            kind: REFERENCE_CANONICAL, REFERENCE_ALIAS, or REFERENCE_BACK_EDGE
+                (an empty string clears the mark).
+            canonical_dir_record: For REFERENCE_ALIAS, the canonical File Entry
+                being referenced.
+        Returns:
+            Nothing.
+        """
+        if kind not in (self.REFERENCE_NONE, self.REFERENCE_CANONICAL,
+                        self.REFERENCE_ALIAS, self.REFERENCE_BACK_EDGE):
+            raise pycdlibexception.PyCdlibInternalError('Invalid UDF directory reference kind')
+        self._reference_kind = kind
+        self._canonical_dir_record = canonical_dir_record if kind == self.REFERENCE_ALIAS else None
+
+    @property
+    def reference_kind(self):
+        # type: () -> str
+        """The reference kind for this File Entry ('', 'canonical', 'alias', or 'back_edge')."""
+        return self._reference_kind
+
+    @property
+    def is_duplicate_reference(self):
+        # type: () -> bool
+        """True for a legitimate alias (a duplicate, non-cyclic File Entry reference)."""
+        return self._reference_kind == self.REFERENCE_ALIAS
+
+    @property
+    def is_back_edge(self):
+        # type: () -> bool
+        """True if following this File Entry would revisit an ancestor on the current path."""
+        return self._reference_kind == self.REFERENCE_BACK_EDGE
+
+    @property
+    def is_canonical(self):
+        # type: () -> bool
+        """True if this is the first (expandable) File Entry for its extent."""
+        return self._reference_kind == self.REFERENCE_CANONICAL
+
+    @property
+    def canonical_dir_record(self):
+        # type: () -> Optional[UDFFileEntry]
+        """For an alias, the canonical File Entry whose entries this path shares."""
+        return self._canonical_dir_record
+
+    @canonical_dir_record.setter
+    def canonical_dir_record(self, record):
+        # type: (Optional[UDFFileEntry]) -> None
+        """Set the canonical File Entry for an alias or back edge."""
+        self._canonical_dir_record = record
 
     def parse(self, data, extent, parent, desc_tag):
         # type: (bytes, int, Optional[UDFFileEntry], UDFTag) -> None
