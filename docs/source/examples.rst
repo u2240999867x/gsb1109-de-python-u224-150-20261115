@@ -141,3 +141,35 @@ Example reading and writing NRRD files with C-order indexing
     >>> (600, 800, 70)
     print(header['sizes'])
     >>> [600 800  70]
+
+Example transforming a batch of vector fields into world components
+--------------------------------------------------------------------
+Each three-component vector field may carry its own ``measurement frame``. The array returned by :meth:`read`
+holds the raw, on-disk components (measured in that frame); :meth:`world_components` returns the components in
+world coordinates without modifying the raw array. The index order used when reading must be passed through so the
+component axis is located correctly.
+
+.. code-block:: python
+
+    import nrrd
+
+    for filename in ['vector_field_1.nrrd', 'vector_field_2.nrrd']:
+        # Raw components as stored on disk, in the per-file measurement frame
+        raw_data, header = nrrd.read(filename, index_order='F')
+
+        # The component axis is identified from 'kinds', not guessed from the shape,
+        # so a scalar batch is never mistaken for a one-component vector.
+        vector_axis = nrrd.find_vector_axis(header)
+
+        # World components: v_world = M @ v_measurement. Raises NRRDError if the
+        # measurement frame is missing, non-finite or singular, instead of inventing values.
+        world_data = nrrd.world_components(raw_data, header, index_order='F')
+
+        # Recover the original measurement-frame components when needed
+        measurement_data = nrrd.measurement_components(world_data, header, index_order='F')
+
+        print(filename, raw_data.shape, world_data.shape, vector_axis)
+
+    # The same call works for a C-ordered array; only the axis position changes.
+    raw_c, header = nrrd.read('vector_field_1.nrrd', index_order='C')
+    world_c = nrrd.world_components(raw_c, header, index_order='C')
