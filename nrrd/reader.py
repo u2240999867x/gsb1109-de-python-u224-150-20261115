@@ -9,6 +9,7 @@ from collections import OrderedDict
 from typing import IO, Any, AnyStr, Iterable, Tuple
 
 import nrrd
+from nrrd.multifile import is_multifile_reference, read_multifile_data
 from nrrd.parsers import *
 from nrrd.types import IndexOrder, NRRDFieldMap, NRRDFieldType, NRRDHeader
 
@@ -262,6 +263,11 @@ def read_header(file: Union[str, Iterable[AnyStr]], custom_field_map: Optional[N
     # fields in the same order.
     header = OrderedDict()
 
+    # When a detached data file field is 'LIST', the NRRD specification puts
+    # one filename on each following line, ending at the blank line that
+    # terminates the header.
+    list_field: Optional[str] = None
+
     # Loop through each line
     for line in it:
         header_size += len(line)
@@ -273,7 +279,16 @@ def read_header(file: Union[str, Iterable[AnyStr]], custom_field_map: Optional[N
 
         # Skip comments starting with # (no leading whitespace is allowed)
         # Or, stop reading the header once a blank line is encountered. This separates header from data.
-        if line.startswith('#'):
+        if list_field is not None:
+            if line.startswith('#'):
+                continue
+            elif line == '':
+                break
+            else:
+                names = header.setdefault(f'{list_field} list', [])
+                names.append(line)
+                continue
+        elif line.startswith('#'):
             continue
         elif line == '':
             break
@@ -298,6 +313,11 @@ def read_header(file: Union[str, Iterable[AnyStr]], custom_field_map: Optional[N
         # Place it in the header dictionary
         header[field] = _parse_field_value(value, field_type)
 
+        if field in ('data file', 'datafile') and str(header[field]).strip().upper() == 'LIST':
+            header[field] = 'LIST'
+            list_field = field
+            header.setdefault(f'{field} list', [])
+
     # Reading the file line by line is buffered and so the header is not in the correct position for reading data if
     # the file contains the data in it as well. The solution is to set the file pointer to just behind the header.
     if hasattr(file, 'seek'):
@@ -306,55 +326,14 @@ def read_header(file: Union[str, Iterable[AnyStr]], custom_field_map: Optional[N
     return header
 
 
-def read_data(header: NRRDHeader, fh: Optional[IO] = None, filename: Optional[str] = None,
-              index_order: IndexOrder = 'F') -> npt.NDArray:
-    """Read data from file into :class:`numpy.ndarray`
+def _read_single_data(header: NRRDHeader, fh: IO, filename: Optional[str],
+                      index_order: IndexOrder = 'F') -> npt.NDArray:
+    """Read one attached or detached data payload.
 
-    The two parameters :obj:`fh` and :obj:`filename` are optional depending on the parameters but it never hurts to
-    specify both. The file handle (:obj:`fh`) is necessary if the header is attached with the NRRD data. However, if
-    the NRRD data is detached from the header, then the :obj:`filename` parameter is required to obtain the absolute
-    path to the data file.
-
-    See :ref:`background/how-to-use:reading nrrd files` for more information on reading NRRD files.
-
-    Parameters
-    ----------
-    header : :class:`dict` (:class:`str`, :obj:`Object`)
-        Parsed fields/values obtained from :meth:`read_header` function
-    fh : file-object, optional
-        File object pointing to first byte of data. Only necessary if data is attached to header.
-    filename : :class:`str`, optional
-        Filename of the header file. Only necessary if data is detached from the header. This is used to get the
-        absolute data path.
-    index_order : {'C', 'F'}, optional
-        Specifies the index order of the resulting data array. Either 'C' (C-order) where the dimensions are ordered
-        from slowest-varying to fastest-varying (e.g. (z, y, x)), or 'F' (Fortran-order) where the dimensions are
-        ordered from fastest-varying to slowest-varying (e.g. (x, y, z)).
-
-    Returns
-    -------
-    data : :class:`numpy.ndarray`
-        Data read from NRRD file
-
-    See Also
-    --------
-    :meth:`read`, :meth:`read_header`
+    This is the original single-file reader.  It is kept separate so that the
+    multi-file path can reuse the exact same encoding and skip semantics for
+    every slice file.
     """
-
-    if index_order not in ['F', 'C']:
-        raise NRRDError('Invalid index order')
-
-    # Check that the required fields are in the header
-    for field in _NRRD_REQUIRED_FIELDS:
-        if field not in header:
-            raise NRRDError(f'Header is missing required field: {field}')
-
-    if header['dimension'] != len(header['sizes']):
-        raise NRRDError(f'Number of elements in sizes does not match dimension. Dimension: {header["dimension"]}, '
-                        f'len(sizes): {len(header["sizes"])}')
-
-    if header['dimension'] < 1 or np.any(header['sizes'] <= 0):
-        raise NRRDError('Dimension and sizes must be positive')
 
     # Determine the data type from the header
     dtype = _determine_datatype(header)
@@ -365,6 +344,7 @@ def read_data(header: NRRDHeader, fh: Optional[IO] = None, filename: Optional[st
     byte_skip = header.get('byteskip', header.get('byte skip', 0))
     data_filename = header.get('datafile', header.get('data file', None))
 
+    opened_here = False
     # If the data file is separate from the header file, then open the data file to read from that instead
     if data_filename is not None:
         # If the pathname is relative, then append the current directory from the filename
@@ -377,6 +357,7 @@ def read_data(header: NRRDHeader, fh: Optional[IO] = None, filename: Optional[st
         # Override the fh parameter with the data filename
         # Note that this is opened without a "with" block, thus it must be closed manually in all circumstances
         fh = open(data_filename, 'rb')
+        opened_here = True
 
     # Get the total number of data points by multiplying the size of each dimension together
     total_data_points = header['sizes'].prod(dtype=np.int64)
@@ -390,7 +371,7 @@ def read_data(header: NRRDHeader, fh: Optional[IO] = None, filename: Optional[st
     else:
         # Must close the file because if the file was opened above from detached filename, there is no "with" block to
         # close it for us
-        if data_filename is not None:
+        if opened_here:
             fh.close()
 
         raise NRRDError('Invalid lineskip, allowed values are greater than or equal to 0')
@@ -399,7 +380,7 @@ def read_data(header: NRRDHeader, fh: Optional[IO] = None, filename: Optional[st
     if byte_skip < -1:
         # Must close the file because if the file was opened above from detached filename, there is no "with" block to
         # close it for us
-        if data_filename is not None:
+        if opened_here:
             fh.close()
 
         raise NRRDError('Invalid byteskip, allowed values are greater than or equal to -1')
@@ -433,7 +414,7 @@ def read_data(header: NRRDHeader, fh: Optional[IO] = None, filename: Optional[st
         else:
             # Must close the file because if the file was opened above from detached filename, there is no "with" block
             # to close it for us
-            if data_filename is not None:
+            if opened_here:
                 fh.close()
 
             raise NRRDError(f'Unsupported encoding: {header["encoding"]}')
@@ -464,7 +445,7 @@ def read_data(header: NRRDHeader, fh: Optional[IO] = None, filename: Optional[st
         del compressed_data
 
         if not decompobj.eof:
-            if data_filename is not None:
+            if opened_here:
                 fh.close()
             raise NRRDError('Data ended before reaching the end of the compressed stream')
 
@@ -473,7 +454,7 @@ def read_data(header: NRRDHeader, fh: Optional[IO] = None, filename: Optional[st
         data = np.frombuffer(decompressed_data[byte_skip:], dtype)
 
     # Close the file if we opened it
-    if data_filename is not None:
+    if opened_here:
         fh.close()
 
     if total_data_points != data.size:
@@ -494,8 +475,97 @@ def read_data(header: NRRDHeader, fh: Optional[IO] = None, filename: Optional[st
     return data
 
 
-def read(filename: str, custom_field_map: Optional[NRRDFieldMap] = None, index_order: IndexOrder = 'F') \
-        -> Tuple[npt.NDArray, NRRDHeader]:
+def read_data(header: NRRDHeader, fh: Optional[IO] = None, filename: Optional[str] = None,
+              index_order: IndexOrder = 'F', data_root: Optional[str] = None,
+              slice_axis: Optional[Any] = None, gap_value: Optional[Any] = None) -> npt.NDArray:
+    """Read data from file into :class:`numpy.ndarray`
+
+    The two parameters :obj:`fh` and :obj:`filename` are optional depending on the parameters but it never hurts to
+    specify both. The file handle (:obj:`fh`) is necessary if the header is attached with the NRRD data. However, if
+    the NRRD data is detached from the header, then the :obj:`filename` parameter is required to obtain the absolute
+    path to the data file.
+
+    Multi-file NRRD data is supported when the header's ``data file`` field is ``LIST`` or a printf-style sequence
+    template.  Missing slice files are retained as gaps; later files are placed by index and are never shifted.
+
+    See :ref:`background/how-to-use:reading nrrd files` for more information on reading NRRD files.
+
+    Parameters
+    ----------
+    header : :class:`dict` (:class:`str`, :obj:`Object`)
+        Parsed fields/values obtained from :meth:`read_header` function
+    fh : file-object, optional
+        File object pointing to first byte of data. Only necessary if data is attached to header.
+    filename : :class:`str`, optional
+        Filename of the header file. Only necessary if data is detached from the header. This is used to get the
+        absolute data path.
+    index_order : {'C', 'F'}, optional
+        Specifies the index order of the resulting data array. Either 'C' (C-order) where the dimensions are ordered
+        from slowest-varying to fastest-varying (e.g. (z, y, x)), or 'F' (Fortran-order) where the dimensions are
+        ordered from fastest-varying to slowest-varying (e.g. (x, y, z)).
+    data_root : :class:`str`, optional
+        Authorized root directory for multi-file references.  Relative paths are resolved against this directory and
+        absolute paths are required to remain inside it.  Defaults to the directory containing :obj:`filename`.
+    slice_axis : :class:`int` or :class:`str`, optional
+        NRRD axis used to assemble multi-file data.  Defaults to ``data file axis`` when present, otherwise the axis
+        whose size matches the number of files, otherwise the last axis.
+    gap_value : scalar, optional
+        Value used for missing slice positions.  Defaults to NaN for floating point data and zero otherwise.
+
+    Returns
+    -------
+    data : :class:`numpy.ndarray`
+        Data read from NRRD file.  For multi-file data this is a :class:`nrrd.multifile.MultiFileVolume` with
+        per-slice provenance in ``segments``.
+    """
+
+    if index_order not in ['F', 'C']:
+        raise NRRDError('Invalid index order')
+
+    # Check that the required fields are in the header
+    for field in _NRRD_REQUIRED_FIELDS:
+        if field not in header:
+            raise NRRDError(f'Header is missing required field: {field}')
+
+    sizes = np.asarray(header['sizes'], dtype=np.int64)
+    header['sizes'] = sizes
+    if header['dimension'] != len(sizes):
+        raise NRRDError(f'Number of elements in sizes does not match dimension. Dimension: {header["dimension"]}, '
+                        f'len(sizes): {len(header["sizes"])}')
+
+    if header['dimension'] < 1 or np.any(np.asarray(header['sizes'], dtype=np.int64) <= 0):
+        raise NRRDError('Dimension and sizes must be positive')
+
+    if is_multifile_reference(header):
+        if filename is None and data_root is None:
+            raise NRRDError('Filename or data_root parameter must be specified when a multi-file data reference is '
+                            'given')
+        if data_root is not None:
+            header_filename = os.path.join(data_root, '__nrrd_header__')
+        else:
+            header_filename = filename
+        return read_multifile_data(header, header_filename, index_order=index_order,
+                                   data_root=data_root, slice_axis=slice_axis,
+                                   gap_value=gap_value)
+
+    # Detached single-file data can also be constrained to an authorized root.
+    data_filename = header.get('datafile', header.get('data file', None))
+    if data_root is not None and isinstance(data_filename, str) and data_filename.strip().upper() != 'LIST':
+        from nrrd.multifile import _resolve_authorized
+
+        candidate = data_filename if os.path.isabs(data_filename) else os.path.join(
+            os.path.abspath(data_root), data_filename)
+        candidate = _resolve_authorized(os.path.abspath(candidate), data_root)
+        header = dict(header)
+        header['data file'] = candidate
+        return _read_single_data(header, fh, filename, index_order)
+
+    return _read_single_data(header, fh, filename, index_order)
+
+
+def read(filename: str, custom_field_map: Optional[NRRDFieldMap] = None, index_order: IndexOrder = 'F',
+         data_root: Optional[str] = None, slice_axis: Optional[Any] = None,
+         gap_value: Optional[Any] = None) -> Tuple[npt.NDArray, NRRDHeader]:
     """Read a NRRD file and return the header and data
 
     See :ref:`background/how-to-use:reading nrrd files` for more information on reading NRRD files.
@@ -516,6 +586,14 @@ def read(filename: str, custom_field_map: Optional[NRRDFieldMap] = None, index_o
         Specifies the index order of the resulting data array. Either 'C' (C-order) where the dimensions are ordered
         from slowest-varying to fastest-varying (e.g. (z, y, x)), or 'F' (Fortran-order) where the dimensions are
         ordered from fastest-varying to slowest-varying (e.g. (x, y, z)).
+    data_root : :class:`str`, optional
+        Authorized root directory for multi-file ``data file`` references.  Relative paths are resolved below this
+        directory and absolute paths must remain inside it.  Defaults to the directory containing :obj:`filename`.
+    slice_axis : :class:`int` or :class:`str`, optional
+        NRRD axis used to assemble multi-file data.  Defaults to ``data file axis`` when present, otherwise the last
+        axis.
+    gap_value : scalar, optional
+        Value used for missing slice positions.  Defaults to NaN for floating point data and zero otherwise.
 
     Returns
     -------
@@ -531,6 +609,7 @@ def read(filename: str, custom_field_map: Optional[NRRDFieldMap] = None, index_o
 
     with open(filename, 'rb') as fh:
         header = read_header(fh, custom_field_map)
-        data = read_data(header, fh, filename, index_order)
+        data = read_data(header, fh, filename, index_order, data_root=data_root,
+                         slice_axis=slice_axis, gap_value=gap_value)
 
     return data, header

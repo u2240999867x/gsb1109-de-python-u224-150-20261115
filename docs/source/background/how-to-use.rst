@@ -15,6 +15,25 @@ The :meth:`read_data` will typically be called in conjunction with :meth:`read_h
 
 Some NRRD files, while prohibited by specification, may contain duplicated header fields causing an exception to be raised. Changing :data:`nrrd.reader.ALLOW_DUPLICATE_FIELD` to :obj:`True` will show a warning instead of an error while trying to read the file.
 
+Multi-file data
+~~~~~~~~~~~~~~~
+The ``data file`` field may reference several detached slice files instead of one. :meth:`read` supports the two NRRD spellings::
+
+    data file: LIST
+    slice_000.raw
+    slice_001.raw
+    slice_003.raw
+
+and a printf-style sequence template::
+
+    data file: slice_%03d.raw
+
+Files are assembled in NRRD axis order. A missing middle file becomes a gap at its declared position; later files are never shifted forward. A gap is filled with NaN for floating point data (or with :obj:`gap_value` when supplied), and zero for integer data.
+
+Relative file names are resolved inside the authorized root, which defaults to the directory containing the header file. Use :obj:`data_root` to name a different authorized root. Absolute names that leave that root and symlinks that resolve outside it are rejected.
+
+For multi-file data, :meth:`read` returns a :class:`nrrd.MultiFileVolume`. Its ``segments`` attribute has one entry per slice position with the source name, resolved path, load status, file/data byte counts, and the physical span from the previous retained slice. ``gaps`` lists missing positions, ``mask`` marks retained voxels, and ``axis_span`` is the physical distance between the first and last retained slice.
+
 Writing NRRD files
 ------------------
 Writing to NRRD files can be done with the function :meth:`write`. The :obj:`filename` parameter specifies either an absolute or relative filename to write the NRRD file to. If the :obj:`filename` extension is .nhdr, then :obj:`detached_header` will be set to true automatically. If :obj:`detached_header` is :obj:`True` and :obj:`filename` extension is .nrrd, then the header file will have the same path and base name as :obj:`filename` but with an extension of .nhdr. In all other cases, the header and data are saved in the same file.
