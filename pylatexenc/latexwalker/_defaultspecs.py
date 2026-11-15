@@ -330,6 +330,12 @@ specs = [
 
             std_macro('keywords', False, 1),
 
+            # '\phantom{...}', like '\hphantom' and '\vphantom', typesets
+            # nothing: its argument only reserves space.  Declaring the
+            # argument here keeps it attached to the macro node, so that the
+            # text conversion can discard the whole thing instead of letting
+            # the argument leak out as a sibling that shows in the output.
+            std_macro('phantom', True, 1),
             std_macro('hphantom', True, 1),
             std_macro('vphantom', True, 1),
 

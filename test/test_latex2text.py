@@ -312,6 +312,90 @@ class TestMathModeRendering(unittest.TestCase):
 
 
 
+class TestMathFormulaBoundaries(unittest.TestCase):
+    r"""An empty formula still marks where the formula was, and an escaped
+    dollar is ordinary text rather than a formula delimiter.  These matter when
+    the rendered text is indexed for a full-text search: two words must not be
+    merged into a token that never existed in the source."""
+
+    def test_empty_inline_math_keeps_the_boundary(self):
+        for math_mode in ('fancy', 'text', 'remove'):
+            # an inline formula that renders to nothing still separates 'abc'
+            # and 'def'; they must not be joined into the word 'abcdef'
+            self.assertEqual(
+                latex_to_text(r'abc\(\)def', math_mode=math_mode), 'abc def')
+            self.assertEqual(
+                latex_to_text(r'abc$ $def', math_mode=math_mode), 'abc def')
+            # a single separating space, not a second one, when the source
+            # already had a space on each side of the formula
+            self.assertEqual(
+                latex_to_text(r'word \(\) word', math_mode=math_mode),
+                'word  word')
+            # nothing to separate at either edge of the document
+            self.assertEqual(
+                latex_to_text(r'\(\)def', math_mode=math_mode), 'def')
+            self.assertEqual(
+                latex_to_text(r'abc\(\)', math_mode=math_mode), 'abc')
+
+    def test_empty_display_math_keeps_the_boundary(self):
+        # the engines that render a formula keep the empty display block on
+        # lines of its own; 'remove' marks the same boundary with one space
+        for math_mode in ('fancy', 'text'):
+            self.assertEqual(
+                latex_to_text(r'abc\[\]def', math_mode=math_mode),
+                'abc\n    \ndef')
+            self.assertEqual(
+                latex_to_text(r'x\begin{equation}\end{equation}y',
+                              math_mode=math_mode),
+                'x\n    \ny')
+        self.assertEqual(
+            latex_to_text(r'abc\[\]def', math_mode='remove'), 'abc def')
+        self.assertEqual(
+            latex_to_text(r'x\begin{equation}\end{equation}y',
+                          math_mode='remove'),
+            'x y')
+
+    def test_phantom_renders_nothing_and_keeps_the_boundary(self):
+        # '\phantom' reserves space but typesets nothing, like '\hphantom';
+        # its argument must not leak into the text
+        for math_mode in ('fancy', 'text', 'remove'):
+            self.assertEqual(
+                latex_to_text(r'abc$\phantom{xx}$def', math_mode=math_mode),
+                'abc def')
+            self.assertEqual(
+                latex_to_text(r'a$\hphantom{xx}$b', math_mode=math_mode),
+                'a b')
+
+    def test_escaped_dollar_is_text(self):
+        # an escaped dollar never opens math mode, in any math mode
+        for math_mode in ('fancy', 'text', 'remove'):
+            self.assertEqual(
+                latex_to_text(r'alpha\$beta', math_mode=math_mode),
+                'alpha$beta')
+            self.assertEqual(
+                latex_to_text(r'a\$b', math_mode=math_mode), 'a$b')
+            self.assertEqual(
+                latex_to_text(r'50\% of \$5', math_mode=math_mode),
+                '50% of $5')
+            # the escaped dollar survives while the real formula next to it is
+            # the only thing math_mode='remove' drops
+            self.assertEqual(
+                latex_to_text(r'\$100 and $x$', math_mode=math_mode),
+                '$100 and ' + ('' if math_mode == 'remove' else mvar('x')))
+
+    def test_text_fragment_inside_formula(self):
+        # the upright argument of '\text{...}' is rendered as text, in every
+        # engine that renders the formula at all
+        for math_mode in ('fancy', 'text'):
+            self.assertEqual(
+                latex_to_text(r'$\text{foo bar}$', math_mode=math_mode),
+                'foo bar')
+            self.assertEqual(
+                latex_to_text(r'a $\text{hello}$ b', math_mode=math_mode),
+                'a hello b')
+
+
+
 class TestOptions(unittest.TestCase):
     r"""The remaining constructor options."""
 

@@ -1689,6 +1689,15 @@ def _is_ascii_digit(c):
     return (c >= '0' and c <= '9')
 
 
+def _is_word_char(c):
+    # The characters that are glued onto a neighboring token with no visible
+    # separation: ASCII letters, digits and the underscore.  This is ASCII-only
+    # on purpose, like _is_ascii_digit() above; punctuation and the characters
+    # of other scripts already delimit a token on their own.
+    return ((c >= 'a' and c <= 'z') or (c >= 'A' and c <= 'Z')
+            or (c >= '0' and c <= '9') or c == '_')
+
+
 def _is_upright_latin_letter(c):
     # The math italic letters of the unicode math alphanumeric symbols block are
     # not in the ranges tested here, which is exactly the point: an upright run
@@ -2980,6 +2989,14 @@ class LatexNodes2Text(object):
             parts = [] # the rendered items, for the formula joiner
             s = '' # the text rendered so far, for the text filling
             prev_node = None
+            # An empty formula still marks a boundary in the source.  We remember
+            # it when we meet one and insert a separating space only if the text
+            # on its two sides would otherwise run two word characters together,
+            # so that the words around the formula are not joined into a token
+            # that never existed in the source ('abc\(\)def' must not become
+            # 'abcdef').  Punctuation and whitespace already separate tokens and
+            # get no extra space.
+            pending_math_boundary = False
             for node in nodelist:
                 if self._is_bare_macro_node(prev_node) and \
                    node.isNodeType(latexnodes_nodes.LatexCharsNode):
@@ -3023,7 +3040,30 @@ class LatexNodes2Text(object):
                     # simplify_repl that returns something else should keep
                     # raising a TypeError here rather than have its str()
                     # silently rendered.
-                    s += r
+                    if self._is_math_formula_node(node) and r == '':
+                        # The formula renders to nothing at all -- an empty math
+                        # block, or every formula in math_mode='remove'.  Its
+                        # delimiters still delimit two stretches of the source,
+                        # so remember the boundary instead of dropping the node:
+                        # the space is added only once, when the next visible
+                        # chunk arrives, which keeps 'abc\(\)def' from becoming
+                        # the nonexistent word 'abcdef'.  A display formula that
+                        # only leaves a blank line is not touched: the line
+                        # break already marks the boundary and the block has to
+                        # be kept as it was.
+                        pending_math_boundary = True
+                    elif r:
+                        if pending_math_boundary and s \
+                           and _is_word_char(s[-1]) and _is_word_char(r[0]):
+                            # two word characters would meet across the
+                            # formula's boundary and build a nonexistent token;
+                            # punctuation and whitespace already separate
+                            s += ' '
+                        s += r
+                        # a visible chunk has now taken the boundary's place
+                        pending_math_boundary = False
+                    # an empty non-formula chunk carries no visible text and
+                    # leaves any pending boundary in place
 
                 prev_node = node
 
@@ -3599,6 +3639,23 @@ class LatexNodes2Text(object):
             if n is not None:
                 return False
         return True
+
+    def _is_math_formula_node(self, node):
+        # A node that is a formula: either an explicit math node ('$...$',
+        # '\(...\)', '\[...\]'), or an environment whose contents are parsed in
+        # math mode (the equation-like environments such as 'equation' or
+        # 'align').  The latter do not carry a 'displaytype' attribute, which is
+        # why the parsing state of their body is the signal we use.
+        if node is None:
+            return False
+        if node.isNodeType(latexnodes_nodes.LatexMathNode):
+            return True
+        if node.isNodeType(latexnodes_nodes.LatexEnvironmentNode):
+            body_parsing_state = getattr(node.nodelist, 'parsing_state', None)
+            if body_parsing_state is not None \
+               and getattr(body_parsing_state, 'in_math_mode', False):
+                return True
+        return False
 
     def _groupnodecontents_to_text(self, groupnode):
         # The str() calls here are the boundary at which the math pieces of the
