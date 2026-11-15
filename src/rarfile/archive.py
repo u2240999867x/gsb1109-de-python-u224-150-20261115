@@ -28,6 +28,7 @@ from .stream import RarExtFile
 from .utils import (
     FileLike, PathLike, XFile, is_filelike, sanitize_filename, to_nsecs,
 )
+from .verify import ArchiveVerification, verify_archive
 
 # export only interesting items
 __all__ = ("get_rar_version", "is_rarfile", "is_rarfile_sfx", "RarFile")
@@ -376,6 +377,31 @@ class RarFile:
             if member.is_file():
                 with self.open(member, "r", pwd) as f:
                     empty_read(f, member.file_size, config.BSIZE)
+
+    def verify(self, pwd: str | None = None) -> ArchiveVerification:
+        """Verify all members, reporting per-file evidence levels.
+
+        Unlike :meth:`testrar`, this does not raise on problems.
+        Each member is classified as VERIFIED, UNVERIFIED or CORRUPT,
+        with the evidence that backs the classification:
+
+        - ``header_ok`` - member header parsed, header CRC valid.
+        - ``data_complete`` - all compressed data bytes are present
+          and readable (all volumes available, nothing truncated).
+        - ``hash_verified`` - decompressed content hash matches the
+          hash stored in the archive directory.
+
+        A member is VERIFIED only when all three hold.  CORRUPT is
+        reported only on positive evidence - a content hash mismatch.
+        Missing volumes, missing passwords, hashes not stored in the
+        archive and compression methods unsupported by the available
+        backend tool are all reported UNVERIFIED, never CORRUPT.
+        In particular, when a multi-volume archive is only partially
+        present, directory hashes are not treated as verified.
+
+        .. versionadded:: 5.0
+        """
+        return verify_archive(self, pwd)
 
     def strerror(self) -> str | None:
         """Return error string if parsing failed or None if no problems.

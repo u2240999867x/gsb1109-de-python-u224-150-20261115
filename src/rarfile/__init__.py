@@ -44,6 +44,7 @@ from .format import *
 from .info import *
 from .stream import *
 from .utils import *
+from .verify import *
 
 __all__ = ("get_rar_version", "is_rarfile", "is_rarfile_sfx", "RarInfo", "RarFile", "RarExtFile")
 

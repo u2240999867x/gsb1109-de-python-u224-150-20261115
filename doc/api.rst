@@ -38,6 +38,19 @@ RarExtFile class
    :inherited-members:
    :exclude-members: truncate, flush
 
+Verification
+------------
+
+.. autoclass:: VerifyStatus
+   :members:
+   :undoc-members:
+
+.. autoclass:: VerifyResult
+   :members:
+
+.. autoclass:: ArchiveVerification
+   :members:
+
 nsdatetime class
 ----------------
 

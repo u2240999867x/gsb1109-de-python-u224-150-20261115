@@ -19,6 +19,8 @@ def main(args: list[str]) -> None:
                    help="Extract archive into target dir")
     g.add_argument("-t", "--test", metavar="<rarfile>",
                    help="Test if a archive is valid")
+    g.add_argument("-v", "--verify", metavar="<rarfile>",
+                   help="Verify archive, show per-file evidence levels")
     cmd = p.parse_args(args)
 
     if cmd.list:
@@ -27,6 +29,15 @@ def main(args: list[str]) -> None:
     elif cmd.test:
         with RarFile(cmd.test) as rf:
             rf.testrar()
+    elif cmd.verify:
+        with RarFile(cmd.verify) as rf:
+            rep = rf.verify()
+        for res in rep:
+            print(res)
+        if rep.parse_error:
+            print("archive parse problem: %s" % rep.parse_error)
+        if not rep.ok:
+            p.exit(1)
     elif cmd.extract:
         with RarFile(cmd.extract[0]) as rf:
             rf.extractall(cmd.extract[1])
