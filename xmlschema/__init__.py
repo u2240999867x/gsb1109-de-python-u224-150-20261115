@@ -21,6 +21,9 @@ from .documents import validate, is_valid, iter_errors, iter_decode, \
     to_dict, to_json, to_etree, from_json, XmlDocument
 from .exports import download_schemas
 from .loaders import SchemaLoader, LocationSchemaLoader, SafeSchemaLoader
+from .revalidation import DeclarationUse, RecordEvidence, RecordDecision, \
+    SchemaChange, RevalidationReport, SchemaEvolution, DecodeUsageCollector, \
+    analyze_schema_change, classify_records, revalidation_impact
 from .utils.etree import etree_tostring
 from .utils.urls import normalize_url, normalize_locations
 
@@ -59,4 +62,7 @@ __all__ = [
     'XMLSchemaTypeTableWarning', 'XMLSchemaAssertPathWarning',
     'XsdGlobals', 'XMLSchemaBase', 'XMLSchema', 'XMLSchema10', 'XMLSchema11',
     'XsdComponent', 'XsdType', 'XsdElement', 'XsdAttribute',
+    'DeclarationUse', 'RecordEvidence', 'RecordDecision', 'SchemaChange',
+    'RevalidationReport', 'SchemaEvolution', 'DecodeUsageCollector',
+    'analyze_schema_change', 'classify_records', 'revalidation_impact',
 ]

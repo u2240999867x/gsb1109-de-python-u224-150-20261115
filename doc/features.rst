@@ -304,3 +304,76 @@ default with :meth:`xmlschema.settings.SchemaSettings.reset_defaults`. This way
 of managing settings would be sharpened in future releases, and anyway these methods
 can be aldready used for building configuration management in applications that use
 this library, if needed.
+
+
+Schema evolution and revalidation
+=================================
+
+When a schema vendor publishes a new version of an XSD, not every historical record
+has to be decoded again. The library can compare the two schema versions and split
+the records into three buckets:
+
+=revalidate=
+    The record may be affected by a semantic change and has to be decoded again.
+=reuse=
+    The old decoding remains valid, because every declaration and type it used is
+    provably unaffected.
+=missing_evidence=
+    The old decoding didn't record enough information (a wildcard, an unresolved
+    ``xsi:type`` or an unknown dynamic type). These records are never considered safe.
+
+The comparison is semantic: annotations are ignored, and the effective facet set of a
+type includes inherited facets. Tightening a base type therefore also affects every
+type derived from it, including list item types and union member types.
+
+The caller can provide the declarations and the types that were actually used to
+decode each record:
+
+.. code-block:: python
+
+    import xmlschema
+    from xmlschema import DeclarationUse, RecordEvidence
+
+    old_schema = xmlschema.XMLSchema('schema-v1.xsd')
+    new_schema = xmlschema.XMLSchema('schema-v2.xsd')
+
+    records = [
+        RecordEvidence(
+            reference='record-1',
+            declarations=[
+                DeclarationUse(element='tns:invoice', type='tns:InvoiceType'),
+                DeclarationUse(element='tns:code', type='tns:CodeType'),
+            ],
+        ),
+    ]
+
+    report = xmlschema.analyze_schema_change(old_schema, new_schema, records)
+    print(report.revalidate)        # records to decode again
+    print(report.reuse)             # records that can keep the old decoding
+    print(report.missing_evidence)  # records that can't be classified
+
+The dynamic type matters: a record decoded with ``xsi:type`` or an XSD 1.1 type
+alternative has to record the effective type, not the declared one. If the old
+decoding used an unknown dynamic type, set ``dynamic=True`` on the declaration or
+mark the evidence as incomplete with ``complete=False``.
+
+To collect this evidence automatically, use a :class:`xmlschema.DecodeUsageCollector`
+as *element_hook*:
+
+.. code-block:: python
+
+    from xmlschema import DecodeUsageCollector
+
+    collector = DecodeUsageCollector()
+    old_schema.decode(xml_source, element_hook=collector.collect)
+    evidence = collector.evidence(reference='record-1')
+
+For a file that contains many records, provide the name of the record element with
+``DecodeUsageCollector(root='record')`` and use ``collector.records`` after decoding.
+
+A record with incomplete evidence always ends up in ``missing_evidence``, even if no
+semantic change is found. Only changes that narrow the accepted value space (a lower
+``maxLength``, a reduced enumeration, an added required particle, a removed optional
+particle, a restricted base type, etc.) mark records for revalidation; widening
+changes, such as raising a limit or adding an optional particle, leave the old
+decoding valid.

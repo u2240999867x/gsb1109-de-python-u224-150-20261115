@@ -51,6 +51,54 @@ Document level API
 .. autofunction:: xmlschema.from_json
 
 
+.. _revalidation-api:
+
+Schema evolution API
+====================
+
+.. autofunction:: xmlschema.analyze_schema_change
+.. autofunction:: xmlschema.classify_records
+.. autofunction:: xmlschema.revalidation_impact
+
+.. autoclass:: xmlschema.SchemaEvolution
+
+    .. autoattribute:: changes
+    .. autoattribute:: changed
+    .. autoattribute:: has_impact
+    .. autoattribute:: ignored_annotations
+    .. automethod:: classify
+    .. automethod:: analyze
+    .. automethod:: report
+
+.. autoclass:: xmlschema.RevalidationReport
+
+    .. autoattribute:: revalidate
+    .. autoattribute:: reuse
+    .. autoattribute:: missing_evidence
+    .. autoattribute:: decisions
+    .. autoattribute:: changes
+    .. autoattribute:: total
+    .. automethod:: as_dict
+    .. automethod:: to_dict
+    .. automethod:: reasons_for
+    .. automethod:: summary
+
+.. autoclass:: xmlschema.DeclarationUse
+.. autoclass:: xmlschema.RecordEvidence
+.. autoclass:: xmlschema.RecordDecision
+.. autoclass:: xmlschema.SchemaChange
+
+.. autoclass:: xmlschema.DecodeUsageCollector
+
+    .. automethod:: collect
+    .. automethod:: evidence
+    .. automethod:: close
+    .. automethod:: reset
+    .. autoattribute:: declarations
+    .. autoattribute:: records
+    .. autoattribute:: complete
+
+
 .. _schema-level-api:
 
 Schema level API
