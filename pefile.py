@@ -1697,6 +1697,73 @@ class ResourceDataEntryData(DataContainer):
     """
 
 
+class ResourcePathEntry(DataContainer):
+    """One level of a path through the resource directory tree.
+
+    id:             Numeric entry identifier as stored in the file. None
+                    when the entry is name-indexed. Identifiers are never
+                    mapped to known resource type names.
+    name:           Entry name as bytes. None when the entry is id-indexed
+                    or the name could not be decoded.
+    name_is_string: True for name-indexed entries, False for id-indexed
+                    entries, so the indexing mode stays known even if a name
+                    fails to decode.
+    rva:            RVA of the IMAGE_RESOURCE_DIRECTORY_ENTRY structure.
+    """
+
+
+class ResourceLeafRecord(DataContainer):
+    """A leaf resource reached below the language directory level.
+
+    struct:         IMAGE_RESOURCE_DATA_ENTRY structure
+    code_page:      CodePage field of IMAGE_RESOURCE_DATA_ENTRY, kept
+                    separate from the language identifiers.
+    language_id:    Full language value stored in the leaf entry Name
+                    field (e.g. 0x0409).
+    lang:           Primary language ID (low 10 bits of language_id).
+    sublang:        Sublanguage ID (upper 6 bits of language_id).
+    data_rva:       OffsetToData field of IMAGE_RESOURCE_DATA_ENTRY.
+    size:           Size field of IMAGE_RESOURCE_DATA_ENTRY.
+    """
+
+
+class ResourcePathReference(DataContainer):
+    """A complete path from the resource root to a leaf or a back edge.
+
+    path:               List of ResourcePathEntry instances from the root,
+                        in directory order.
+    leaf:               ResourceLeafRecord reached by this path. None for a
+                        cyclic reference.
+    cyclic:             True when the last edge is a real back edge, i.e. it
+                        references a directory already present on the path.
+    cycle_target_rva:   RVA of the ancestor directory targeted by a back
+                        edge. None for non-cyclic references.
+    """
+
+
+class ResourceEntity(DataContainer):
+    """A physical resource directory reachable by one or more paths.
+
+    rva:    RVA of the IMAGE_RESOURCE_DIRECTORY. Directories shared by
+            several entries produce a single entity with several paths.
+    level:  Directory depth, 0 for the resource root.
+    paths:  List of paths, each a list of ResourcePathEntry instances, that
+            reach this physical directory.
+    entries: Parsed ResourceDirData instance, possibly partial when some
+            edges were unreadable.
+    """
+
+
+class ResourceTreeMap(DataContainer):
+    """Result of walking the resource directory graph.
+
+    entities:   ResourceEntity instances, one per physical directory and
+                ordered by first visit.
+    references: ResourcePathReference instances, one per discovered route.
+                Shared subtrees contribute several legal references.
+    """
+
+
 class DebugData(DataContainer):
     """Holds debug information.
 
@@ -2966,6 +3033,9 @@ class PE:
         # Sum of the size of all resource entries parsed, which should not
         # exceed the file size.
         self.__total_resource_bytes = 0
+        # Cache of resource directories already parsed keyed by their RVA.
+        # Entries sharing one physical subtree resolve to the same object.
+        self.__resource_directory_cache = {}
         # The number of imports parsed in this file
         self.__total_import_symbols = 0
 
@@ -4684,6 +4754,14 @@ class PE:
         if base_rva is None:
             base_rva = rva
 
+        # Several entries may point at the same physical directory. Return the
+        # already parsed object in that case so every reference stays valid and
+        # the shared subtree is kept under all of its legal paths.
+        if rva in self.__resource_directory_cache:
+            return self.__resource_directory_cache[rva]
+
+        directory_rva = rva
+
         if level > MAX_RESOURCE_DEPTH:
             self.__warnings.append(
                 "Error parsing the resources directory. "
@@ -4748,6 +4826,10 @@ class PE:
             )
             return None
 
+        entry_size = Structure(
+            self.__IMAGE_RESOURCE_DIRECTORY_ENTRY_format__
+        ).sizeof()
+
         strings_to_postprocess = []
 
         # Keep track of the last name's start and end offsets in order
@@ -4771,7 +4853,10 @@ class PE:
                     "Error parsing the resources directory, "
                     f"Entry {idx} is invalid, RVA = {rva:#x}. "
                 )
-                break
+                # A single bad edge must not hide the remaining entries: skip
+                # this entry and continue with the next one.
+                rva += entry_size
+                continue
 
             entry_name = None
             entry_id = None
@@ -4797,7 +4882,8 @@ class PE:
                             "attempting to read entry name. "
                             f"Entry names overlap {ustr_offset:#x}"
                         )
-                        break
+                        rva += entry_size
+                        continue
 
                     last_name_begin_end = (
                         ustr_offset,
@@ -4814,80 +4900,97 @@ class PE:
                     )
 
             if res.DataIsDirectory:
-                # One trick malware can do is to recursively reference the next
-                # directory. This causes hilarity to ensue when trying to parse
-                # everything correctly. If the original RVA given to this
-                # function is equal to the next one to parse, we assume that
-                # it's a trick. Instead of raising a PEFormatError this would
-                # skip some reasonable data so we just break.
-                #
-                # 9ee4d0a0caf095314fd7041a3e4404dc is the offending sample
-                if base_rva + res.OffsetToDirectory in dirs:
-                    break
-
-                entry_directory = self.parse_resources_directory(
-                    base_rva + res.OffsetToDirectory,
-                    size - (rva - base_rva),  # size
-                    base_rva=base_rva,
-                    level=level + 1,
-                    dirs=dirs + [base_rva + res.OffsetToDirectory],
-                )
-
-                if not entry_directory:
-                    break
-
-                # Ange Albertini's code to process resources' strings
-                if entry_id == RESOURCE_TYPE["RT_STRING"]:
-                    strings = {}
-                    for resource_id in entry_directory.entries:
-                        if hasattr(resource_id, "directory"):
-                            resource_strings = {}
-
-                            for resource_lang in resource_id.directory.entries:
-                                if (
-                                    resource_lang is None
-                                    or not hasattr(resource_lang, "data")
-                                    or resource_lang.data.struct.Size is None
-                                    or resource_id.id is None
-                                ):
-                                    continue
-
-                                string_entry_rva = (
-                                    resource_lang.data.struct.OffsetToData
-                                )
-                                string_entry_size = resource_lang.data.struct.Size
-                                string_entry_id = resource_id.id
-
-                                # XXX: has been raising exceptions preventing parsing
-                                try:
-                                    string_entry_data = self.get_data(
-                                        string_entry_rva, string_entry_size
-                                    )
-                                except PEFormatError:
-                                    self.__warnings.append(
-                                        f"Error parsing resource of type RT_STRING at "
-                                        f"RVA {string_entry_rva:#x} with "
-                                        f"size {string_entry_size}"
-                                    )
-                                    continue
-
-                                parse_strings(
-                                    string_entry_data,
-                                    (int(string_entry_id) - 1) * 16,
-                                    resource_strings,
-                                )
-                                strings.update(resource_strings)
-
-                            resource_id.directory.strings = resource_strings
-
-                dir_entries.append(
-                    ResourceDirEntryData(
-                        struct=res,
-                        name=entry_name,
-                        id=entry_id,
-                        directory=entry_directory,
+                target_rva = base_rva + res.OffsetToDirectory
+                # A target already present on the current path is a real back
+                # edge. Record it explicitly instead of recursing, otherwise
+                # parsing would never terminate.
+                if target_rva in dirs:
+                    self.__warnings.append(
+                        "Error parsing the resources directory, "
+                        f"cyclic reference at entry RVA {rva:#x} points back "
+                        f"to directory RVA {target_rva:#x}."
                     )
-                )
+                    dir_entries.append(
+                        ResourceDirEntryData(
+                            struct=res,
+                            name=entry_name,
+                            id=entry_id,
+                            back_edge=True,
+                            back_edge_rva=target_rva,
+                            entry_rva=rva,
+                        )
+                    )
+                else:
+                    # One trick malware can do is to recursively reference the next
+                    # directory. Cycles are handled above; here target_rva is either
+                    # a genuine child or an already parsed, shared directory.
+                    entry_directory = self.parse_resources_directory(
+                        target_rva,
+                        size - (rva - base_rva),  # size
+                        base_rva=base_rva,
+                        level=level + 1,
+                        dirs=dirs + [target_rva],
+                    )
+
+                    if not entry_directory:
+                        # Unreadable child directory: drop this edge but keep
+                        # processing the sibling entries.
+                        rva += entry_size
+                        continue
+
+                    # Ange Albertini's code to process resources' strings
+                    if entry_id == RESOURCE_TYPE["RT_STRING"]:
+                        strings = {}
+                        for resource_id in entry_directory.entries:
+                            if hasattr(resource_id, "directory"):
+                                resource_strings = {}
+
+                                for resource_lang in resource_id.directory.entries:
+                                    if (
+                                        resource_lang is None
+                                        or not hasattr(resource_lang, "data")
+                                        or resource_lang.data.struct.Size is None
+                                        or resource_id.id is None
+                                    ):
+                                        continue
+
+                                    string_entry_rva = (
+                                        resource_lang.data.struct.OffsetToData
+                                    )
+                                    string_entry_size = resource_lang.data.struct.Size
+                                    string_entry_id = resource_id.id
+
+                                    # XXX: has been raising exceptions preventing parsing
+                                    try:
+                                        string_entry_data = self.get_data(
+                                            string_entry_rva, string_entry_size
+                                        )
+                                    except PEFormatError:
+                                        self.__warnings.append(
+                                            f"Error parsing resource of type RT_STRING at "
+                                            f"RVA {string_entry_rva:#x} with "
+                                            f"size {string_entry_size}"
+                                        )
+                                        continue
+
+                                    parse_strings(
+                                        string_entry_data,
+                                        (int(string_entry_id) - 1) * 16,
+                                        resource_strings,
+                                    )
+                                    strings.update(resource_strings)
+
+                                resource_id.directory.strings = resource_strings
+
+                    dir_entries.append(
+                        ResourceDirEntryData(
+                            struct=res,
+                            name=entry_name,
+                            id=entry_id,
+                            directory=entry_directory,
+                            entry_rva=rva,
+                        )
+                    )
 
             else:
                 struct = self.parse_resource_data_entry(
@@ -4902,17 +5005,27 @@ class PE:
 
                     dir_entries.append(
                         ResourceDirEntryData(
-                            struct=res, name=entry_name, id=entry_id, data=entry_data
+                            struct=res,
+                            name=entry_name,
+                            id=entry_id,
+                            data=entry_data,
+                            entry_rva=rva,
                         )
                     )
 
                 else:
-                    break
+                    # Bad data edge: skip it while preserving every other entry.
+                    rva += entry_size
+                    continue
 
             # Check if this entry contains version information
-            if level == 0 and res.Id == RESOURCE_TYPE["RT_VERSION"]:
-                if dir_entries:
-                    last_entry = dir_entries[-1]
+            if (
+                level == 0
+                and res.Id == RESOURCE_TYPE["RT_VERSION"]
+                and dir_entries
+                and dir_entries[-1].struct is res
+            ):
+                last_entry = dir_entries[-1]
 
                 try:
                     version_entries = last_entry.directory.entries[0].directory.entries
@@ -4941,9 +5054,15 @@ class PE:
         for s in strings_to_postprocess:
             s.render_pascal_16()
 
-        return ResourceDirData(
-            struct=resource_dir, entries=dir_entries
+        parsed_directory = ResourceDirData(
+            struct=resource_dir,
+            entries=dir_entries,
+            directory_rva=directory_rva,
+            base_rva=base_rva,
+            level=level,
         )
+        self.__resource_directory_cache[directory_rva] = parsed_directory
+        return parsed_directory
 
 
     def parse_resource_data_entry(self, rva):
@@ -4996,6 +5115,100 @@ class PE:
         resource.DataIsDirectory = (resource.OffsetToData & 0x80000000) >> 31
 
         return resource
+
+    @staticmethod
+    def _resource_entry_identifier(entry):
+        """Build the path identifier of a resource directory entry.
+
+        Numeric ids are kept verbatim and never mapped to known resource
+        type names; name-indexed entries expose their decoded bytes.
+        """
+        name = None
+        name_is_string = bool(entry.struct.NameIsString)
+        if entry.name is not None:
+            name = getattr(entry.name, "string", None)
+        return ResourcePathEntry(
+            id=entry.id,
+            name=name,
+            name_is_string=name_is_string,
+            rva=getattr(entry, "entry_rva", None),
+        )
+
+    def traverse_resource_tree(self):
+        """Walk the resource directory graph as entities and path references.
+
+        Returns a ResourceTreeMap whose 'entities' hold one ResourceEntity per
+        physical IMAGE_RESOURCE_DIRECTORY (keyed by its RVA). A subtree shared
+        by several entries is therefore represented once but carries every
+        legal path that reaches it.
+
+        Every route to a leaf yields a ResourcePathReference in 'references'
+        with the code page kept apart from the language ids. References whose
+        last edge is a real back edge are flagged 'cyclic' and record the
+        ancestor directory RVA instead of a leaf.
+        """
+        if not hasattr(self, "DIRECTORY_ENTRY_RESOURCE"):
+            return ResourceTreeMap(entities=[], references=[])
+
+        entities = {}
+        entity_order = []
+        references = []
+
+        def walk(directory, path):
+            directory_rva = getattr(directory, "directory_rva", None)
+            if directory_rva not in entities:
+                entity = ResourceEntity(
+                    rva=directory_rva,
+                    level=getattr(directory, "level", None),
+                    paths=[],
+                    entries=directory,
+                )
+                entities[directory_rva] = entity
+                entity_order.append(entity)
+            else:
+                entity = entities[directory_rva]
+
+            entity.paths.append(list(path))
+
+            for entry in directory.entries:
+                identifier = self._resource_entry_identifier(entry)
+                current_path = path + [identifier]
+
+                if getattr(entry, "back_edge", False):
+                    references.append(
+                        ResourcePathReference(
+                            path=current_path,
+                            leaf=None,
+                            cyclic=True,
+                            cycle_target_rva=getattr(entry, "back_edge_rva", None),
+                        )
+                    )
+                    continue
+
+                if hasattr(entry, "directory"):
+                    walk(entry.directory, current_path)
+                elif hasattr(entry, "data"):
+                    data_entry = entry.data
+                    leaf = ResourceLeafRecord(
+                        struct=data_entry.struct,
+                        code_page=data_entry.struct.CodePage,
+                        language_id=entry.struct.Name,
+                        lang=data_entry.lang,
+                        sublang=data_entry.sublang,
+                        data_rva=data_entry.struct.OffsetToData,
+                        size=data_entry.struct.Size,
+                    )
+                    references.append(
+                        ResourcePathReference(
+                            path=current_path,
+                            leaf=leaf,
+                            cyclic=False,
+                            cycle_target_rva=None,
+                        )
+                    )
+
+        walk(self.DIRECTORY_ENTRY_RESOURCE, [])
+        return ResourceTreeMap(entities=entity_order, references=references)
 
     def parse_version_information(self, version_struct):
         """Parse version information structure.
