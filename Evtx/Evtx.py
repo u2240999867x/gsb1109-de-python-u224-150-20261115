@@ -22,16 +22,203 @@ from __future__ import absolute_import
 import re
 import sys
 import mmap
+import struct
 import logging
 import binascii
+from dataclasses import dataclass, field
 from functools import wraps
+from typing import List, Optional
 
 import Evtx.Views as e_views
 
 from .Nodes import RootNode, TemplateNode, NameStringNode
-from .BinaryParser import Block, ParseException
+from .BinaryParser import Block, OverrunBufferException, ParseException
 
 logger = logging.getLogger(__name__)
+
+
+# Fixed geometry of the EVTX format.  Chunks are always laid out at
+# `file header size + chunk_index * CHUNK_SIZE`, so even when a chunk is
+# unreadable, the following chunks are located by arithmetic on the original
+# file rather than by scanning for signatures.
+FILE_HEADER_SIZE = 0x1000
+CHUNK_SIZE = 0x10000
+CHUNK_HEADER_SIZE = 0x200
+RECORD_HEADER_SIZE = 0x18
+RECORD_MAGIC = 0x2A2A
+
+
+class RecordStatus(object):
+    """
+    Structural status of a record header read at a layout-derived boundary.
+
+    The status is decided solely from the bytes at an offset reached through
+    the file's own structure (the chunk data origin, or the previous record's
+    declared size).  The record magic appearing inside a payload is never
+    treated as evidence of a record boundary.
+    """
+
+    VALID = "valid"
+    OUT_OF_BOUNDS = "out_of_bounds"
+    INVALID_MAGIC = "invalid_magic"
+    INVALID_SIZE = "invalid_size"
+    SIZE_MISMATCH = "size_mismatch"
+
+
+class ChunkStatus(object):
+    """
+    Structural status of a 64KiB chunk located at its layout-derived offset.
+    """
+
+    VALID = "valid"
+    EMPTY = "empty"
+    INVALID_MAGIC = "invalid_magic"
+    HEADER_CHECKSUM_FAILED = "header_checksum_failed"
+    DATA_CHECKSUM_FAILED = "data_checksum_failed"
+    INACCESSIBLE = "inaccessible"
+
+
+@dataclass
+class RecordResult(object):
+    """
+    The outcome of probing one record boundary.
+
+    A `VALID` result carries a usable `Record`; every other status carries no
+    record and the caller must stop walking this chunk, because the next
+    boundary can no longer be derived from a trusted record size.
+
+    Attributes:
+      status: One of `RecordStatus`.
+      offset: Absolute file offset of the probed record header.
+      size: Declared record size, or None if not readable / not sane.
+      record_num: Declared record number, or None if not readable.
+      record: A `Record` when `status == RecordStatus.VALID`, else None.
+      error: Human readable explanation of the failure, else None.
+    """
+
+    status: str
+    offset: int
+    size: Optional[int] = None
+    record_num: Optional[int] = None
+    record: Optional["Record"] = None
+    error: Optional[str] = None
+    render_error: Optional[str] = None
+
+    @property
+    def is_valid(self):
+        return self.status == RecordStatus.VALID
+
+    @property
+    def renders(self):
+        """
+        Whether the recovered record's binary XML payload renders.
+
+        This is independent of `is_valid`, which only covers the record
+        header and size boundary.  It is populated by
+        `FileRecoveryResult.verify_renderable_records`.
+        """
+        return self.is_valid and self.render_error is None
+
+
+@dataclass
+class ChunkRecoveryResult(object):
+    """
+    The trustworthy records recovered from one chunk, and the raw range that
+    could not be recovered.
+
+    The skipped range is expressed against the original file and covers from
+    the first unparseable boundary up to the end of the chunk's data area.
+    Records after that point inside the same chunk are not claimed, since no
+    trusted boundary exists for them.  Later chunks are still processed
+    independently through their fixed offsets.
+
+    Attributes:
+      chunk_index: Zero based position of the chunk in the file.
+      chunk_offset: Absolute file offset of the chunk start.
+      status: One of `ChunkStatus`, describing the chunk header/checksums.
+      header_checksum_ok: Whether the stored header CRC matched.
+      data_checksum_ok: Whether the stored data CRC matched.
+      records: `RecordResult` entries for every boundary probed in order.
+      skipped_range: `(start, end)` absolute byte range not recovered,
+        inclusive-start/exclusive-end, or None if everything was recovered.
+      error: Human readable explanation when the whole chunk was inaccessible.
+    """
+
+    chunk_index: int
+    chunk_offset: int
+    status: str
+    header_checksum_ok: Optional[bool] = None
+    data_checksum_ok: Optional[bool] = None
+    records: List[RecordResult] = field(default_factory=list)
+    skipped_range: Optional[tuple] = None
+    error: Optional[str] = None
+
+    @property
+    def valid_records(self):
+        return [r.record for r in self.records if r.is_valid]
+
+    @property
+    def skipped_length(self):
+        if self.skipped_range is None:
+            return 0
+        return self.skipped_range[1] - self.skipped_range[0]
+
+
+@dataclass
+class FileRecoveryResult(object):
+    """
+    Aggregate outcome of an offline, best-effort recovery pass.
+
+    Attributes:
+      chunk_results: One `ChunkRecoveryResult` per chunk examined, in order.
+      skipped_ranges: Every non-empty `(start, end)` raw range that was not
+        recovered, in file order and expressed against the original file.
+    """
+
+    chunk_results: List[ChunkRecoveryResult] = field(default_factory=list)
+
+    @property
+    def records(self):
+        for chunk_result in self.chunk_results:
+            for record_result in chunk_result.records:
+                if record_result.is_valid:
+                    yield record_result.record
+
+    @property
+    def record_results(self):
+        for chunk_result in self.chunk_results:
+            for record_result in chunk_result.records:
+                yield record_result
+
+    def verify_renderable_records(self):
+        """
+        Attempt to render every structurally valid recovered record.
+
+        Structural validity (header magic, size boundary, trailing size copy)
+        is necessary but not sufficient: the binary XML payload can still be
+        undecodable.  This records a separate `render_error` on each record
+        result so the caller can distinguish trustworthy, fully readable
+        records from records with an intact header but corrupt content.
+
+        Returns:
+          FileRecoveryResult: self, for convenient chaining.
+        """
+        for record_result in self.record_results:
+            if not record_result.is_valid:
+                continue
+            try:
+                record_result.record.xml()
+            except Exception as exc:  # content-level failure, not a boundary failure
+                record_result.render_error = "{}: {}".format(type(exc).__name__, exc)
+        return self
+
+    @property
+    def skipped_ranges(self):
+        return [cr.skipped_range for cr in self.chunk_results if cr.skipped_range is not None]
+
+    @property
+    def total_skipped_bytes(self):
+        return sum(end - start for start, end in self.skipped_ranges)
 
 
 class InvalidRecordException(ParseException):
@@ -127,6 +314,64 @@ class Evtx(object):
     @ensure_contexted
     def get_file_header(self):
         return self._fh
+
+    @ensure_contexted
+    def recover(self):
+        """
+        Offline, best-effort recovery across the whole file.
+
+        Every chunk is reached at its fixed geometric offset
+        (`0x1000 + index * 0x10000`), so an unreadable chunk never prevents
+        the following chunks from being examined.  Each chunk is recovered
+        independently; a failure is captured in that chunk's result rather
+        than aborting the pass.
+
+        Returns:
+          FileRecoveryResult: the per-chunk results in order, the recovered
+            records, and every skipped raw range against the original file.
+        """
+        result = FileRecoveryResult()
+        file_length = len(self._buf)
+        chunk_index = 0
+        chunk_offset = FILE_HEADER_SIZE
+        while chunk_offset < file_length:
+            if chunk_offset + CHUNK_SIZE > file_length:
+                # A truncated final chunk: report the bytes that exist rather
+                # than silently dropping them.  The skipped range only covers
+                # a data area that is actually present; a chunk truncated
+                # inside its header has no in-file data range to skip.
+                data_start = min(chunk_offset + CHUNK_HEADER_SIZE, file_length)
+                skipped_range = (data_start, file_length) if file_length > data_start else None
+                result.chunk_results.append(
+                    ChunkRecoveryResult(
+                        chunk_index=chunk_index,
+                        chunk_offset=chunk_offset,
+                        status=ChunkStatus.INACCESSIBLE,
+                        skipped_range=skipped_range,
+                        error="chunk {} is truncated: {} of {} bytes present".format(
+                            chunk_index, file_length - chunk_offset, CHUNK_SIZE
+                        ),
+                    )
+                )
+                break
+
+            chunk = ChunkHeader(self._buf, chunk_offset)
+            try:
+                chunk_result = chunk.recover()
+            except (ParseException, OverrunBufferException) as exc:
+                chunk_result = ChunkRecoveryResult(
+                    chunk_index=chunk_index,
+                    chunk_offset=chunk_offset,
+                    status=ChunkStatus.INACCESSIBLE,
+                    skipped_range=(chunk_offset + CHUNK_HEADER_SIZE, chunk_offset + CHUNK_SIZE),
+                    error="could not parse chunk at {}: {}".format(hex(chunk_offset), exc),
+                )
+            result.chunk_results.append(chunk_result)
+
+            chunk_index += 1
+            chunk_offset += CHUNK_SIZE
+
+        return result
 
 
 class FileHeader(Block):
@@ -266,7 +511,6 @@ class Template(object):
     def __init__(self, template_node):
         self._template_node = template_node
         self._xml = None
-
     def _load_xml(self):
         """
         TODO(wb): One day, nodes should generate format strings
@@ -289,6 +533,87 @@ class Template(object):
 
     def node(self):
         return self._template_node
+
+
+def probe_record_header(buf, offset, chunk, chunk_end):
+    """
+    Validate the record header found at a single layout-derived offset.
+
+    This never searches for the record magic.  `offset` must be reached
+    through the file's own structure: the chunk data origin (chunk start +
+    0x200) for the first record, or the previous record's offset plus its
+    declared size for subsequent records.  A `0x2a2a` dword appearing inside a
+    payload is therefore never mistaken for a boundary.
+
+    The checks, each independently reported:
+      1. the full 0x18-byte header must be readable and lie inside the chunk;
+      2. the leading dword must equal the record magic `0x2a2a`;
+      3. the declared size must fit a header and not cross the chunk end;
+      4. the size dword must be repeated in the trailing copy at `size - 4`.
+
+    Args:
+      buf: The memory mapped file contents.
+      offset: Absolute file offset of the candidate record header.
+      chunk: The owning `ChunkHeader`, attached to recovered records.
+      chunk_end: Absolute offset one past the end of this chunk.
+
+    Returns:
+      RecordResult: `VALID` carries a `Record`; otherwise it carries the
+        specific failing check and the caller must stop walking this chunk.
+    """
+    chunk_start = chunk.offset()
+    if offset + RECORD_HEADER_SIZE > chunk_end or offset < chunk_start:
+        return RecordResult(
+            RecordStatus.OUT_OF_BOUNDS,
+            offset,
+            error="record header at {} is not fully inside chunk [{}, {})".format(
+                hex(offset), hex(chunk_start), hex(chunk_end)
+            ),
+        )
+
+    try:
+        magic, size, record_num = struct.unpack_from("<IIQ", buf, offset)
+    except struct.error as exc:
+        return RecordResult(RecordStatus.OUT_OF_BOUNDS, offset, error=str(exc))
+
+    if magic != RECORD_MAGIC:
+        return RecordResult(
+            RecordStatus.INVALID_MAGIC,
+            offset,
+            size=size,
+            record_num=record_num,
+            error="expected record magic 0x{:08x} at {}, found 0x{:08x}".format(
+                RECORD_MAGIC, hex(offset), magic
+            ),
+        )
+
+    if size < RECORD_HEADER_SIZE + 4 or offset + size > chunk_end:
+        return RecordResult(
+            RecordStatus.INVALID_SIZE,
+            offset,
+            size=size,
+            record_num=record_num,
+            error="declared size {} at {} does not fit inside the chunk".format(size, hex(offset)),
+        )
+
+    try:
+        trailing_size = struct.unpack_from("<I", buf, offset + size - 4)[0]
+    except struct.error as exc:
+        return RecordResult(
+            RecordStatus.INVALID_SIZE, offset, size=size, record_num=record_num, error=str(exc)
+        )
+
+    if trailing_size != size:
+        return RecordResult(
+            RecordStatus.SIZE_MISMATCH,
+            offset,
+            size=size,
+            record_num=record_num,
+            error="leading size {} does not match trailing size copy {}".format(size, trailing_size),
+        )
+
+    record = Record(buf, offset, chunk)
+    return RecordResult(RecordStatus.VALID, offset, size=size, record_num=record_num, record=record)
 
 
 class ChunkHeader(Block):
@@ -324,6 +649,19 @@ class ChunkHeader(Block):
         try:
             return self.magic() == "ElfChnk\x00"
         except UnicodeDecodeError:
+            return False
+
+    def is_empty(self):
+        """
+        Whether this chunk slot was never allocated and is zero filled.
+
+        Empty chunks appear past the active chunk count.  They are distinct
+        from damaged chunks: there is nothing to recover and no bytes were
+        lost, so they must not be reported as skipped ranges.
+        """
+        try:
+            return self.unpack_binary(0x0, 8) == b"\x00" * 8
+        except OverrunBufferException:
             return False
 
     def calculate_header_checksum(self):
@@ -444,6 +782,101 @@ class ChunkHeader(Block):
                 record = Record(self._buf, record._offset + record.length(), self)
             except InvalidRecordException:
                 return
+
+    def header_checksum_valid(self):
+        """
+        Whether the stored chunk header CRC matches a fresh calculation.
+
+        Returns None if the calculation cannot be performed (for example the
+        chunk is truncated before the end of its header).
+        """
+        try:
+            return self.calculate_header_checksum() == self.header_checksum()
+        except OverrunBufferException:
+            return None
+
+    def data_checksum_valid(self):
+        """
+        Whether the stored CRC over the chunk's record data matches.
+
+        The data CRC covers the region from 0x200 up to
+        `next_record_offset`.  Returns None if it cannot be calculated.
+        """
+        try:
+            if self.next_record_offset() < CHUNK_HEADER_SIZE:
+                return None
+            return self.calculate_data_checksum() == self.data_checksum()
+        except OverrunBufferException:
+            return None
+
+    def recover(self):
+        """
+        Offline, best-effort recovery of the records in this chunk.
+
+        Record boundaries are taken only from the chunk data origin and each
+        prior record's declared size; the bytes are never scanned for the
+        record magic.  As soon as a header probe fails, the walk stops and the
+        remainder of the chunk's data area is reported as one skipped raw
+        range against the original file.  A later chunk is unaffected, because
+        its location is the fixed chunk geometry rather than anything found
+        inside this chunk.
+
+        Returns:
+          ChunkRecoveryResult: the valid records in order, the per-boundary
+            probe statuses, the header/data checksum outcomes, and the skipped
+            raw byte range.
+        """
+        result = ChunkRecoveryResult(
+            chunk_index=(self._offset - FILE_HEADER_SIZE) // CHUNK_SIZE,
+            chunk_offset=self._offset,
+            status=ChunkStatus.VALID,
+        )
+
+        if self.is_empty():
+            # A never-allocated chunk is zero filled.  It holds no records and
+            # no data was lost, so it contributes no skipped range.
+            result.status = ChunkStatus.EMPTY
+            return result
+
+        if not self.check_magic():
+            result.status = ChunkStatus.INVALID_MAGIC
+            result.error = "chunk at {} does not begin with the ElfChnk magic".format(hex(self._offset))
+            result.skipped_range = (self._offset + CHUNK_HEADER_SIZE, self._offset + CHUNK_SIZE)
+            return result
+
+        result.header_checksum_ok = self.header_checksum_valid()
+        if result.header_checksum_ok is False:
+            result.status = ChunkStatus.HEADER_CHECKSUM_FAILED
+
+        result.data_checksum_ok = self.data_checksum_valid()
+        if result.data_checksum_ok is False and result.status == ChunkStatus.VALID:
+            result.status = ChunkStatus.DATA_CHECKSUM_FAILED
+
+        # Trust the declared end of the record area only while it is sane;
+        # otherwise fall back to probing through the whole 64KiB data area.
+        try:
+            next_record_offset = self.next_record_offset()
+        except OverrunBufferException:
+            next_record_offset = None
+        if next_record_offset is not None and CHUNK_HEADER_SIZE <= next_record_offset <= CHUNK_SIZE:
+            walk_end = self._offset + next_record_offset
+        else:
+            walk_end = self._offset + CHUNK_SIZE
+
+        data_start = self._offset + CHUNK_HEADER_SIZE
+        data_end = self._offset + CHUNK_SIZE
+        boundary = data_start
+        while boundary + RECORD_HEADER_SIZE <= walk_end:
+            probe = probe_record_header(self._buf, boundary, self, data_end)
+            if not probe.is_valid:
+                result.records.append(probe)
+                result.skipped_range = (boundary, data_end)
+                return result
+
+            result.records.append(probe)
+            boundary = probe.offset + probe.size
+
+        return result
 
 
 class Record(Block):

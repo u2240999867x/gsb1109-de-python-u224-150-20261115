@@ -41,6 +41,44 @@ Note the length of the `evtx_dump.py` script: its only 20 lines.  Now, review th
 
 Working with python-evtx is really easy!
 
+Recovering damaged files
+------------------------
+When a backup contains a bad block, `evtx_recover.py` performs an offline,
+best-effort recovery that only emits trustworthy records and never silently
+drops bytes.
+
+    evtx_recover damaged.evtx --xml recovered.xml
+
+The walk is driven by the file's own layout rather than by signature scanning:
+
+- **Block headers.** Every chunk is reached at its fixed geometric offset
+  (`0x1000 + chunk_index * 0x10000`), so an unreadable chunk header never
+  blocks access to the chunks that follow it. Each chunk reports its header
+  CRC and data CRC separately, and never-allocated (zero filled) chunks are
+  distinguished from damaged ones.
+- **Record boundaries.** The first record starts at the chunk data origin
+  (`chunk + 0x200`); each subsequent boundary is the previous offset plus the
+  previous record's declared size. A record signature (`0x2a2a`) appearing by
+  chance inside a payload is therefore never treated as the start of a record.
+  Each boundary is checked for the magic, a sane size that stays inside the
+  chunk, and the matching trailing copy of the size.
+- **Checksums.** Chunk header and data CRC32 checksums are reported
+  independently of record structure, and a record whose binary XML payload
+  cannot be decoded is kept structurally but flagged separately from raw
+  skipped ranges.
+
+Every region that cannot be recovered is reported as an absolute byte range of
+the original file (start/end and length), including truncated final chunks.
+
+The same machinery is available through the API:
+
+    with Evtx("damaged.evtx") as log:
+        result = log.recover()
+        result.verify_renderable_records()
+        for record in result.records:
+            ...
+        print(result.skipped_ranges)
+
 
 Installation
 ------------
