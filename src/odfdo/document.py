@@ -58,6 +58,7 @@ from .element import Element
 from .manifest import Manifest
 from .meta import Meta
 from .mixin_md import MDDocument, _set_global
+from .named_range import table_name_check
 from .settings import Settings
 from .style_base import StyleBase
 from .styles import Styles
@@ -71,6 +72,7 @@ from .utils import (
     bytes_to_str,
     format_json,
     is_RFC3066,
+    rename_table_in_formula,
 )
 from .xmlpart import XmlPart
 
@@ -2337,6 +2339,65 @@ class Document(MDDocument):
         sheet.style = new_name  # ty: ignore
         properties = {"table:display": Boolean.encode(displayed)}
         new_style.set_properties(properties)
+
+    def rename_table(self, name: str, new_name: str) -> None:
+        """Rename a table (sheet) of the document, updating all references.
+
+        Useful when merging spreadsheets (e.g. monthly reports) that contain
+        tables with identical names: assign a new name to the table and
+        migrate every internal reference to it.
+
+        All internal formulas and named ranges referring to the old table
+        name are migrated to the new name. Table names requiring it (e.g.
+        names containing spaces) are correctly quoted in formulas. Text
+        inside string literals is never modified, even if identical to the
+        table name, and references to external workbooks are left untouched.
+
+        Args:
+            name: The current name of the table.
+            new_name: The new name for the table.
+
+        Raises:
+            ValueError: If the table is not found, if `new_name` is invalid
+                or already used by another table of the document.
+
+        """
+        body = self.body
+        table = body.get_table(name=name)
+        if table is None:
+            msg = f"Table not found: {name!r}"
+            raise ValueError(msg)
+        new_name = table_name_check(new_name)
+        if new_name == name:
+            return
+        if body.get_table(name=new_name) is not None:
+            msg = f"Table already exists: {new_name!r}"
+            raise ValueError(msg)
+        # migrate formulas
+        for element in body.get_elements("descendant::*[@table:formula]"):
+            formula = element.get_attribute_string("table:formula")
+            if formula:
+                element.set_attribute(
+                    "table:formula",
+                    rename_table_in_formula(formula, name, new_name),
+                )
+        # migrate named expressions
+        for element in body.get_elements("descendant::table:named-expression"):
+            for attribute in ("table:expression", "table:base-cell-address"):
+                expression = element.get_attribute_string(attribute)
+                if expression:
+                    element.set_attribute(
+                        attribute,
+                        rename_table_in_formula(expression, name, new_name),
+                    )
+        # migrate named ranges
+        for named_range in body.get_named_ranges():
+            if named_range.table_name == name:
+                named_range.set_table_name(new_name)
+        # rename the table itself
+        table.name = new_name
+
+    rename_sheet = rename_table
 
     def get_language(self) -> str:
         """Get the default language of the document from its styles.

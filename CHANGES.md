@@ -1,5 +1,12 @@
 # Odfdo Release Notes
 
+## [Unreleased]
+
+### Added
+
+-   Added `Document.rename_table()` to rename a table (sheet) and migrate all internal references: formulas and named ranges are updated, names requiring it (e.g. containing spaces) are correctly quoted, string literals and external workbook references are left unchanged.
+-   Added `rename_table_in_formula()` and `formula_table_name()` to `odfdo.utils`.
+
 ## [3.27.3] - 2026-10-24
 
 -   Improve the filter for parasite files (`.DS_Store` and others) when savving the document.

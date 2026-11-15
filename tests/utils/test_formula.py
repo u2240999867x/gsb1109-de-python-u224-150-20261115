@@ -21,7 +21,7 @@
 #          Hervé Cauwelier <herve@itaapy.com>
 #          David Versmisse <david.versmisse@itaapy.com>
 
-from odfdo.utils import oooc_to_ooow
+from odfdo.utils import formula_table_name, oooc_to_ooow, rename_table_in_formula
 
 
 def test_addition():
@@ -40,3 +40,81 @@ def test_addition_sum():
     formula = "oooc:=[.A2]-[.A3]+SUM([.B2:.B4])*[.D4]"
     excepted = "ooow:<A2>-<A3>+sum <B2:B4>*<D4>"
     assert oooc_to_ooow(formula) == excepted
+
+
+def test_formula_table_name_simple():
+    assert formula_table_name("Sheet1") == "Sheet1"
+
+
+def test_formula_table_name_with_space():
+    assert formula_table_name("Jan 2026") == "'Jan 2026'"
+
+
+def test_formula_table_name_starting_with_digit():
+    assert formula_table_name("2026") == "'2026'"
+
+
+def test_rename_table_in_formula_bare_name():
+    formula = "of:=[Sheet1.A1]+[.B2]"
+    assert rename_table_in_formula(formula, "Sheet1", "Report") == (
+        "of:=[Report.A1]+[.B2]"
+    )
+
+
+def test_rename_table_in_formula_quoted_name():
+    formula = "of:=['Jan 2025'.A1]+SUM(['Jan 2025'.B1:.B9])"
+    assert rename_table_in_formula(formula, "Jan 2025", "Jan 2026") == (
+        "of:=['Jan 2026'.A1]+SUM(['Jan 2026'.B1:.B9])"
+    )
+
+
+def test_rename_table_in_formula_quotes_new_name():
+    formula = "of:=[Sheet1.A1]"
+    assert rename_table_in_formula(formula, "Sheet1", "Jan 2026") == (
+        "of:=['Jan 2026'.A1]"
+    )
+
+
+def test_rename_table_in_formula_absolute_reference():
+    formula = "of:=$Sheet1.$A$1"
+    assert rename_table_in_formula(formula, "Sheet1", "Report") == (
+        "of:=$Report.$A$1"
+    )
+
+
+def test_rename_table_in_formula_range():
+    formula = "of:=[Sheet1.A1:Sheet1.B2]"
+    assert rename_table_in_formula(formula, "Sheet1", "Report") == (
+        "of:=[Report.A1:Report.B2]"
+    )
+
+
+def test_rename_table_in_formula_string_literal_unchanged():
+    formula = 'of:=CONCAT("Sheet1", [Sheet1.A1])'
+    assert rename_table_in_formula(formula, "Sheet1", "Report") == (
+        'of:=CONCAT("Sheet1", [Report.A1])'
+    )
+
+
+def test_rename_table_in_formula_external_reference_unchanged():
+    formula = "of:=['file:///tmp/report.ods'#$Sheet1.A1]+[Sheet1.B2]"
+    assert rename_table_in_formula(formula, "Sheet1", "Report") == (
+        "of:=['file:///tmp/report.ods'#$Sheet1.A1]+[Report.B2]"
+    )
+
+
+def test_rename_table_in_formula_external_quoted_sheet_unchanged():
+    formula = "of:=['file:///tmp/report.ods'#$'Jan 2025'.A1]"
+    assert rename_table_in_formula(formula, "Jan 2025", "Feb 2025") == formula
+
+
+def test_rename_table_in_formula_no_partial_match():
+    formula = "of:=[MySheet1.A1]+[Sheet1.A1]"
+    assert rename_table_in_formula(formula, "Sheet1", "Report") == (
+        "of:=[MySheet1.A1]+[Report.A1]"
+    )
+
+
+def test_rename_table_in_formula_same_name():
+    formula = "of:=[Sheet1.A1]"
+    assert rename_table_in_formula(formula, "Sheet1", "Sheet1") == formula

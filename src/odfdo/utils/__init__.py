@@ -28,7 +28,7 @@ from .coordinates import (
     increment,
     translate_from_any,
 )
-from .formula import oooc_to_ooow
+from .formula import formula_table_name, oooc_to_ooow, rename_table_in_formula
 from .isiterable import isiterable
 from .json_formater import format_json
 from .remove_tree import remove_tree
@@ -66,6 +66,7 @@ __all__ = [
     "convert_coordinates",
     "digit_to_alpha",
     "format_json",
+    "formula_table_name",
     "get_default_language",
     "hex2rgb",
     "hexa_color",
@@ -75,6 +76,7 @@ __all__ = [
     "make_xpath_query",
     "oooc_to_ooow",
     "remove_tree",
+    "rename_table_in_formula",
     "rgb2hex",
     "str_to_bytes",
     "to_bytes",
