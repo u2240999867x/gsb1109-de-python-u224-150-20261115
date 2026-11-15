@@ -152,6 +152,58 @@ convenient to build the node tree before, in the way to create it only once:
     >>> context.root is root_node
     True
 
+Locating matched text nodes
+---------------------------
+
+The selector API returns the string value of each matched text node, so a text
+node selected with ``text()`` is unwrapped into a plain string. When an element
+has mixed content a text node can also derive from the ``tail`` of a preceding
+child, and two text nodes containing the same string are then indistinguishable
+from the bare results:
+
+.. doctest::
+
+    >>> root = ElementTree.XML('<root>head<a>same</a>same<b>same</b>tail</root>')
+    >>> from elementpath import select
+    >>> select(root, '//text()')
+    ['head', 'same', 'same', 'same', 'tail']
+
+Use :func:`elementpath.extras.textlocations.locate_text` to keep the matched
+:class:`~elementpath.TextNode` objects and to get the exact source of each
+match. Each :class:`~elementpath.extras.textlocations.TextMatch` records the
+text or tail source, the owning element, the anchor child of a tail and the
+positions of the node:
+
+.. doctest::
+
+    >>> from elementpath.extras.textlocations import locate_text
+    >>> matches = locate_text(root, '//text()')
+    >>> [(m.value, m.source, m.path) for m in matches]
+    [('head', 'text', '/Q{}root[1]/text()[1]'), ('same', 'text', '/Q{}root[1]/Q{}a[1]/text()[1]'), ('same', 'tail', '/Q{}root[1]/text()[2]'), ('same', 'text', '/Q{}root[1]/Q{}b[1]/text()[1]'), ('tail', 'tail', '/Q{}root[1]/text()[3]')]
+
+The third match is a distinct text node that stores the ``tail`` of element
+``a``, even though its string equals the text of ``a`` and ``b``. Each match
+keeps a different node identity and refers to a single text node, never to the
+full string value of the parent element:
+
+.. doctest::
+
+    >>> tail_match = locate_text(root, '/root/text()[2]')[0]
+    >>> tail_match.is_tail
+    True
+    >>> tail_match.anchor.name
+    'a'
+    >>> tail_match.text_position
+    2
+    >>> tail_match.value
+    'same'
+    >>> tail_match.owner.string_value
+    'headsamesamesametail'
+
+The ``fragment_order`` field gives the 1-based order of the match within the
+returned sequence, while ``node_position`` and ``element_position`` locate the
+text node and its owning element in the document total order.
+
 
 The context root and the context item
 =====================================

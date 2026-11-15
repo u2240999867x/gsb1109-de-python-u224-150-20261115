@@ -2,6 +2,12 @@
 CHANGELOG
 *********
 
+Unreleased
+==========
+* Add ``elementpath.extras.textlocations`` for locating the text nodes matched by
+  an XPath expression, preserving each node identity and reporting whether the text
+  is an element text or a child tail, the owning element and the node positions
+
 `v5.1.4`_ (2026-08-08)
 ======================
 * Add *allow_environment* and *allow_external_resources* arguments to XPath30Parser
