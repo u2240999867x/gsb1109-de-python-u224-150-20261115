@@ -29,6 +29,16 @@ If the ISO is a Rock Ridge ISO, \fBrr_name\fR must be specified; otherwise, it m
 If the ISO is not a Joliet ISO, \fBjoliet_path\fR must not be specified.  If the ISO is a
 Joliet ISO, \fBjoliet_path\fR is optional, but highly recommended to supply.
 .TP
+.B "boot_entries"
+List every El Torito boot entry on the ISO, including the Initial/Default
+Entry and any Section Entries.  For each entry this shows the platform, the
+boot media type, whether the entry is bootable, the Load RBA (counted in
+2048-byte ISO blocks) together with the sector count (counted in 512-byte El
+Torito virtual sectors) and resulting referenced byte range, and the file or
+files that actually back the entry.  Entries that parse but reference data
+outside of the ISO or beyond their backing file are marked BROKEN
+individually; the other entries are still listed.
+.TP
 .B "cd <iso_dir>"
 Change the current working directory to relative or absolute ISO path \fBiso_dir\fR.
 .TP

@@ -617,3 +617,65 @@ def test_eltorito_boot_catalog_parse_openbsd_style_catalog():
     assert(len(bc.sections[0].section_entries) == 1)
     assert(bc.sections[0].section_entries[0].load_rba == 0x5324d)
     assert(len(bc.standalone_entries) == 0)
+
+# Boot entry listing helpers
+def test_eltorito_platform_name_known_ids():
+    assert(pycdlib.eltorito.platform_name(0) == 'x86')
+    assert(pycdlib.eltorito.platform_name(1) == 'PowerPC')
+    assert(pycdlib.eltorito.platform_name(2) == 'Mac')
+    assert(pycdlib.eltorito.platform_name(0xef) == 'UEFI')
+
+def test_eltorito_platform_name_unknown_id():
+    assert(pycdlib.eltorito.platform_name(7) == 'unknown (0x7)')
+
+def test_eltorito_media_name_known_types():
+    assert(pycdlib.eltorito.media_name(0) == 'no emulation')
+    assert(pycdlib.eltorito.media_name(1) == '1.2MB floppy emulation')
+    assert(pycdlib.eltorito.media_name(2) == '1.44MB floppy emulation')
+    assert(pycdlib.eltorito.media_name(3) == '2.88MB floppy emulation')
+    assert(pycdlib.eltorito.media_name(4) == 'hard disk emulation')
+
+def test_eltorito_media_name_unknown_type():
+    assert(pycdlib.eltorito.media_name(9) == 'unknown (0x9)')
+
+def test_eltorito_boot_catalog_iter_boot_entries_default_sections_standalone():
+    bc = _make_parsed_boot_catalog()
+
+    bc.parse(_section_header(0x90, 1))
+    bc.parse(_section_entry().record())
+    bc.parse(_section_header(0x91, 1))
+    bc.parse(_section_entry().record())
+    bc.parse(_section_entry().record())
+    bc.parse(b'\x00' * 32)
+
+    entries = bc.iter_boot_entries()
+
+    assert([label for label, _platform, _entry in entries] ==
+           ['Initial/Default Entry', 'Section 1 Entry 1',
+            'Section 2 Entry 1', 'Standalone Entry 1'])
+    assert(entries[0][1] == 0)
+    assert(entries[1][1] == 0)
+    assert(entries[2][1] == 0)
+    assert(entries[3][1] == 0)
+
+def test_eltorito_boot_catalog_iter_boot_entries_uses_section_platform():
+    bc = _make_parsed_boot_catalog()
+
+    # A UEFI (0xef) section header followed by one section entry.
+    bc.parse(struct.pack('<BBH28s', 0x91, 0xef, 1, b''))
+    bc.parse(_section_entry().record())
+    bc.parse(b'\x00' * 32)
+
+    entries = bc.iter_boot_entries()
+
+    assert(entries[0][0] == 'Initial/Default Entry')
+    assert(entries[0][1] == 0)
+    assert(entries[1][0] == 'Section 1 Entry 1')
+    assert(entries[1][1] == 0xef)
+
+def test_eltorito_boot_catalog_iter_boot_entries_not_initialized():
+    bc = pycdlib.eltorito.EltoritoBootCatalog(None)
+
+    with pytest.raises(pycdlib.pycdlibexception.PyCdlibInternalError) as excinfo:
+        bc.iter_boot_entries()
+    assert(str(excinfo.value) == 'El Torito Boot Catalog not initialized')

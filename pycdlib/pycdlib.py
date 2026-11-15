@@ -6215,6 +6215,84 @@ class PyCdlib:
 
         self._finish_remove(num_bytes_to_remove, True)
 
+    def list_eltorito_entries(self):
+        # type: () -> List[eltorito.EltoritoBootEntryReport]
+        """
+        List every El Torito boot entry on this ISO, along with its platform,
+        boot media type, and the files that actually back it.
+
+        The El Torito Boot Catalog always contains an Initial/Default Entry and
+        may additionally contain one or more Sections (each with its own
+        platform ID and Section Entries), as well as standalone entries that
+        lack a Section Header.  All of them are returned here, in catalog
+        order.
+
+        Each entry's Load RBA is counted in 2048-byte ISO logical blocks,
+        while its sector count is in the 512-byte 'virtual sectors' defined by
+        El Torito; the report carries both units explicitly.  The byte range an
+        entry references is checked against both the end of the ISO and the
+        directory record (file) that backs the entry.  An entry that parsed
+        successfully but references data outside of the ISO, or more data than
+        its backing file covers, is returned with its 'errors' list populated
+        ('ok' is False, 'in_iso' is False when the ISO bounds check failed);
+        such an entry does not prevent the other entries from being reported.
+
+        Returns:
+            A list of EltoritoBootEntryReport objects, one per boot entry.
+        """
+        if not self._initialized:
+            raise pycdlibexception.PyCdlibInvalidInput('This object is not initialized; call either open() or new() to create an ISO')
+
+        if self.eltorito_boot_catalog is None:
+            raise pycdlibexception.PyCdlibInvalidInput('This ISO does not have an El Torito Boot Record')
+
+        iso_size = self._get_iso_size()
+        reports = []  # type: List[eltorito.EltoritoBootEntryReport]
+
+        for label, platform_id, boot_entry in self.eltorito_boot_catalog.iter_boot_entries():
+            errors = []  # type: List[str]
+
+            load_rba = boot_entry.get_rba()
+            referenced_length = boot_entry.length()
+            start_byte = load_rba * self.logical_block_size
+            end_byte = start_byte + referenced_length
+
+            in_iso = True
+            if start_byte >= iso_size:
+                in_iso = False
+                errors.append('Boot image load RBA %d (byte offset %d) is past the end of the ISO, which is %d bytes' % (load_rba, start_byte, iso_size))
+            elif end_byte > iso_size:
+                in_iso = False
+                errors.append('Boot image extends past the end of the ISO; %d bytes are referenced starting at byte offset %d, but the ISO is only %d bytes' % (referenced_length, start_byte, iso_size))
+
+            referenced_files = []  # type: List[str]
+            boot_inode = getattr(boot_entry, 'inode', None)
+            if boot_inode is not None:
+                for linked_rec, _is_pvd in boot_inode.linked_records:
+                    if not isinstance(linked_rec, (dr.DirectoryRecord, udfmod.UDFFileEntry)):
+                        continue
+                    try:
+                        path = self.full_path_from_dirrecord(linked_rec)
+                    except pycdlibexception.PyCdlibException:
+                        path = linked_rec.file_identifier().decode('ascii', 'replace')
+                    if path not in referenced_files:
+                        referenced_files.append(path)
+
+                if referenced_files:
+                    file_extent = boot_inode.extent_location()
+                    if file_extent != load_rba:
+                        errors.append('Load RBA (%d) does not match the extent of the referenced file (%d)' % (load_rba, file_extent))
+                    file_length = boot_inode.get_data_length()
+                    if referenced_length > file_length:
+                        errors.append('El Torito entry references %d bytes (sector count %d times the 512-byte El Torito virtual sector), but the referenced file only covers %d bytes' % (referenced_length, boot_entry.sector_count, file_length))
+
+            reports.append(eltorito.EltoritoBootEntryReport(label, boot_entry,
+                                                            platform_id,
+                                                            referenced_files,
+                                                            in_iso, errors))
+
+        return reports
+
     def add_symlink(self, symlink_path=None, rr_symlink_name=None, rr_path=None,
                     joliet_path=None, udf_symlink_path=None, udf_target=None,
                     creation_time=None):

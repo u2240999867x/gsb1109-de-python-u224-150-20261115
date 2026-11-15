@@ -556,6 +556,51 @@ class PyCdlibCmdLoop(cmd.Cmd):
 
         return False
 
+    def help_boot_entries(self):
+        """The help method for the 'boot_entries' command."""
+        print('> boot_entries')
+        print('List every El Torito boot entry on the ISO.  For each entry this prints the')
+        print('platform, boot media type, whether it is bootable, the Load RBA (in 2048-byte')
+        print('ISO blocks) and sector count (in 512-byte El Torito virtual sectors), the file')
+        print('or files that actually back the entry, and its validation status.  An entry that')
+        print('parses but points outside of the ISO, or beyond its backing file, is marked')
+        print('BROKEN without affecting the other entries.')
+
+    def do_boot_entries(self, line):
+        """
+        The command to list and validate the El Torito boot entries on the ISO.
+        """
+        if line:
+            self.help_boot_entries()
+            return False
+
+        try:
+            entries = self.iso.list_eltorito_entries()
+        except Exception as e:  # pylint: disable=broad-except
+            print(e)
+            return False
+
+        for report in entries:
+            print(report.label)
+            print('  Platform: %s (id 0x%x)' % (report.platform, report.platform_id))
+            print('  Media: %s (type %d)' % (report.media, report.media_type))
+            print('  Bootable: %s' % ('yes' if report.bootable else 'no'))
+            print('  Load RBA: %d 2048-byte blocks (byte offset %d)' % (report.load_rba, report.load_rba * self.iso.logical_block_size))
+            print('  Referenced range: %d virtual sectors of %d bytes = %d bytes' % (report.sector_count, report.virtual_sector_size, report.load_size))
+            print('  Load segment: 0x%x, system type: 0x%x' % (report.load_segment, report.system_type))
+            if report.referenced_files:
+                print('  Referenced files: %s' % (', '.join(report.referenced_files)))
+            else:
+                print('  Referenced files: none (not linked into the ISO filesystem)')
+            if report.ok:
+                print('  Status: OK')
+            else:
+                print('  Status: BROKEN')
+                for error in report.errors:
+                    print('    - %s' % (error))
+
+        return False
+
 
 def main():
     """

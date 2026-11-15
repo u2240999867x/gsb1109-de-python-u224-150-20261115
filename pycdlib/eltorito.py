@@ -25,7 +25,7 @@ from pycdlib import utils
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
-    from typing import List, Union  # noqa: F401
+    from typing import List, Tuple, Union  # noqa: F401
     # NOTE: these imports have to be here to avoid circular deps
     from pycdlib import dr  # noqa: F401
     from pycdlib import headervd  # noqa: F401
@@ -34,6 +34,67 @@ if TYPE_CHECKING:
 
 
 _logger = logging.getLogger('pycdlib')
+
+
+# The platform IDs that El Torito allows in the Validation Entry and Section
+# Headers.  0xef is the UEFI platform ID that is not in the original El Torito
+# specification but is universally supported in practice.
+PLATFORM_ID_X86 = 0
+PLATFORM_ID_POWERPC = 1
+PLATFORM_ID_MAC = 2
+PLATFORM_ID_UEFI = 0xef
+
+PLATFORM_ID_NAMES = {
+    PLATFORM_ID_X86: 'x86',
+    PLATFORM_ID_POWERPC: 'PowerPC',
+    PLATFORM_ID_MAC: 'Mac',
+    PLATFORM_ID_UEFI: 'UEFI',
+}
+
+# El Torito virtual sectors are always 512 bytes, regardless of the 2048-byte
+# logical block size of the ISO itself.
+VIRTUAL_SECTOR_SIZE = 512
+
+
+def platform_name(platform_id):
+    # type: (int) -> str
+    """
+    Get the human-readable name for an El Torito platform ID.
+
+    Args:
+        platform_id: The platform ID from a Validation Entry or Section Header.
+    Returns:
+        A string describing the platform, or 'unknown (0xNN)' for an
+        unrecognized ID.
+    """
+    try:
+        return PLATFORM_ID_NAMES[platform_id]
+    except KeyError:
+        return 'unknown (0x%x)' % (platform_id)
+
+
+def media_name(media_type):
+    # type: (int) -> str
+    """
+    Get the human-readable name for an El Torito boot media type.
+
+    Args:
+        media_type: The boot media type byte from an El Torito Entry.
+    Returns:
+        A string describing the media type, or 'unknown (0xNN)' for an
+        unrecognized type.
+    """
+    names = {
+        EltoritoEntry.MEDIA_NO_EMUL: 'no emulation',
+        EltoritoEntry.MEDIA_12FLOPPY: '1.2MB floppy emulation',
+        EltoritoEntry.MEDIA_144FLOPPY: '1.44MB floppy emulation',
+        EltoritoEntry.MEDIA_288FLOPPY: '2.88MB floppy emulation',
+        EltoritoEntry.MEDIA_HD_EMUL: 'hard disk emulation',
+    }
+    try:
+        return names[media_type]
+    except KeyError:
+        return 'unknown (0x%x)' % (media_type)
 
 
 class EltoritoBootInfoTable:
@@ -450,7 +511,7 @@ class EltoritoEntry:
             raise pycdlibexception.PyCdlibInternalError('El Torito Entry not initialized')
         # According to El Torito, the sector count is in virtual sectors, which
         # are defined to be 512 bytes.
-        return self.sector_count * 512
+        return self.sector_count * VIRTUAL_SECTOR_SIZE
 
     def set_data_length(self, length):
         # type: (int) -> None
@@ -464,7 +525,7 @@ class EltoritoEntry:
         """
         if not self._initialized:
             raise pycdlibexception.PyCdlibInternalError('El Torito Entry not initialized')
-        self.sector_count = utils.ceiling_div(length, 512)
+        self.sector_count = utils.ceiling_div(length, VIRTUAL_SECTOR_SIZE)
 
 
 class EltoritoSectionHeader:
@@ -589,6 +650,49 @@ class EltoritoSectionHeader:
             outlist.append(entry.record())
 
         return b''.join(outlist)
+
+
+class EltoritoBootEntryReport:
+    """
+    A read-only description of a single El Torito boot entry, suitable for
+    listing the contents of a Boot Catalog without having to know how the
+    catalog structures its Initial/Default Entry, Section Headers, Section
+    Entries, and standalone entries.
+    """
+    __slots__ = ('label', 'platform_id', 'platform', 'media_type', 'media',
+                 'bootable', 'load_rba', 'sector_count', 'virtual_sector_size',
+                 'load_size', 'load_segment', 'system_type', 'referenced_files',
+                 'in_iso', 'errors')
+
+    def __init__(self, label, entry, platform_id, referenced_files, in_iso,
+                 errors):
+        # type: (str, EltoritoEntry, int, List[str], bool, List[str]) -> None
+        self.label = label
+        self.platform_id = platform_id
+        self.platform = platform_name(platform_id)
+        self.media_type = entry.boot_media_type
+        self.media = media_name(entry.boot_media_type)
+        self.bootable = entry.boot_indicator == 0x88
+        self.load_rba = entry.load_rba
+        self.sector_count = entry.sector_count
+        self.virtual_sector_size = VIRTUAL_SECTOR_SIZE
+        self.load_size = entry.sector_count * VIRTUAL_SECTOR_SIZE
+        self.load_segment = entry.load_segment
+        self.system_type = entry.system_type
+        self.referenced_files = referenced_files
+        self.in_iso = in_iso
+        self.errors = errors
+
+    @property
+    def ok(self):
+        # type: () -> bool
+        """
+        Whether this entry parsed and points entirely within the ISO.
+
+        Returns:
+            True if the entry has no errors, False otherwise.
+        """
+        return not self.errors
 
 
 class EltoritoBootCatalog:
@@ -887,6 +991,40 @@ class EltoritoBootCatalog:
             outlist.append(entry.record())
 
         return b''.join(outlist)
+
+    def iter_boot_entries(self):
+        # type: () -> List[Tuple[str, int, EltoritoEntry]]
+        """
+        Enumerate every boot entry in this Boot Catalog, in the order they
+        appear on disk: the Initial/Default Entry first, then the entries of
+        each Section Header (which are the El Torito 'extensions'), and finally
+        any standalone entries that were not preceded by a Section Header.
+
+        Returns:
+            A list of (label, platform_id, entry) tuples.  The label is a
+            stable, human-readable name for the entry's position in the
+            catalog, and the platform ID is the one that applies to the entry
+            (the Validation Entry platform for the Initial Entry, the Section
+            Header platform for Section Entries).
+        """
+        if not self._initialized:
+            raise pycdlibexception.PyCdlibInternalError('El Torito Boot Catalog not initialized')
+
+        result = [(('Initial/Default Entry',
+                    self.validation_entry.platform_id,
+                    self.initial_entry))]
+
+        for section_index, section in enumerate(self.sections):
+            for entry_index, sec_entry in enumerate(section.section_entries):
+                label = 'Section %d Entry %d' % (section_index + 1, entry_index + 1)
+                result.append((label, section.platform_id, sec_entry))
+
+        for standalone_index, standalone_entry in enumerate(self.standalone_entries):
+            label = 'Standalone Entry %d' % (standalone_index + 1)
+            result.append((label, self.validation_entry.platform_id,
+                           standalone_entry))
+
+        return result
 
     def add_dirrecord(self, rec):
         # type: (Union[dr.DirectoryRecord, udfmod.UDFFileEntry]) -> None
