@@ -155,6 +155,10 @@ def _write_header(file: IO, header: Dict[str, Any], custom_field_map: Optional[N
     local_options = header.copy()
     ordered_options = []
 
+    # Private pynrrd fields (e.g. the original bounds recorded by a bounded read) are never serialized
+    for private_field in [field for field in local_options if field.startswith('_')]:
+        del local_options[private_field]
+
     # Loop through field order and add the key/value if present
     # Remove the key/value from the local options so that we know not to add it again
     for field in _NRRD_FIELD_ORDER:

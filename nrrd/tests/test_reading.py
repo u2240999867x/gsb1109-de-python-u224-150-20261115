@@ -592,6 +592,155 @@ class TestCompressedDataIntegrity(unittest.TestCase):
                 np.testing.assert_array_equal(nrrd.read_data(header, stream), expected)
 
 
+class _CountingBytesIO(io.BytesIO):
+    """BytesIO recording every (start, end) byte range handed to read()."""
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.read_ranges = []
+
+    def read(self, size=-1):
+        start = self.tell()
+        result = super().read(size)
+        self.read_ranges.append((start, start + len(result)))
+        return result
+
+
+class AbstractBounded:
+    class TestBoundedReading(unittest.TestCase):
+        index_order: ClassVar[Literal['F', 'C']]
+
+        def _order_bounds(self, fortran_bounds):
+            return fortran_bounds if self.index_order == 'F' else fortran_bounds[::-1]
+
+        def test_bounded_read_matches_full_read_slice(self):
+            for path in [RAW_NRRD_FILE_PATH, GZ_NRRD_FILE_PATH, BZ2_NRRD_FILE_PATH]:
+                with self.subTest(path=path):
+                    full_data, full_header = nrrd.read(path, index_order=self.index_order)
+
+                    bounds_f = ((2, 10), (5, 25), (7, 20))
+                    data, header = nrrd.read(path, index_order=self.index_order,
+                                             selection=self._order_bounds(bounds_f))
+
+                    slicer = tuple(slice(lo, hi) for lo, hi in self._order_bounds(bounds_f))
+                    np.testing.assert_array_equal(data, full_data[slicer])
+                    np.testing.assert_array_equal(header['sizes'], np.array([8, 20, 13]))
+                    self.assertEqual(header['_selection'], bounds_f)
+                    self.assertTrue(data.flags['WRITEABLE'])
+                    # Untouched header fields survive the crop
+                    self.assertEqual(header['type'], full_header['type'])
+
+        def test_bounded_read_open_bounds(self):
+            bounds_f = ((None, 10), (5, None), (None, None))
+            data, header = nrrd.read(RAW_NRRD_FILE_PATH, index_order=self.index_order,
+                                     selection=self._order_bounds(bounds_f))
+
+            full_data, _ = nrrd.read(RAW_NRRD_FILE_PATH, index_order=self.index_order)
+            resolved = ((0, 10), (5, 30), (0, 30))
+            slicer = tuple(slice(lo, hi) for lo, hi in self._order_bounds(resolved))
+            np.testing.assert_array_equal(data, full_data[slicer])
+            np.testing.assert_array_equal(header['sizes'], np.array([10, 25, 30]))
+            self.assertEqual(header['_selection'], resolved)
+
+        def test_bounded_read_ascii(self):
+            bounds_f = ((1, 3), (2, 9))
+            data, header = nrrd.read(ASCII_2D_NRRD_FILE_PATH, index_order=self.index_order,
+                                     selection=self._order_bounds(bounds_f))
+
+            full_data, _ = nrrd.read(ASCII_2D_NRRD_FILE_PATH, index_order=self.index_order)
+            slicer = tuple(slice(lo, hi) for lo, hi in self._order_bounds(bounds_f))
+            np.testing.assert_array_equal(data, full_data[slicer])
+            np.testing.assert_array_equal(header['sizes'], np.array([2, 7]))
+            self.assertEqual(header['_selection'], bounds_f)
+
+        def test_bounded_read_raw_touches_only_selected_bytes(self):
+            # F-axis shape (3, 4, 5), uint8 values 0..59 laid out in Fortran order on disk
+            array = np.arange(60, dtype=np.uint8).reshape((3, 4, 5), order='F')
+            buffer = io.BytesIO()
+            nrrd.write(buffer, array, {'encoding': 'raw'}, index_order='F')
+            raw_bytes = buffer.getvalue()
+            header_end = raw_bytes.index(b'\n\n') + 2
+
+            # Same logical region expressed in either index order: x[1:3], y[1:3], z[2:4]
+            selection = self._order_bounds(((1, 3), (1, 3), (2, 4)))
+            stream = _CountingBytesIO(raw_bytes)
+            header = nrrd.read_header(stream)
+            data = nrrd.read_data(header, stream, index_order=self.index_order, selection=selection)
+
+            expected = array[1:3, 1:3, 2:4]
+            np.testing.assert_array_equal(data, expected.T if self.index_order == 'C' else expected)
+
+            expected_bytes = {header_end + x + 3 * y + 12 * z
+                              for z in range(2, 4) for y in range(1, 3) for x in range(1, 3)}
+            touched_bytes = set()
+            for start, end in stream.read_ranges:
+                touched_bytes.update(range(start, end))
+            self.assertEqual(touched_bytes, expected_bytes)
+
+        def test_bounded_read_shifts_space_origin(self):
+            header = {'type': 'uint8', 'dimension': 2, 'sizes': np.array([4, 5]), 'encoding': 'raw',
+                      'space directions': np.array([[2., 0.], [0., 3.]]),
+                      'space origin': np.array([10., 20.])}
+            stream = io.BytesIO(np.zeros(20, dtype=np.uint8).tobytes())
+            data = nrrd.read_data(header, stream, index_order=self.index_order,
+                                  selection=self._order_bounds(((1, 3), (2, 5))))
+
+            self.assertEqual(data.shape, (2, 3) if self.index_order == 'F' else (3, 2))
+            np.testing.assert_allclose(header['space origin'], [12., 26.])
+            np.testing.assert_array_equal(header['sizes'], np.array([2, 3]))
+
+        def test_bounded_read_skips_non_spatial_axis_origin(self):
+            header = {'type': 'uint8', 'dimension': 2, 'sizes': np.array([4, 5]), 'encoding': 'raw',
+                      'space directions': np.array([[2., 0.], [np.nan, np.nan]]),
+                      'space origin': np.array([10., 20.])}
+            stream = io.BytesIO(np.zeros(20, dtype=np.uint8).tobytes())
+            nrrd.read_data(header, stream, index_order=self.index_order,
+                           selection=self._order_bounds(((1, 3), (2, 5))))
+            np.testing.assert_allclose(header['space origin'], [12., 20.])
+
+        def test_full_coverage_selection_is_identity(self):
+            full_data, full_header = nrrd.read(RAW_NRRD_FILE_PATH, index_order=self.index_order)
+            bounds = tuple((0, size) for size in full_data.shape)
+            data, header = nrrd.read(RAW_NRRD_FILE_PATH, index_order=self.index_order, selection=bounds)
+
+            np.testing.assert_array_equal(data, full_data)
+            self.assertNotIn('_selection', header)
+            np.testing.assert_array_equal(header['sizes'], full_header['sizes'])
+
+        def test_bounded_read_invalid_selection(self):
+            invalid_cases = [
+                ((0, 31), (0, 30), (0, 30)),      # upper bound exceeds axis size
+                ((5, 2), (0, 30), (0, 30)),       # lower bound above upper bound
+                ((-1, 2), (0, 30), (0, 30)),      # negative bound
+                ((0, 2), (0, 30)),                # wrong number of axes
+                ((0, 2, 0), (0, 30), (0, 30)),    # malformed pair
+            ]
+            for selection in invalid_cases:
+                with self.subTest(selection=selection):
+                    with self.assertRaises(nrrd.NRRDError):
+                        nrrd.read(RAW_NRRD_FILE_PATH, index_order=self.index_order, selection=selection)
+
+        def test_bounded_header_roundtrip_drops_private_field(self):
+            data, header = nrrd.read(GZ_NRRD_FILE_PATH, index_order=self.index_order,
+                                     selection=self._order_bounds(((2, 10), (5, 25), (7, 20))))
+            self.assertIn('_selection', header)
+
+            buffer = io.BytesIO()
+            nrrd.write(buffer, data, header, index_order=self.index_order)
+            buffer.seek(0)
+            rewritten_header = nrrd.read_header(buffer)
+            self.assertNotIn('_selection', rewritten_header)
+            np.testing.assert_array_equal(rewritten_header['sizes'], header['sizes'])
+
+
+class TestBoundedReadingFortran(AbstractBounded.TestBoundedReading):
+    index_order = 'F'
+
+
+class TestBoundedReadingC(AbstractBounded.TestBoundedReading):
+    index_order = 'C'
+
+
 class TestReadingFunctionsFortran(Abstract.TestReadingFunctions):
     index_order = 'F'
 

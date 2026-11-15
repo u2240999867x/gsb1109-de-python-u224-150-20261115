@@ -15,6 +15,25 @@ The :meth:`read_data` will typically be called in conjunction with :meth:`read_h
 
 Some NRRD files, while prohibited by specification, may contain duplicated header fields causing an exception to be raised. Changing :data:`nrrd.reader.ALLOW_DUPLICATE_FIELD` to :obj:`True` will show a warning instead of an error while trying to read the file.
 
+Reading a bounded region
+^^^^^^^^^^^^^^^^^^^^^^^^
+Both :meth:`read` and :meth:`read_data` accept an optional :obj:`selection` argument that restricts the read to a single index region. It contains one ``(lower, upper)`` pair per dimension: the lower bound is inclusive, the upper bound is exclusive, and either bound may be :obj:`None` to leave that side open. The pairs follow the chosen :obj:`index_order`, so with ``'F'`` they match the NRRD header axes directly, while with ``'C'`` they are given in reverse axis order.
+
+.. code-block:: python
+
+    # Fortran order: select x[2:10], y[5:25], z[7:20] of a 30x30x30 volume
+    data, header = nrrd.read('volume.nrrd', selection=((2, 10), (5, 25), (7, 20)))
+
+    # The same region expressed in C order (axes are z, y, x)
+    data, header = nrrd.read('volume.nrrd', index_order='C',
+                             selection=((7, 20), (5, 25), (2, 10)))
+
+The returned header is trimmed to describe the cropped region: ``sizes`` holds the selected extents and, when spatial geometry is present, ``space origin`` is shifted by the lower bound along each spatial axis. The original Fortran-order bounds relative to the full array are recorded in the private ``_selection`` header field. This field is underscore-prefixed and is omitted when the cropped header is written back with :meth:`write`.
+
+.. note::
+
+    The cost of a bounded read depends on the encoding. For ``raw`` data, the on-disk Fortran layout is walked directly: only the byte ranges intersecting the selection are read, including regions that span rows or higher-dimension slabs. Compressed (``gzip``/``bzip2``) and ``ASCII`` payloads cannot be partially decoded, so the complete payload is still read and decompressed (or parsed) before slicing; in those cases the selection reduces the size of the returned array but not the amount of data decoded from disk.
+
 Writing NRRD files
 ------------------
 Writing to NRRD files can be done with the function :meth:`write`. The :obj:`filename` parameter specifies either an absolute or relative filename to write the NRRD file to. If the :obj:`filename` extension is .nhdr, then :obj:`detached_header` will be set to true automatically. If :obj:`detached_header` is :obj:`True` and :obj:`filename` extension is .nrrd, then the header file will have the same path and base name as :obj:`filename` but with an extension of .nhdr. In all other cases, the header and data are saved in the same file.

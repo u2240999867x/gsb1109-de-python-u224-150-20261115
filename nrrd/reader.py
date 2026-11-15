@@ -10,13 +10,17 @@ from typing import IO, Any, AnyStr, Iterable, Tuple
 
 import nrrd
 from nrrd.parsers import *
-from nrrd.types import IndexOrder, NRRDFieldMap, NRRDFieldType, NRRDHeader
+from nrrd.types import IndexOrder, NRRDFieldMap, NRRDFieldType, NRRDHeader, NRRDSelection
 
 # Older versions of Python had issues when uncompressed data was larger than 4GB (2^32). This should be fixed in latest
 # version of Python 2.7 and all versions of Python 3. The fix for this issue is to read the data in smaller chunks.
 # Chunk size is set to be large at 1GB to improve performance. If issues arise decompressing larger files, try to reduce
 # this value
 _READ_CHUNKSIZE: int = 2 ** 32
+
+# Header field recording the original Fortran-order (lower, upper) bounds of a bounded read. It is private to pynrrd:
+# leading underscore makes the writer omit it, so cropped headers still round-trip through the NRRD format cleanly.
+SELECTION_HEADER_FIELD: str = '_selection'
 
 _NRRD_REQUIRED_FIELDS = ['dimension', 'type', 'encoding', 'sizes']
 
@@ -174,6 +178,157 @@ def _determine_datatype(header: NRRDHeader) -> np.dtype:
     return np.dtype(np_typestring)
 
 
+def _normalize_selection(selection: Optional[NRRDSelection], sizes: npt.NDArray,
+                         index_order: IndexOrder) -> Optional[npt.NDArray]:
+    """Validate a selection and convert it to Fortran (NRRD) axis order.
+
+    The selection is a tuple of ``(lower, upper)`` pairs, one per axis, with inclusive lower and exclusive upper
+    bounds. Either bound may be :obj:`None` to leave that side open. The selection follows :obj:`index_order`, i.e.
+    for ``'F'`` the axes match the NRRD ``sizes`` field directly, whereas for ``'C'`` they are reversed.
+
+    Returns an ``(dimension, 2)`` array of integer bounds in Fortran order, or :obj:`None` when no selection is
+    given or the selection covers the entire array.
+    """
+
+    if selection is None:
+        return None
+
+    if not isinstance(selection, (tuple, list)) or len(selection) != len(sizes):
+        raise NRRDError(f'Selection must contain one (lower, upper) pair per dimension '
+                        f'(expected {len(sizes)}, got {len(selection) if isinstance(selection, (tuple, list)) else 0})')
+
+    # Validate against sizes expressed in the same axis order as the selection
+    ordered_sizes = sizes[::-1] if index_order == 'C' else sizes
+    bounds = np.empty((len(sizes), 2), dtype=np.int64)
+
+    for axis, axis_bounds in enumerate(selection):
+        if not isinstance(axis_bounds, (tuple, list)) or len(axis_bounds) != 2:
+            raise NRRDError(f'Selection bounds for axis {axis} must be a (lower, upper) pair')
+
+        lower, upper = axis_bounds
+        lower = 0 if lower is None else int(lower)
+        upper = int(ordered_sizes[axis]) if upper is None else int(upper)
+
+        if lower < 0 or upper < 0:
+            raise NRRDError(f'Selection bounds for axis {axis} must be non-negative')
+        if lower > upper:
+            raise NRRDError(f'Selection lower bound exceeds upper bound for axis {axis}: {lower} > {upper}')
+        if upper > ordered_sizes[axis]:
+            raise NRRDError(f'Selection upper bound exceeds size of axis {axis}: {upper} > {ordered_sizes[axis]}')
+
+        bounds[axis] = (lower, upper)
+
+    # The selection follows the index order of the returned array. NRRD storage (and thus the extraction logic below)
+    # is always Fortran order, so reverse the bounds when C order was requested.
+    if index_order == 'C':
+        bounds = bounds[::-1]
+
+    if np.all(bounds[:, 0] == 0) and np.array_equal(bounds[:, 1], sizes):
+        return None
+
+    return bounds
+
+
+def _read_raw_selection(fh: IO, bounds_f: npt.NDArray, sizes: npt.NDArray, dtype: np.dtype) -> npt.NDArray:
+    """Read a selection from an uncompressed (raw) stream without reading the surrounding data.
+
+    The stream position must point at the first data byte (any line/byte skip is already applied by the caller).
+    Bounds are given in Fortran (NRRD) axis order. Data is gathered by walking the on-disk Fortran layout directly:
+    each selected inner-axis run is reached with a seek over the skipped bytes, so only byte ranges intersecting the
+    selection are read, including when the selection spans rows or higher-dimension slabs.
+    """
+
+    dimension = len(sizes)
+    lower = bounds_f[:, 0]
+    upper = bounds_f[:, 1]
+    cropped_sizes = upper - lower
+
+    # Fortran-order element strides of the stored array; axis 0 varies fastest on disk
+    strides = np.empty(dimension, dtype=np.int64)
+    strides[0] = 1
+    if dimension > 1:
+        strides[1:] = np.cumprod(sizes[:-1])
+
+    inner_bytes = int(cropped_sizes[0]) * dtype.itemsize
+
+    # Seek to the first selected element
+    start_offset = int(np.dot(lower, strides)) * dtype.itemsize
+    fh.seek(start_offset, os.SEEK_CUR)
+
+    if dimension == 1:
+        chunk = fh.read(inner_bytes)
+        if len(chunk) != inner_bytes:
+            raise NRRDError('Data ended before reaching the end of the selected region')
+        return np.frombuffer(chunk, dtype).copy()
+
+    # Each run covers cropped_sizes[0] contiguous elements. Runs are enumerated in Fortran order, which matches the
+    # on-disk order, so the file pointer only ever moves forward.
+    run_count = int(np.prod(cropped_sizes[1:]))
+    outer_cropped = cropped_sizes[1:]
+    outer_strides = strides[1:]
+    outer_lower = lower[1:]
+
+    chunks = []
+    position = start_offset
+
+    for run_index in range(run_count):
+        # Decode the Fortran-order linear run index into cropped outer-axis coordinates
+        remainder = run_index
+        base = 0
+        for axis in range(dimension - 1):
+            coordinate = remainder % outer_cropped[axis]
+            remainder //= outer_cropped[axis]
+            base += (coordinate + outer_lower[axis]) * outer_strides[axis]
+
+        target = int(base + lower[0]) * dtype.itemsize
+        if target != position:
+            # Jump over the unselected rows/slabs between this run and the previous one
+            fh.seek(target - position, os.SEEK_CUR)
+
+        chunk = fh.read(inner_bytes)
+        if len(chunk) != inner_bytes:
+            raise NRRDError('Data ended before reaching the end of the selected region')
+        chunks.append(chunk)
+        position = target + inner_bytes
+
+    # Copy so the returned array is writable (np.frombuffer returns a read-only view)
+    return np.frombuffer(b''.join(chunks), dtype).copy()
+
+
+def _crop_header(header: NRRDHeader, bounds_f: npt.NDArray) -> None:
+    """Trim a parsed header in place so that it describes the selected region.
+
+    Only the fields that actually change when an index range is restricted are modified: ``sizes`` becomes the
+    selected extents and, when spatial geometry is available, the ``space origin`` is shifted by the lower bound
+    along each spatial axis. Per-axis descriptors (spacings, kinds, labels, space directions, ...) describe the axes
+    themselves and are left untouched because cropping restricts an axis rather than removing it.
+    """
+
+    lower = bounds_f[:, 0]
+    header['sizes'] = np.array(bounds_f[:, 1] - lower, dtype=header['sizes'].dtype)
+
+    # Record the original range of every NRRD (Fortran-order) axis relative to the full array so that callers can map
+    # the cropped data back to its source. Stored under a private, underscore-prefixed key that the writer skips, hence
+    # it never appears in a serialized NRRD header.
+    header[SELECTION_HEADER_FIELD] = tuple((int(lo), int(hi)) for lo, hi in bounds_f)
+
+    if 'space origin' not in header or 'space directions' not in header:
+        return
+
+    directions = header['space directions']
+    if not isinstance(directions, np.ndarray) or directions.ndim != 2:
+        return
+
+    origin = np.array(header['space origin'], dtype=float)
+    for axis in range(min(len(lower), directions.shape[0])):
+        direction = directions[axis]
+        # Rows of NaN represent non-spatial axes and must not contribute to the origin shift
+        if np.ndim(direction) == 1 and not np.any(np.isnan(direction)):
+            origin = origin + lower[axis] * direction
+
+    header['space origin'] = origin
+
+
 def _validate_magic_line(line: str) -> int:
     """For NRRD files, the first four characters are always "NRRD", and
     remaining characters give information about the file format version
@@ -307,7 +462,8 @@ def read_header(file: Union[str, Iterable[AnyStr]], custom_field_map: Optional[N
 
 
 def read_data(header: NRRDHeader, fh: Optional[IO] = None, filename: Optional[str] = None,
-              index_order: IndexOrder = 'F') -> npt.NDArray:
+              index_order: IndexOrder = 'F',
+              selection: Optional[NRRDSelection] = None) -> npt.NDArray:
     """Read data from file into :class:`numpy.ndarray`
 
     The two parameters :obj:`fh` and :obj:`filename` are optional depending on the parameters but it never hurts to
@@ -330,6 +486,15 @@ def read_data(header: NRRDHeader, fh: Optional[IO] = None, filename: Optional[st
         Specifies the index order of the resulting data array. Either 'C' (C-order) where the dimensions are ordered
         from slowest-varying to fastest-varying (e.g. (z, y, x)), or 'F' (Fortran-order) where the dimensions are
         ordered from fastest-varying to slowest-varying (e.g. (x, y, z)).
+    selection : tuple of tuple of int, optional
+        Bounded read restricting the data to an index region. Contains one ``(lower, upper)`` pair per dimension with
+        an inclusive lower bound and exclusive upper bound; either bound may be :obj:`None` to leave that side open.
+        The pairs follow :obj:`index_order`, so for ``'F'`` they match the NRRD header axes while for ``'C'`` they are
+        given in reverse. The returned header is trimmed to describe the selected region (updated ``sizes`` and, when
+        present, a shifted ``space origin``). For ``raw`` encoding only the intersecting byte ranges are read by
+        walking the on-disk Fortran layout, including across rows and slabs. ASCII and compressed encodings cannot be
+        partially decoded, so the complete payload is still read and decompressed before slicing; the selection only
+        saves array memory in those cases.
 
     Returns
     -------
@@ -355,6 +520,9 @@ def read_data(header: NRRDHeader, fh: Optional[IO] = None, filename: Optional[st
 
     if header['dimension'] < 1 or np.any(header['sizes'] <= 0):
         raise NRRDError('Dimension and sizes must be positive')
+
+    # Normalize the selection into Fortran (NRRD) axis order. Returns None when nothing restricts the read.
+    bounds_f = _normalize_selection(selection, np.asarray(header['sizes']), index_order)
 
     # Determine the data type from the header
     dtype = _determine_datatype(header)
@@ -413,7 +581,10 @@ def read_data(header: NRRDHeader, fh: Optional[IO] = None, filename: Optional[st
 
     # If a compression encoding is used, then byte skip AFTER decompressing
     if header['encoding'] == 'raw':
-        if isinstance(fh, io.BytesIO):
+        if bounds_f is not None:
+            # Bounded raw read: seek along the on-disk Fortran layout and only touch intersecting byte ranges
+            data = _read_raw_selection(fh, bounds_f, np.asarray(header['sizes']), dtype)
+        elif isinstance(fh, io.BytesIO):
             raw_data = bytearray(fh.read(total_data_points * dtype.itemsize))
             data = np.frombuffer(raw_data, dtype)
         else:
@@ -476,26 +647,50 @@ def read_data(header: NRRDHeader, fh: Optional[IO] = None, filename: Optional[st
     if data_filename is not None:
         fh.close()
 
-    if total_data_points != data.size:
-        raise NRRDError(f'Size of the data does not equal the product of all the dimensions: '
-                        f'{total_data_points}-{data.size}={total_data_points - data.size}')
+    if bounds_f is not None and header['encoding'] == 'raw':
+        # The raw bounded reader only gathered the selected elements
+        cropped_sizes_f = bounds_f[:, 1] - bounds_f[:, 0]
+        selected_points = int(np.prod(cropped_sizes_f))
 
-    # In the NRRD header, the fields are specified in Fortran order, i.e, the first index is the one that changes
-    # fastest and last index changes slowest. This needs to be taken into consideration since numpy uses C-order
-    # indexing.
+        if selected_points != data.size:
+            raise NRRDError(f'Size of the selected data does not equal the product of the selected dimensions: '
+                            f'{selected_points}-{data.size}={selected_points - data.size}')
 
-    # The array shape from NRRD (x,y,z) needs to be reversed as numpy expects (z,y,x).
-    data = np.reshape(data, tuple(header['sizes'][::-1]))
+        data = np.reshape(data, tuple(cropped_sizes_f[::-1]))
 
-    # Transpose data to enable Fortran indexing if requested.
-    if index_order == 'F':
-        data = data.T
+        if index_order == 'F':
+            data = data.T
+    else:
+        if total_data_points != data.size:
+            raise NRRDError(f'Size of the data does not equal the product of all the dimensions: '
+                            f'{total_data_points}-{data.size}={total_data_points - data.size}')
+
+        # In the NRRD header, the fields are specified in Fortran order, i.e, the first index is the one that changes
+        # fastest and last index changes slowest. This needs to be taken into consideration since numpy uses C-order
+        # indexing.
+
+        # The array shape from NRRD (x,y,z) needs to be reversed as numpy expects (z,y,x).
+        data = np.reshape(data, tuple(header['sizes'][::-1]))
+
+        # Transpose data to enable Fortran indexing if requested.
+        if index_order == 'F':
+            data = data.T
+
+        if bounds_f is not None:
+            # ASCII and compressed payloads cannot be partially decoded, so the full payload was read above. Slice the
+            # decoded array using the selection in the requested index order.
+            ordered_bounds = bounds_f if index_order == 'F' else bounds_f[::-1]
+            slicer = tuple(slice(int(lower), int(upper)) for lower, upper in ordered_bounds)
+            data = data[slicer]
+
+    if bounds_f is not None:
+        _crop_header(header, bounds_f)
 
     return data
 
 
-def read(filename: str, custom_field_map: Optional[NRRDFieldMap] = None, index_order: IndexOrder = 'F') \
-        -> Tuple[npt.NDArray, NRRDHeader]:
+def read(filename: str, custom_field_map: Optional[NRRDFieldMap] = None, index_order: IndexOrder = 'F',
+         selection: Optional[NRRDSelection] = None) -> Tuple[npt.NDArray, NRRDHeader]:
     """Read a NRRD file and return the header and data
 
     See :ref:`background/how-to-use:reading nrrd files` for more information on reading NRRD files.
@@ -516,6 +711,12 @@ def read(filename: str, custom_field_map: Optional[NRRDFieldMap] = None, index_o
         Specifies the index order of the resulting data array. Either 'C' (C-order) where the dimensions are ordered
         from slowest-varying to fastest-varying (e.g. (z, y, x)), or 'F' (Fortran-order) where the dimensions are
         ordered from fastest-varying to slowest-varying (e.g. (x, y, z)).
+    selection : tuple of tuple of int, optional
+        Bounded read restricting the data to an index region. Contains one ``(lower, upper)`` pair per dimension with
+        an inclusive lower bound and exclusive upper bound; either bound may be :obj:`None` to leave that side open.
+        The pairs follow :obj:`index_order`. On return, the header describes the cropped region and the private
+        ``_selection`` field records the original Fortran-order bounds relative to the full array. See
+        :meth:`read_data` for the per-encoding cost of a bounded read.
 
     Returns
     -------
@@ -531,6 +732,6 @@ def read(filename: str, custom_field_map: Optional[NRRDFieldMap] = None, index_o
 
     with open(filename, 'rb') as fh:
         header = read_header(fh, custom_field_map)
-        data = read_data(header, fh, filename, index_order)
+        data = read_data(header, fh, filename, index_order, selection)
 
     return data, header
