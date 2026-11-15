@@ -34,3 +34,17 @@ Writing NRRD files will by default index the :obj:`data` array in Fortran-order 
 .. note::
 
     The :obj:`index_order` parameter must be consistent with the index order specified in :meth:`read`. Reading an NRRD file in C-order and then writing as Fortran-order or vice versa will result in the data being transposed in the NRRD file.
+
+Reorienting NRRD files
+----------------------
+Two NRRD volumes may describe the same object with their spatial axes stored in a different order and orientation (for example one file uses (x, y, z) while another uses (z, -y, x)). The :meth:`reorient` function rearranges the voxel array and the spatial header fields ('space directions', 'space origin' and the other per-axis fields) onto an explicit target axis convention so that the volumes can be stored in the same voxel bucket.
+
+The target convention is given either as a hyphen-separated string of direction names ('right-anterior-superior'), a compact shorthand ('RAS'), or a sequence of direction names and explicit vectors. When a source axis points opposite to its target, the array is reversed along that axis and 'space origin' is shifted by the matching amount at the same time, so the world coordinate of every original voxel stays identical and a negative direction is never changed on its own. Non-spatial axes such as color or list axes do not take part in the transformation and keep their position.
+
+.. code-block:: python
+
+    import nrrd
+
+    data, header = nrrd.read('station_b.nrrd')
+    data, header = nrrd.reorient(data, header, 'RAS')
+    nrrd.write('station_b_ras.nrrd', data, header)

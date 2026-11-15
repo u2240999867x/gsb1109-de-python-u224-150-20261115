@@ -1,6 +1,7 @@
 from typing_extensions import Literal
 
 from nrrd._version import __version__
+from nrrd.axis_maps import reorient
 from nrrd.formatters import *
 from nrrd.parsers import *
 from nrrd.reader import read, read_data, read_header
@@ -38,7 +39,8 @@ Example:
     [array([1.5, 0. , 0. ]), array([0. , 1.5, 0. ]), array([0., 0., 1.]), None]
 """
 
-__all__ = ['read', 'read_data', 'read_header', 'write', 'format_number_list', 'format_number', 'format_matrix',
+__all__ = ['read', 'read_data', 'read_header', 'write', 'reorient', 'format_number_list', 'format_number',
+           'format_matrix',
            'format_optional_matrix', 'format_optional_vector', 'format_vector', 'format_vector_list',
            'format_optional_vector_list', 'parse_matrix', 'parse_number_auto_dtype', 'parse_number_list',
            'parse_optional_matrix',
