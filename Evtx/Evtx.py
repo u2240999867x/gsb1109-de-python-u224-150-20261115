@@ -395,6 +395,10 @@ class ChunkHeader(Block):
         for i in range(32):
             ofs = self.unpack_dword(0x180 + (i * 4))
             while ofs > 0:
+                if ofs >= 0x10000:
+                    logger.warning("Template offset out of range")
+                    ofs = 0
+                    continue
                 # unclear why these are found before the offset
                 # this is a direct port from A.S.'s code
                 token = self.unpack_byte(ofs - 10)
@@ -403,7 +407,12 @@ class ChunkHeader(Block):
                     logger.warning("Unexpected token encountered")
                     ofs = 0
                     continue
-                template = self.add_template(ofs)
+                try:
+                    template = self.add_template(ofs)
+                except ParseException:
+                    logger.warning("Invalid template encountered")
+                    ofs = 0
+                    continue
                 ofs = template.next_offset()
 
     def add_template(self, offset, parent=None):
@@ -414,11 +423,37 @@ class ChunkHeader(Block):
            TemplateNode instance. (Default: this chunk).
         @return Newly added TemplateNode instance.
         """
+        # a template must be contained within this chunk (0x10000 bytes),
+        #   which always starts with its 0x18 byte header.
+        if not 0x0 <= offset <= 0x10000 - 0x18:
+            raise ParseException("Template offset out of range: 0x%x" % (offset))
         if self._templates is None:
             self._load_templates()
 
         node = TemplateNode(self._buf, self._offset + offset, self, parent or self)
+        if offset + node.length() > 0x10000:
+            raise ParseException("Template extends beyond the end of the chunk: 0x%x" % (offset))
         self._templates[offset] = node
+        return node
+
+    def template(self, offset):
+        """
+        Fetch the template at the given chunk-relative offset,
+          parsing and caching it within this chunk on first use.
+
+        Templates are always resolved from this chunk's own data:
+          an offset outside of this chunk is invalid, and a template is
+          never borrowed from a neighboring chunk or another file,
+          even if it happens to share the same template ID.
+
+        @param offset An integer which contains the chunk-relative offset
+           to a template to fetch from this Chunk.
+        @return The TemplateNode instance found at the given offset.
+        @raises ParseException if the offset is outside of this chunk.
+        """
+        node = self.templates().get(offset)
+        if node is None:
+            node = self.add_template(offset)
         return node
 
     def templates(self):

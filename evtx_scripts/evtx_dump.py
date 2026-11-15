@@ -17,8 +17,14 @@
 #   limitations under the License.
 #
 #   Version v0.1.1
+import logging
+
 import Evtx.Evtx as evtx
 import Evtx.Views as e_views
+
+from Evtx.BinaryParser import ParseException
+
+logger = logging.getLogger(__name__)
 
 
 def main():
@@ -32,7 +38,14 @@ def main():
         print(e_views.XML_HEADER)
         print("<Events>")
         for record in log.records():
-            print(record.xml())
+            try:
+                print(record.xml())
+            except ParseException as e:
+                # a corrupt record (such as one whose template points
+                #   outside of its chunk) must not abort the export:
+                #   isolate this event and continue with the next one.
+                logger.warning("failed to render record %d, skipping: %s", record.record_num(), e)
+                continue
         print("</Events>")
 
 

@@ -813,7 +813,7 @@ class TemplateInstanceNode(BXmlNode):
         return self.tag_length() + self._data_length
 
     def template(self):
-        return self._chunk.templates()[self.template_offset()]
+        return self._chunk.template(self.template_offset())
 
     def children(self):
         return []
@@ -1004,13 +1004,17 @@ class RootNode(BXmlNode):
         parse the template referenced by this root node.
         note, this template structure is not guaranteed to be located within the root node's boundaries.
 
+        the template is resolved from this node's own chunk, and is cached
+          there so it can be reused by other records of the same chunk.
+        the resolution does not depend on the order in which records or
+          chunks are read, and never falls back to a template from another
+          chunk or file.
+
         Returns:
           TemplateNode: the template.
         """
         instance = self.template_instance()
-        offset = self._chunk.offset() + instance.template_offset()
-        node = TemplateNode(self._buf, offset, self._chunk, instance)
-        return node
+        return self._chunk.template(instance.template_offset())
 
     @memoize
     def substitutions(self):
