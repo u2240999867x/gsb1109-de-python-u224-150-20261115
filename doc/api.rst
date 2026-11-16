@@ -350,6 +350,28 @@ a simple way to change default settings for imported package.
     .. automethod:: get_schema
 
 
+.. _caching-api:
+
+Schema build caching
+====================
+
+A thread-safe cache for reusing the build cost of schema instances, useful
+for backends that validate consecutively against same-named schemas provided
+by different vendors. Entries are identified by the schema class, the root
+schema source and the parsing settings. When a local dependency is updated
+only the entries whose resource closure contains it are invalidated. Failed
+builds are not cached and concurrent builds never expose a partially built
+schema instance.
+
+.. autoclass:: xmlschema.SchemaBuildCache
+
+    .. autoattribute:: maxsize
+    .. automethod:: get_or_build
+    .. automethod:: invalidate
+    .. automethod:: invalidate_dependency
+    .. automethod:: clear
+
+
 .. _arguments-api:
 
 Arguments and options API

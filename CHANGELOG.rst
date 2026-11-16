@@ -2,6 +2,12 @@
 CHANGELOG
 *********
 
+`v4.3.3`_ (2026-11-16)
+======================
+* Add `SchemaBuildCache` for reusing schema builds, keyed by root schema,
+  dependency contents and parsing settings, with dependency-closure
+  invalidation and thread-safe builds
+
 `v4.3.2`_ (2026-06-30)
 ======================
 * Fix for issues #473, #474 and #475
@@ -809,3 +815,4 @@ v0.9.6 (2017-05-05)
 .. _v4.3.0: https://github.com/brunato/xmlschema/compare/v4.2.0...v4.3.0
 .. _v4.3.1: https://github.com/brunato/xmlschema/compare/v4.3.0...v4.3.1
 .. _v4.3.2: https://github.com/brunato/xmlschema/compare/v4.3.1...v4.3.2
+.. _v4.3.3: https://github.com/brunato/xmlschema/compare/v4.3.2...v4.3.3
