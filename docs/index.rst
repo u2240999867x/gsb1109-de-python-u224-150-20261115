@@ -71,6 +71,37 @@ downside of this mode is that exceptions when a reference cannot be loaded might
 issued from more places when using the loaded document. Turning off lazy loading can
 make catching errors much easier.
 
+Load states
+^^^^^^^^^^^
+
+Documents loaded through a reference are tracked per document URI. Two fields
+that reference the same document therefore share one state:
+
+- ``LoadState.UNVISITED`` — the reference has not been dereferenced yet.
+- ``LoadState.LOADED`` — the document was loaded successfully.
+- ``LoadState.FAILED`` — an attempt was made and failed.
+
+Every :class:`JsonRef` exposes its state as ``state`` (also ``load_state`` and
+``status``), the last error as ``load_error``, and the paths of all references
+sharing the document as ``affected_paths``. A failed load is not cached;
+accessing the reference again retries the loader, so a document that arrives
+after the first attempt is picked up. ``retry()`` forces a fresh attempt.
+Failures are atomic: a document that cannot be fully parsed is never left in
+the cache, and other documents loaded through the same tree are unaffected.
+
+A :class:`JsonLoader` can be used as the loader to query the same information
+by URI::
+
+    >>> import jsonref
+    >>> loader = jsonref.JsonLoader()
+    >>> data = jsonref.replace_refs(document, loader=loader)
+    >>> loader.state("missing.json")
+    <LoadState.UNVISITED: 'unvisited'>
+
+.. autoclass:: LoadState
+
+.. autoclass:: JsonLoader
+
 ``merge_props``
 ^^^^^^^^^^^^^^^
 
@@ -144,6 +175,26 @@ use the data as if it does not contain references at all.
 
         Contains the original JSON Reference object. Accessing this attribute
         will not cause the referent data to be loaded.
+
+    .. attribute:: state
+
+        The :class:`LoadState` of the document this reference points at.
+        Also available as ``load_state`` and ``status``.
+
+    .. attribute:: load_error
+
+        The :class:`JsonRefError` from the most recent failed load, or
+        ``None``. Also available as ``error``.
+
+    .. attribute:: affected_paths
+
+        A tuple of reference paths within the document that share the same
+        document URI. Also available as ``paths``.
+
+    .. method:: retry()
+
+        Retry loading the referenced document and return the resolved value.
+        Useful after supplying a document that was missing.
 
 
 Loading a document at a given URI

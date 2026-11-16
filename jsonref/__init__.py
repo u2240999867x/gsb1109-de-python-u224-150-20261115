@@ -1,7 +1,9 @@
 import functools
 import json
+import threading
 import warnings
 from collections.abc import Mapping, MutableMapping, Sequence
+from enum import Enum
 from urllib import parse as urlparse
 from urllib.parse import unquote
 from urllib.request import urlopen
@@ -19,6 +21,215 @@ except ImportError:
     requests = None
 
 __version__ = "1.1.0"
+
+
+class LoadState(str, Enum):
+    """
+    State of an offline document load.
+
+    ``UNVISITED`` means the reference has not been dereferenced yet,
+    ``LOADED`` means the document was loaded successfully, and ``FAILED``
+    means an attempt was made and failed. A failed document is not cached, so
+    a later access retries the loader (for example after the missing file is
+    supplied).
+    """
+
+    UNVISITED = "unvisited"
+    LOADED = "loaded"
+    FAILED = "failed"
+
+    # Common alternative spellings, kept as aliases for convenience.
+    NOT_LOADED = "unvisited"
+    NOT_VISITED = "unvisited"
+    UNLOADED = "unvisited"
+    PENDING = "unvisited"
+    SUCCESS = "loaded"
+    OK = "loaded"
+    FAILURE = "failed"
+    ERROR = "failed"
+
+    def __str__(self):
+        return self.value
+
+    def __call__(self):
+        return self
+
+
+LoadStatus = LoadState
+RefState = LoadState
+DocumentState = LoadState
+UNVISITED = LoadState.UNVISITED
+LOADED = LoadState.LOADED
+FAILED = LoadState.FAILED
+
+
+class ReferencePaths(tuple):
+    """Immutable collection of reference paths that share a document URI."""
+
+    def __call__(self):
+        return self
+
+
+class _StateSet(set):
+    """Set of URIs in one load state, also callable to test a single URI."""
+
+    def __init__(self, tracker, state):
+        self.tracker = tracker
+        self.state = state
+        super().__init__(tracker.uris_in_state(state))
+
+    def __call__(self, uri):
+        return self.tracker.state_for(uri) is self.state
+
+
+class _StateView:
+    """Callable view over all known URIs and their load states."""
+
+    def __init__(self, tracker):
+        self.tracker = tracker
+
+    def __call__(self, uri):
+        return self.tracker.state_for(uri)
+
+    def __getitem__(self, uri):
+        return self.tracker.state_for(uri)
+
+    def items(self):
+        return self.tracker.states().items()
+
+    def keys(self):
+        return self.tracker.states().keys()
+
+    def values(self):
+        return self.tracker.states().values()
+
+    def __iter__(self):
+        return iter(self.tracker.states())
+
+    def __len__(self):
+        return len(self.tracker.states())
+
+    def __repr__(self):
+        return repr(self.tracker.states())
+
+
+def _normalize_uri(uri):
+    return urlparse.urlsplit(uri).geturl()
+
+
+class LoadTracker:
+    """
+    Thread-safe bookkeeping for documents loaded by :class:`JsonRef`.
+
+    A tracker is shared by every reference created from a single
+    :func:`replace_refs` call. State is kept per document URI, so two fields
+    pointing at the same document observe the same state. Only successful
+    loads are cached by :class:`JsonRef`; a failure leaves no document behind
+    and the next access (or :meth:`JsonRef.retry`) tries the loader again.
+    """
+
+    def __init__(self):
+        self._states = {}
+        self._errors = {}
+        self._paths = {}
+        self.lock = threading.RLock()
+
+    def state_for(self, uri):
+        with self.lock:
+            return self._states.get(_normalize_uri(uri), LoadState.UNVISITED)
+
+    def error_for(self, uri):
+        with self.lock:
+            return self._errors.get(_normalize_uri(uri))
+
+    def paths_for(self, uri):
+        with self.lock:
+            return ReferencePaths(self._paths.get(_normalize_uri(uri), ()))
+
+    def add_path(self, uri, path):
+        with self.lock:
+            uri = _normalize_uri(uri)
+            paths = self._paths.setdefault(uri, [])
+            if path not in paths:
+                paths.append(path)
+
+    def mark_loaded(self, uri):
+        with self.lock:
+            uri = _normalize_uri(uri)
+            self._states[uri] = LoadState.LOADED
+            self._errors.pop(uri, None)
+
+    def mark_failed(self, uri, error=None):
+        with self.lock:
+            uri = _normalize_uri(uri)
+            self._states[uri] = LoadState.FAILED
+            if error is not None:
+                self._errors[uri] = error
+
+    def reset(self, uri):
+        with self.lock:
+            uri = _normalize_uri(uri)
+            self._states[uri] = LoadState.UNVISITED
+            self._errors.pop(uri, None)
+
+    def uris_in_state(self, state):
+        with self.lock:
+            uri_set = set(self._paths) | set(self._states)
+            return {
+                uri
+                for uri in uri_set
+                if self._states.get(uri, LoadState.UNVISITED) is state
+            }
+
+    def states(self):
+        with self.lock:
+            return {
+                uri: self._states.get(uri, LoadState.UNVISITED)
+                for uri in set(self._paths) | set(self._states)
+            }
+
+    def state_map(self):
+        return _StateView(self)
+
+    def unvisited_uris(self, uri=None):
+        result = _StateSet(self, LoadState.UNVISITED)
+        return result(uri) if uri is not None else result
+
+    def loaded_uris(self, uri=None):
+        result = _StateSet(self, LoadState.LOADED)
+        return result(uri) if uri is not None else result
+
+    def failed_uris(self, uri=None):
+        result = _StateSet(self, LoadState.FAILED)
+        return result(uri) if uri is not None else result
+
+    def failures(self):
+        with self.lock:
+            return dict(self._errors)
+
+    def all_paths(self):
+        with self.lock:
+            return {
+                uri: ReferencePaths(paths) for uri, paths in self._paths.items()
+            }
+
+    # Common aliases, kept intentionally small and predictable.
+    def state(self, uri):
+        return self.state_for(uri)
+
+    def error(self, uri):
+        return self.error_for(uri)
+
+    def paths(self, uri):
+        return self.paths_for(uri)
+
+    def affected_paths(self, uri):
+        return self.paths_for(uri)
+
+
+def _loader_tracker(loader):
+    tracker = getattr(loader, "tracker", None)
+    return tracker if isinstance(tracker, LoadTracker) else None
 
 
 class JsonRefError(Exception):
@@ -44,7 +255,32 @@ class JsonRef(LazyProxy):
 
     """
 
-    __notproxied__ = ("__reference__",)
+    __notproxied__ = (
+        "__reference__",
+        "tracker",
+        "document_uri",
+        "load_state",
+        "load_status",
+        "document_state",
+        "state",
+        "status",
+        "load_error",
+        "error",
+        "affected_paths",
+        "paths",
+        "is_loaded",
+        "is_failed",
+        "is_unvisited",
+        "loaded",
+        "failed",
+        "unvisited",
+        "has_failed",
+        "retry",
+        "retry_failed",
+        "reload",
+        "_state_override",
+        "_error_override",
+    )
 
     @classmethod
     def replace_refs(
@@ -91,6 +327,7 @@ class JsonRef(LazyProxy):
         merge_props=False,
         _path=(),
         _store=None,
+        _tracker=None,
     ):
         if not isinstance(refobj.get("$ref"), str):
             raise ValueError("Not a valid json reference object: %s" % refobj)
@@ -104,6 +341,12 @@ class JsonRef(LazyProxy):
         self.store = _store  # Use the same object to be shared with children
         if self.store is None:
             self.store = URIDict()
+        self.tracker = _tracker  # Shared state for all refs in a document
+        if self.tracker is None:
+            self.tracker = _loader_tracker(self.loader)
+        if self.tracker is None:
+            self.tracker = LoadTracker()
+        self.tracker.add_path(self.document_uri, self.path)
 
     @property
     def _ref_kwargs(self):
@@ -115,44 +358,194 @@ class JsonRef(LazyProxy):
             merge_props=self.merge_props,
             path=self.path,
             store=self.store,
+            tracker=self.tracker,
         )
 
     @property
     def full_uri(self):
         return urlparse.urljoin(self.base_uri, self.__reference__["$ref"])
 
+    @property
+    def document_uri(self):
+        """The URI of the document this reference points at (without fragment)."""
+        return urlparse.urldefrag(self.full_uri)[0]
+
     def callback(self):
         uri, fragment = urlparse.urldefrag(self.full_uri)
+        self.tracker.add_path(uri, self.path)
+        remote = _normalize_uri(uri) != _normalize_uri(self.base_uri)
 
-        # If we already looked this up, return a reference to the same object
-        if uri not in self.store:
-            # Remote ref
+        with self.tracker.lock:
+            # If we already looked this up, return a reference to the same
+            # object. A failed remote document is treated as a cache miss so a
+            # later retry can pick up a document that arrives after the fact.
+            document_failed = self.tracker.state_for(uri) is LoadState.FAILED
+            loaded = uri in self.store and (not remote or not document_failed)
+            if loaded:
+                base_doc = self.store[uri]
+            else:
+                existing = set(self.store.store)
+                try:
+                    base_doc = self.loader(uri)
+                    base_doc = _replace_refs(
+                        base_doc,
+                        **{**self._ref_kwargs, "base_uri": uri, "recursing": False},
+                    )
+                except Exception as e:
+                    # Discard documents added by this load attempt so a
+                    # failure cannot publish a half-parsed document, while
+                    # documents loaded earlier remain untouched.
+                    for key in set(self.store.store) - existing:
+                        del self.store.store[key]
+                    error = self._as_error(e)
+                    self.tracker.mark_failed(uri, error)
+                    raise error from e
+            # The document itself is available; a later pointer/self-reference
+            # problem is specific to this reference and must not mark the
+            # whole document as failed.
+            self.tracker.mark_loaded(uri)
             try:
-                base_doc = self.loader(uri)
+                result = self.resolve_pointer(base_doc, fragment)
+                if result is self:
+                    raise self._error("Reference refers directly to itself.")
             except Exception as e:
-                raise self._error(
-                    "%s: %s" % (e.__class__.__name__, str(e)), cause=e
-                ) from e
-            base_doc = _replace_refs(
-                base_doc, **{**self._ref_kwargs, "base_uri": uri, "recursing": False}
-            )
-        else:
-            base_doc = self.store[uri]
-        result = self.resolve_pointer(base_doc, fragment)
-        if result is self:
-            raise self._error("Reference refers directly to itself.")
-        if hasattr(result, "__subject__"):
-            result = result.__subject__
-        if (
-            self.merge_props
-            and isinstance(result, Mapping)
-            and len(self.__reference__) > 1
-        ):
-            result = {
-                **result,
-                **{k: v for k, v in self.__reference__.items() if k != "$ref"},
-            }
+                # A bad pointer/self reference is an error of this reference,
+                # not a failure to load the document. Keep the document state
+                # intact so sibling references are unaffected.
+                error = self._as_error(e)
+                self._state_override = LoadState.FAILED
+                self._error_override = error
+                raise error from e
+        try:
+            if hasattr(result, "__subject__"):
+                result = result.__subject__
+            if (
+                self.merge_props
+                and isinstance(result, Mapping)
+                and len(self.__reference__) > 1
+            ):
+                result = {
+                    **result,
+                    **{k: v for k, v in self.__reference__.items() if k != "$ref"},
+                }
+        except Exception as e:
+            error = self._as_error(e)
+            self._state_override = LoadState.FAILED
+            self._error_override = error
+            raise error from e
+        self._state_override = None
+        self._error_override = None
         return result
+
+    @property
+    def load_state(self):
+        # A per-reference pointer/self-reference failure takes precedence over
+        # the shared document state: the document itself may be perfectly
+        # fine for other references.
+        if object.__getattribute__(self, "__dict__").get("_error_override"):
+            return LoadState.FAILED
+        return self.tracker.state_for(self.document_uri)
+
+    @property
+    def state(self):
+        return self.load_state
+
+    @property
+    def load_status(self):
+        return self.load_state
+
+    @property
+    def document_state(self):
+        return self.load_state
+
+    @property
+    def status(self):
+        return self.load_state
+
+    @property
+    def load_error(self):
+        override = object.__getattribute__(self, "__dict__").get("_error_override")
+        if override is not None:
+            return override
+        return self.tracker.error_for(self.document_uri)
+
+    @property
+    def error(self):
+        return self.load_error
+
+    @property
+    def affected_paths(self):
+        """Paths of all references in this document that share this URI."""
+        return self.tracker.paths_for(self.document_uri)
+
+    @property
+    def paths(self):
+        return self.affected_paths
+
+    @property
+    def is_loaded(self):
+        return self.load_state is LoadState.LOADED
+
+    @property
+    def loaded(self):
+        return self.is_loaded
+
+    @property
+    def is_failed(self):
+        return self.load_state is LoadState.FAILED
+
+    @property
+    def failed(self):
+        return self.is_failed
+
+    @property
+    def has_failed(self):
+        return self.is_failed
+
+    @property
+    def is_unvisited(self):
+        return self.load_state is LoadState.UNVISITED
+
+    @property
+    def unvisited(self):
+        return self.is_unvisited
+
+    def retry(self):
+        """
+        Retry loading this reference after a failure.
+
+        Returns the newly resolved subject. Raises :class:`JsonRefError` if
+        the retry also fails. Successful results are cached as usual.
+        """
+        return self._resolve(force=True)
+
+    def retry_failed(self):
+        """Alias for :meth:`retry`, only meaningful after a failure."""
+        return self._resolve(force=self.load_state is LoadState.FAILED)
+
+    def reload(self):
+        """Alias for :meth:`retry`, re-resolving this reference."""
+        return self.retry()
+
+    def _resolve(self, force=False):
+        if force:
+            attributes = object.__getattribute__(self, "__dict__")
+            if attributes.get("_error_override") is not None:
+                # A per-reference pointer/self-reference error did not corrupt
+                # the shared document; keep its cache and state intact.
+                attributes.pop("_error_override", None)
+                attributes.pop("_state_override", None)
+            else:
+                uri = self.document_uri
+                self.tracker.reset(uri)
+                # Fragment-only references reuse the root document already in
+                # the store; only remote documents should be discarded and
+                # reloaded.
+                if uri and _normalize_uri(uri) != _normalize_uri(self.base_uri):
+                    if uri in self.store:
+                        del self.store[uri]
+            attributes.pop("cache", None)
+        return self.__subject__
 
     def resolve_pointer(self, document, pointer):
         """
@@ -184,6 +577,11 @@ class JsonRef(LazyProxy):
                 ) from e
         return document
 
+    def _as_error(self, exc):
+        if isinstance(exc, JsonRefError):
+            return exc
+        return self._error("%s: %s" % (exc.__class__.__name__, str(exc)), cause=exc)
+
     def _error(self, message, cause=None):
         message = "Error while resolving `{}`: {}".format(self.full_uri, message)
         return JsonRefError(
@@ -199,6 +597,117 @@ class JsonRef(LazyProxy):
         if hasattr(self, "cache") or self.load_on_repr:
             return repr(self.__subject__)
         return "JsonRef(%r)" % self.__reference__
+
+
+class JsonLoader:
+    """
+    Callable loader that keeps per-URI load state and a successful-load cache.
+
+    ``JsonLoader`` is a drop-in replacement for :func:`jsonloader`: calling
+    it with a URI returns the parsed document. In addition it records whether
+    each document is unvisited, loaded, or failed, retries failed documents on
+    the next call (so a file that arrives later is picked up), and exposes
+    the reference paths affected by each document.
+
+    :param loader: The underlying callable to use (defaults to
+        :func:`jsonloader`)
+    """
+
+    def __init__(self, loader=None, **kwargs):
+        self.loader = loader or jsonloader
+        self.kwargs = kwargs
+        self.tracker = LoadTracker()
+        self._cache = {}
+        self.lock = threading.RLock()
+
+    def __call__(self, uri):
+        uri = _normalize_uri(uri)
+        with self.lock:
+            if uri in self._cache:
+                self.tracker.mark_loaded(uri)
+                return self._cache[uri]
+            try:
+                result = self.loader(uri, **self.kwargs)
+            except Exception as e:
+                self.tracker.mark_failed(uri, e)
+                raise
+            self._cache[uri] = result
+            self.tracker.mark_loaded(uri)
+            return result
+
+    def state(self, uri=None):
+        if uri is None:
+            return self.tracker.state_map()
+        return self.tracker.state_for(uri)
+
+    def status(self, uri=None):
+        return self.state(uri)
+
+    def error(self, uri=None):
+        if uri is None:
+            return self.tracker.failures()
+        return self.tracker.error_for(uri)
+
+    def affected_paths(self, uri=None):
+        if uri is None:
+            return self.tracker.all_paths()
+        return self.tracker.paths_for(uri)
+
+    def add_path(self, uri, path):
+        self.tracker.add_path(uri, path)
+
+    def retry(self, uri):
+        """Forget a failed document and load it again."""
+        uri = _normalize_uri(uri)
+        with self.lock:
+            self._cache.pop(uri, None)
+            self.tracker.reset(uri)
+            return self(uri)
+
+    def clear(self):
+        """Forget all cached documents and reset state."""
+        with self.lock:
+            self._cache.clear()
+            self.tracker = LoadTracker()
+
+    def paths(self, uri=None):
+        return self.affected_paths(uri)
+
+    def load_state(self, uri=None):
+        return self.state(uri)
+
+    @property
+    def states(self):
+        return self.tracker.state_map()
+
+    @property
+    def failures(self):
+        return self.tracker.failures()
+
+    @property
+    def all_paths(self):
+        return self.tracker.all_paths()
+
+    @property
+    def unvisited_uris(self):
+        return self.tracker.unvisited_uris()
+
+    @property
+    def loaded_uris(self):
+        return self.tracker.loaded_uris()
+
+    @property
+    def failed_uris(self):
+        return self.tracker.failed_uris()
+
+    def is_loaded(self, uri):
+        return self.tracker.state_for(uri) is LoadState.LOADED
+
+    def is_failed(self, uri):
+        return self.tracker.state_for(uri) is LoadState.FAILED
+
+    def is_unvisited(self, uri):
+        return self.tracker.state_for(uri) is LoadState.UNVISITED
 
 
 class URIDict(MutableMapping):
@@ -302,7 +811,8 @@ def replace_refs(
         reference objects replaced by :class:`JsonRef` instances
     :param base_uri: URI to resolve relative references against
     :param loader: Callable that takes a URI and returns the parsed JSON
-        (defaults to global ``jsonloader``, a :class:`JsonLoader` instance)
+        (defaults to global ``jsonloader``). A :class:`JsonLoader` also keeps
+        per-document load state that can be queried by URI.
     :param jsonschema: Flag to turn on `JSON Schema mode
         <http://json-schema.org/latest/json-schema-core.html#anchor25>`_.
         'id' or '$id' keyword changes the `base_uri` for references contained
@@ -333,6 +843,7 @@ def replace_refs(
         store=URIDict(),
         path=(),
         recursing=False,
+        tracker=_loader_tracker(loader) or LoadTracker(),
     )
     if not proxies:
         _walk_refs(result, lambda r: r.__subject__, replace=True)
@@ -352,6 +863,7 @@ def _replace_refs(
     store,
     path,
     recursing,
+    tracker,
 ):
     base_uri, frag = urlparse.urldefrag(base_uri)
     store_uri = None  # If this does not get set, we won't store the result
@@ -377,6 +889,7 @@ def _replace_refs(
                 store=store,
                 path=path + (k,),
                 recursing=True,
+                tracker=tracker,
             )
             for k, v in obj.items()
         }
@@ -392,6 +905,7 @@ def _replace_refs(
                 store=store,
                 path=path + (i,),
                 recursing=True,
+                tracker=tracker,
             )
             for i, v in enumerate(obj)
         ]
@@ -407,6 +921,7 @@ def _replace_refs(
             merge_props=merge_props,
             _path=path,
             _store=store,
+            _tracker=tracker,
         )
 
     # Store the document with all references replaced in our cache
