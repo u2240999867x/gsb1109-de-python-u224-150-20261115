@@ -1,6 +1,7 @@
 import functools
 import json
 import warnings
+from collections import namedtuple
 from collections.abc import Mapping, MutableMapping, Sequence
 from urllib import parse as urlparse
 from urllib.parse import unquote
@@ -8,6 +9,13 @@ from urllib.request import urlopen
 
 from . import proxytypes  # noqa: F401
 from .proxytypes import LazyProxy
+from .references import (
+    Document,
+    DocumentKey,  # noqa: F401 - re-exported for graph inspection
+    DocumentStore,
+    Reference,
+    ReferenceGraph,
+)
 
 try:
     # If requests >=1.0 is available, we will use it
@@ -44,7 +52,27 @@ class JsonRef(LazyProxy):
 
     """
 
-    __notproxied__ = ("__reference__",)
+    __notproxied__ = (
+        "__reference__",
+        "base_uri",
+        "source_uri",
+        "path",
+        "call_path",
+        "graph",
+        "reference_info",
+        "store",
+        "full_uri",
+        "target",
+        "target_document",
+        "target_uri",
+        "reference",
+        "chain",
+        "all_chains",
+        "loader",
+        "jsonschema",
+        "load_on_repr",
+        "merge_props",
+    )
 
     @classmethod
     def replace_refs(
@@ -91,6 +119,10 @@ class JsonRef(LazyProxy):
         merge_props=False,
         _path=(),
         _store=None,
+        _graph=None,
+        _reference=None,
+        _call_path=(),
+        _parent_reference=None,
     ):
         if not isinstance(refobj.get("$ref"), str):
             raise ValueError("Not a valid json reference object: %s" % refobj)
@@ -101,31 +133,95 @@ class JsonRef(LazyProxy):
         self.load_on_repr = load_on_repr
         self.merge_props = merge_props
         self.path = _path
+        self.call_path = _call_path
         self.store = _store  # Use the same object to be shared with children
         if self.store is None:
-            self.store = URIDict()
+            self.store = DocumentStore()
+        self.graph = _graph
+        self.reference_info = _reference
+        self.parent_reference = _parent_reference
 
     @property
     def _ref_kwargs(self):
         return dict(
             base_uri=self.base_uri,
+            retrieval_uri=self.base_uri,
             loader=self.loader,
             jsonschema=self.jsonschema,
             load_on_repr=self.load_on_repr,
             merge_props=self.merge_props,
             path=self.path,
             store=self.store,
+            graph=self.graph,
         )
 
     @property
     def full_uri(self):
         return urlparse.urljoin(self.base_uri, self.__reference__["$ref"])
 
-    def callback(self):
-        uri, fragment = urlparse.urldefrag(self.full_uri)
+    @property
+    def source_uri(self):
+        return self.base_uri
 
-        # If we already looked this up, return a reference to the same object
-        if uri not in self.store:
+    @property
+    def target(self):
+        """The :class:`jsonref.references.Document` this reference points at."""
+        if self.reference_info is not None:
+            return self.reference_info.target
+        return None
+
+    @property
+    def reference(self):
+        """The :class:`jsonref.references.Reference` occurrence, if tracked."""
+        return self.reference_info
+
+    @property
+    def target_uri(self):
+        return self.full_uri
+
+    @property
+    def chain(self):
+        """References followed from the root document to this occurrence."""
+        if self.reference_info is not None:
+            return self.reference_info.chain
+        return ()
+
+    def all_chains(self):
+        """Every root-to-reference path for this occurrence."""
+        if self.reference_info is not None:
+            return self.reference_info.all_chains()
+        return ()
+
+    def callback(self):
+        full_uri = self.full_uri
+        uri, fragment = urlparse.urldefrag(full_uri)
+
+        # Look up the target by retrieval URI.  The store maps a URI to the
+        # canonical (retrieval_uri, base_uri) entry, so a document declaring an
+        # $id can be shared without losing the base its contents resolve
+        # against.
+        key = None
+        ref = self.__reference__["$ref"]
+        source_document = self.reference_info.source if self.reference_info else None
+        own_base = source_document.base_uri if source_document is not None else None
+        if ref == "" or ref.startswith("#") or (uri and uri == own_base):
+            # A reference to the current base (including fragment-only
+            # references) resolves within the document that declares it.
+            # Prefer its own resource even if another document declares the
+            # same base URI.
+            base_doc = self._local_document()
+            key = source_document.key if source_document is not None else None
+        elif self.store is not None and uri in self.store:
+            base_doc = self.store[uri]
+            key = self.store.canonical_key(uri)
+            if self.graph is not None and self.reference_info is not None:
+                target_document = self._document_for_uri(uri)
+                if target_document is not None:
+                    self.graph.resolve_reference(
+                        self.reference_info, target_document
+                    )
+                    key = target_document.key
+        else:
             # Remote ref
             try:
                 base_doc = self.loader(uri)
@@ -133,11 +229,30 @@ class JsonRef(LazyProxy):
                 raise self._error(
                     "%s: %s" % (e.__class__.__name__, str(e)), cause=e
                 ) from e
+            parent_doc = self.target_document
             base_doc = _replace_refs(
-                base_doc, **{**self._ref_kwargs, "base_uri": uri, "recursing": False}
+                base_doc,
+                **{
+                    **self._ref_kwargs,
+                    "base_uri": uri,
+                    "retrieval_uri": uri,
+                    "recursing": False,
+                    "document": parent_doc,
+                    "parent_reference": self.reference_info,
+                }
             )
-        else:
-            base_doc = self.store[uri]
+            if self.graph is not None:
+                key = self.store.canonical_key(uri)
+                target_document = self.graph.documents.get(key)
+                if target_document is None:
+                    target_document = self.graph.find_document(uri)
+                    if target_document is not None:
+                        key = target_document.key
+                if target_document is not None:
+                    if self.reference_info is not None:
+                        self.graph.resolve_reference(
+                            self.reference_info, target_document
+                        )
         result = self.resolve_pointer(base_doc, fragment)
         if result is self:
             raise self._error("Reference refers directly to itself.")
@@ -152,7 +267,44 @@ class JsonRef(LazyProxy):
                 **result,
                 **{k: v for k, v in self.__reference__.items() if k != "$ref"},
             }
+        if self.reference_info is not None:
+            if self.graph is not None:
+                target_document = self.graph.find_document(key)
+                if target_document is not None:
+                    self.graph.resolve_reference(
+                        self.reference_info, target_document, result
+                    )
         return result
+
+    @property
+    def target_document(self):
+        if self.reference_info is not None:
+            return self.reference_info.source
+        return None
+
+    def _local_document(self):
+        """The document object containing this reference, if known."""
+        reference = self.reference_info
+        if reference is not None and reference.source is not None:
+            document = reference.source
+            if document.object is not None:
+                return document.object
+        try:
+            return self.store[self.base_uri]
+        except KeyError:
+            return None
+
+    def _document_for_uri(self, uri):
+        if self.graph is None:
+            return None
+        document = self.graph.find_document(uri)
+        if document is not None:
+            return document
+        try:
+            key = self.store.canonical_key(uri)
+        except KeyError:
+            return None
+        return self.graph.documents.get(key)
 
     def resolve_pointer(self, document, pointer):
         """
@@ -204,6 +356,11 @@ class JsonRef(LazyProxy):
 class URIDict(MutableMapping):
     """
     Dictionary which uses normalized URIs as keys.
+
+    .. deprecated:: 1.2
+        Use :class:`jsonref.references.DocumentStore` instead.  ``URIDict``
+        remains available for backwards compatibility and does not track base
+        URIs.
     """
 
     def normalize(self, uri):
@@ -291,6 +448,9 @@ def replace_refs(
     merge_props=False,
     proxies=True,
     lazy_load=True,
+    return_graph=False,
+    with_graph=False,
+    resolve_graph=None,
 ):
     """
     Returns a deep copy of `obj` with all contained JSON reference objects
@@ -321,30 +481,106 @@ def replace_refs(
     :param lazy_load: When proxy objects are used, and this is `True`, the
         references will not be resolved until that section of the JSON
         document is accessed. (defaults to ``True``)
+    :param return_graph: When ``True``, return a ``(result, graph)`` tuple.
+        ``graph`` is a :class:`jsonref.ReferenceGraph` describing every
+        document resource and reference occurrence that was resolved.  The
+        graph is complete when the requested result has no unresolved lazy
+        references.
+    :param with_graph: Alias for ``return_graph``.
+    :param resolve_graph: When ``True``, resolve every reference before
+        returning so the graph is complete, regardless of ``lazy_load``.
 
     """
+    if with_graph:
+        return_graph = True
+    if resolve_graph is None:
+        resolve_graph = return_graph
+
+    base_uri, _ = urlparse.urldefrag(base_uri)
+    graph = ReferenceGraph()
+    graph.root_uri = base_uri
+    store = DocumentStore()
     result = _replace_refs(
         obj,
         base_uri=base_uri,
+        retrieval_uri=base_uri,
         loader=loader,
         jsonschema=jsonschema,
         load_on_repr=load_on_repr,
         merge_props=merge_props,
-        store=URIDict(),
+        store=store,
         path=(),
         recursing=False,
+        graph=graph,
+        document=None,
+        parent_reference=None,
     )
+    graph.result = result
     if not proxies:
         _walk_refs(result, lambda r: r.__subject__, replace=True)
-    elif not lazy_load:
+    elif not lazy_load or resolve_graph:
         _walk_refs(result, lambda r: r.__subject__)
+    if return_graph:
+        return result, graph
     return result
+
+
+def replace_refs_with_graph(obj, **kwargs):
+    """Like :func:`replace_refs`, but always return ``(result, graph)``."""
+    kwargs["return_graph"] = True
+    return replace_refs(obj, **kwargs)
+
+
+class Resolved(namedtuple("Resolved", "result graph")):
+    """
+    A resolved object together with its reference provenance graph.
+
+    The tuple unpacks as ``result, graph = resolved``.  ``object``/``value``
+    are aliases for ``result``, and ``documents``/``references`` proxy the
+    corresponding graph attributes.
+    """
+
+    __slots__ = ()
+
+    @property
+    def object(self):
+        return self.result
+
+    @property
+    def value(self):
+        return self.result
+
+    @property
+    def documents(self):
+        return self.graph.documents
+
+    @property
+    def references(self):
+        return self.graph.references
+
+    def to_dict(self):
+        return {"result": self.result, "graph": self.graph.to_dict()}
+
+
+def resolve(obj, **kwargs):
+    """
+    Resolve ``obj`` and return a :class:`Resolved` pair.
+
+    This is equivalent to :func:`replace_refs` with ``return_graph=True``.  By
+    default every reference is resolved so the graph is complete; pass
+    ``resolve_graph=False`` to preserve lazy loading.
+    """
+    kwargs.pop("return_graph", None)
+    kwargs.pop("with_graph", None)
+    result, graph = replace_refs(obj, return_graph=True, **kwargs)
+    return Resolved(result, graph)
 
 
 def _replace_refs(
     obj,
     *,
     base_uri,
+    retrieval_uri,
     loader,
     jsonschema,
     load_on_repr,
@@ -352,17 +588,50 @@ def _replace_refs(
     store,
     path,
     recursing,
+    graph,
+    document,
+    parent_reference,
 ):
-    base_uri, frag = urlparse.urldefrag(base_uri)
-    store_uri = None  # If this does not get set, we won't store the result
-    if not frag and not recursing:
-        store_uri = base_uri
+    base_uri, _fragment = urlparse.urldefrag(base_uri)
+    if retrieval_uri is None:
+        retrieval_uri = base_uri
+    retrieval_uri, _ = urlparse.urldefrag(retrieval_uri)
+
+    declared_id = None
     if jsonschema and isinstance(obj, Mapping):
         # id changed to $id in later jsonschema versions
-        id_ = obj.get("$id") or obj.get("id")
-        if isinstance(id_, str):
-            base_uri = urlparse.urljoin(base_uri, id_)
-            store_uri = base_uri
+        declared_id = obj.get("$id") or obj.get("id")
+        if isinstance(declared_id, str):
+            base_uri = urlparse.urljoin(base_uri, declared_id)
+        else:
+            declared_id = None
+
+    if declared_id is not None and document is not None:
+        if base_uri == document.base_uri:
+            declared_id = None
+
+    start_new_document = graph is not None and (not recursing or declared_id is not None)
+    if start_new_document:
+        parent_document = document
+        if recursing:
+            # A nested $id declares a resource within the current document.
+            # It does not add another reference hop; it inherits the path of
+            # the document that contains it.
+            document = graph.document(
+                retrieval_uri,
+                base_uri,
+                declared_id=declared_id,
+                container=parent_document,
+            )
+        else:
+            document = graph.document(
+                retrieval_uri,
+                base_uri,
+                declared_id=declared_id,
+                container=parent_document,
+                retrieved_from=parent_document,
+                via=parent_reference,
+            )
 
     # First recursively iterate through our object, replacing children with JsonRefs
     if isinstance(obj, Mapping):
@@ -370,6 +639,7 @@ def _replace_refs(
             k: _replace_refs(
                 v,
                 base_uri=base_uri,
+                retrieval_uri=retrieval_uri,
                 loader=loader,
                 jsonschema=jsonschema,
                 load_on_repr=load_on_repr,
@@ -377,6 +647,9 @@ def _replace_refs(
                 store=store,
                 path=path + (k,),
                 recursing=True,
+                graph=graph,
+                document=document,
+                parent_reference=parent_reference,
             )
             for k, v in obj.items()
         }
@@ -385,6 +658,7 @@ def _replace_refs(
             _replace_refs(
                 v,
                 base_uri=base_uri,
+                retrieval_uri=retrieval_uri,
                 loader=loader,
                 jsonschema=jsonschema,
                 load_on_repr=load_on_repr,
@@ -392,12 +666,25 @@ def _replace_refs(
                 store=store,
                 path=path + (i,),
                 recursing=True,
+                graph=graph,
+                document=document,
+                parent_reference=parent_reference,
             )
             for i, v in enumerate(obj)
         ]
 
     # If this object itself was a reference, replace it with a JsonRef
     if isinstance(obj, Mapping) and isinstance(obj.get("$ref"), str):
+        full_uri = urlparse.urljoin(base_uri, obj["$ref"])
+        reference_info = None
+        if graph is not None:
+            reference_info = graph.add_reference(
+                obj,
+                source=document,
+                path=path,
+                full_uri=full_uri,
+                parent=parent_reference,
+            )
         obj = JsonRef(
             obj,
             base_uri=base_uri,
@@ -407,11 +694,25 @@ def _replace_refs(
             merge_props=merge_props,
             _path=path,
             _store=store,
+            _graph=graph,
+            _reference=reference_info,
+            _parent_reference=parent_reference,
         )
+        if reference_info is not None:
+            target_document = graph.find_document(full_uri)
+            if target_document is not None:
+                graph.resolve_reference(reference_info, target_document)
 
-    # Store the document with all references replaced in our cache
-    if store_uri is not None:
-        store[store_uri] = obj
+    # Store the document with all references replaced in our cache.  The key
+    # always contains the effective base URI, so a document whose id changes
+    # the base cannot overwrite the entry for its retrieval URI.
+    if start_new_document:
+        document.object = obj
+        primary = not recursing
+        aliases = [base_uri]
+        if primary:
+            aliases.append(retrieval_uri)
+        store.register(retrieval_uri, base_uri, obj, aliases=aliases, primary=primary)
 
     return obj
 
@@ -425,6 +726,9 @@ def load(
     merge_props=False,
     proxies=True,
     lazy_load=True,
+    return_graph=False,
+    with_graph=False,
+    resolve_graph=None,
     **kwargs,
 ):
     """
@@ -450,6 +754,8 @@ def load(
         merge_props=merge_props,
         proxies=proxies,
         lazy_load=lazy_load,
+        return_graph=return_graph or with_graph,
+        resolve_graph=resolve_graph,
     )
 
 
@@ -462,6 +768,9 @@ def loads(
     merge_props=False,
     proxies=True,
     lazy_load=True,
+    return_graph=False,
+    with_graph=False,
+    resolve_graph=None,
     **kwargs,
 ):
     """
@@ -487,6 +796,8 @@ def loads(
         merge_props=merge_props,
         proxies=proxies,
         lazy_load=lazy_load,
+        return_graph=return_graph or with_graph,
+        resolve_graph=resolve_graph,
     )
 
 
@@ -499,6 +810,9 @@ def load_uri(
     merge_props=False,
     proxies=True,
     lazy_load=True,
+    return_graph=False,
+    with_graph=False,
+    resolve_graph=None,
 ):
     """
     Load JSON data from ``uri`` with JSON references proxied to their referent
@@ -524,6 +838,8 @@ def load_uri(
         merge_props=merge_props,
         proxies=proxies,
         lazy_load=lazy_load,
+        return_graph=return_graph or with_graph,
+        resolve_graph=resolve_graph,
     )
 
 

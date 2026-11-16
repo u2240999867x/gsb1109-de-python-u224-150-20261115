@@ -119,6 +119,53 @@ like this::
     with file_a_path.open() as file_a:
         result = jsonref.load(file_a, base_uri=file_a_path.as_uri())
 
+Relative references are always resolved against the URI of the document that
+declares them, including references inside documents that were themselves
+reached through a reference. Two documents may therefore use the same relative
+reference string and point at different targets::
+
+    file-a.json -> {"$ref": "expected.json"}   => file-a's expected.json
+    file-b.json -> {"$ref": "expected.json"}   => file-b's expected.json
+
+Documents are cached by ``(retrieval_uri, base_uri)``. A document loaded from
+``file-a.json`` that declares an ``$id`` keeps both the URI it was retrieved
+from and the base URI it declares, so the declared id can be used to reach the
+same parsed document without moving its existing references onto a different
+base. ``$id``/``id`` values are resolved relative to the base of the object
+that declares them; an ``id`` on a nested object changes the base for that
+subtree.
+
+Reference graphs
+----------------
+
+Pass ``return_graph=True`` (or ``with_graph=True``) to receive a
+:class:`ReferenceGraph` alongside the result. The graph records every document
+resource that was visited and every ``$ref`` occurrence, including the
+document it came from, the resolved URI, and the reference path that reached
+it. A shared target is loaded once but retains one edge per call path::
+
+    result, graph = jsonref.replace_refs(
+        config, base_uri="pkg/index.json", loader=loader, return_graph=True
+    )
+
+    target = graph.find_document("pkg/common/shared.json")
+    graph.paths_to(target)             # every root-to-target reference chain
+    graph.references_to("pkg/common/shared.json")
+    graph.to_dict()                    # JSON-serializable nodes and edges
+    graph.to_json()
+    graph.to_mermaid()                 # Mermaid flowchart
+
+``return_graph=True`` resolves all references before returning by default, so
+the graph is complete. Pass ``resolve_graph=False`` to preserve lazy loading;
+the graph then updates as references are accessed.
+
+:class:`JsonRef` proxies expose the same information: ``base_uri`` and
+``source_uri`` identify where the reference was declared, ``path`` is its
+location within that document, ``full_uri`` is the resolved target, ``chain``
+lists the reference occurrences followed from the root, and ``target`` returns
+the :class:`Document` node. These attributes remain readable after the proxy
+has loaded its subject.
+
 
 :class:`JsonRef` Objects
 ========================
@@ -144,6 +191,38 @@ use the data as if it does not contain references at all.
 
         Contains the original JSON Reference object. Accessing this attribute
         will not cause the referent data to be loaded.
+
+    .. attribute:: base_uri
+
+        The base URI in effect where this reference was declared. Relative
+        references are resolved against it.
+
+    .. attribute:: source_uri
+
+        Alias of :attr:`base_uri`; identifies the document that declared the
+        reference.
+
+    .. attribute:: path
+
+        The path of the reference declaration within its source document.
+
+    .. attribute:: full_uri
+
+        The absolute URI the reference resolves to, including any fragment.
+
+    .. attribute:: chain
+
+        The reference occurrences followed from the root document to this one.
+
+    .. attribute:: target
+
+        The :class:`Document` node this reference points at, when graph
+        tracking is enabled.
+
+    .. attribute:: reference
+
+        The :class:`Reference` occurrence record, when graph tracking is
+        enabled.
 
 
 Loading a document at a given URI
@@ -228,6 +307,28 @@ except they output the original reference objects when encountering
 .. autofunction:: dump
 
 .. autofunction:: dumps
+
+
+Reference graphs
+================
+
+.. autoclass:: ReferenceGraph
+
+    .. attribute:: documents
+
+        Ordered mapping of :class:`DocumentKey` to :class:`Document`.
+
+    .. attribute:: references
+
+        Reference occurrences in discovery order.
+
+    .. automethod:: paths_to
+
+    .. automethod:: references_to
+
+    .. automethod:: to_dict
+
+    .. automethod:: to_mermaid
 
 
 When things go wrong

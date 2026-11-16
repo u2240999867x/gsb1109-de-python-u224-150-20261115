@@ -29,6 +29,10 @@ as if the references had been replaced with the referent data.
     used.
 -   Recursive references are supported, and create recursive python data
     structures.
+-   Relative references are resolved against the document that declares them, so
+    the same reference string in two directories can target different documents.
+-   Reference provenance can be collected as a graph of documents and `$ref`
+    occurrences with `replace_refs(..., return_graph=True)`.
 
 References objects are replaced by lazy lookup proxy objects to support lazy 
 dereferencing. They are almost completely transparent.
