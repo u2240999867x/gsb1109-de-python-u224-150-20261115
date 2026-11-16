@@ -172,6 +172,54 @@ through kwargs to this function. e.g.::
     result = jsonref.load_uri("https://my_doc_uri", loader=loader)
 
 
+Dependency aware caching
+------------------------
+
+A parsed document depends on every document it references. A cache keyed only by
+the root URI cannot notice that the root text stayed the same while an external
+dictionary was corrected. :class:`JsonLoader` records a complete dependency
+summary for every parsed document: the digest of the document itself and the
+digest of every document it reaches through references, directly or
+transitively.
+
+.. code-block:: python
+
+    import jsonref
+
+    documents = {
+        "main.json": {"root": {"$ref": "dictionary.json#/term"}},
+        "dictionary.json": {"term": {"name": "old"}},
+    }
+    loader = jsonref.JsonLoader(documents)
+
+    main = loader.snapshot("main.json")
+    # main.dependencies == {"dictionary.json": "<digest>"}
+
+    documents["dictionary.json"] = {"term": {"name": "new"}}
+    loader.invalidate("dictionary.json")
+    # main.json is invalidated; unrelated results and shared unchanged
+    # targets stay in the cache.
+
+    rebuilt = loader.snapshot("main.json")
+    assert rebuilt.dependencies["dictionary.json"] == jsonref.document_digest(
+        documents["dictionary.json"]
+    )
+
+Updating a target invalidates only the results that depend on it. Results for
+shared targets that did not change can be reused. When a refresh fails, the
+previous snapshot is kept and marked stale; it is never presented as a
+successful version mixing old and new dependencies. Such a snapshot has
+``record.stale is True`` and ``record.status == "stale"``.
+
+.. autoclass:: JsonLoader
+
+.. autoclass:: ParseCache
+
+.. autoclass:: CacheRecord
+
+.. autofunction:: document_digest
+
+
 Custom Loaders
 ----------
 

@@ -7,6 +7,21 @@ from urllib.parse import unquote
 from urllib.request import urlopen
 
 from . import proxytypes  # noqa: F401
+from .cache import (  # noqa: F401
+    CacheEntry,
+    CacheRecord,
+    DependencyCache,
+    DependencySummary,
+    DocumentCache,
+    JsonLoader,
+    ParseCache,
+    ParseResult,
+    Snapshot,
+    StaleSnapshotWarning,
+    canonical_uri,
+    digest_dependencies,
+    document_digest,
+)
 from .proxytypes import LazyProxy
 
 try:
