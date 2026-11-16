@@ -12,6 +12,9 @@ dependencies = []
 repository = "https://github.com/gazpachoking/jsonref"
 documentation = "https://jsonref.readthedocs.io/en/latest/"
 
+[project.scripts]
+jsonref-merge = "jsonref.merge:main"
+
 [project.optional-dependencies]
 dev = ["pytest>=7.1.3", "flake8>=5.0.4", "black>=23.3.0"]
 

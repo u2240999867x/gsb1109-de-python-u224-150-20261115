@@ -577,3 +577,19 @@ def _ref_encoder_factory(cls):
             return super(JSONRefEncoder, self)._encode(o, *args, **kwargs)
 
     return JSONRefEncoder
+
+
+# Reference-aware three-way merge helpers.  ``jsonref.merge`` remains the
+# module; these names make the common entry points available from the package.
+from .merge import (  # noqa: E402,F401
+    DirectoryMergeResult,
+    MergeConflict,
+    MergeError,
+    MergeResult,
+    ReferenceResolver,
+    merge3,
+    merge_directories,
+    merge_files,
+    three_way_merge,
+)
+

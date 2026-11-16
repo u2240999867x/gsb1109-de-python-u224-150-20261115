@@ -258,3 +258,53 @@ If there is a failure when resolving a JSON reference, a :class:`JsonRefError` w
     .. attribute:: cause
 
         The exception that caused the resolution to fail.
+
+Three-way merging reference documents
+=====================================
+
+:func:`~jsonref.merge.merge3` and :func:`~jsonref.merge.merge_directories`
+merge a common base with two modified trees while keeping ``$ref`` objects
+symbolic in the result.  The distinction matters when a shared target was
+corrected on one side and a reference to it was disconnected on the other:
+
+* correcting a target changes only the target object; every reference that
+  still points at it observes the merged correction;
+* replacing a reference with a literal creates an independent local copy: it
+  keeps the literal value and does not inherit later corrections to the old
+  target;
+* redirecting a reference disconnects it from the old target and connects it
+  to the new one;
+* two separate locations that merely contain equal values stay separate; only
+  an actual reference chain relates them;
+* reference chains are followed with a visited set, so recursive documents
+  terminate instead of expanding forever.
+
+The merge never attempts to rewrite a literal into a reference.  Ordinary
+objects are merged structurally, arrays are merged element-wise, and every
+remaining difference is reported with the base, ours, and theirs values plus a
+classification of what each side did:
+
+.. code-block:: python
+
+    from jsonref.merge import merge_directories
+
+    result = merge_directories("base/config", "ours/config", "theirs/config")
+    result.raise_for_conflicts() if result.conflicts else None
+    result.write("merged/config")
+    for update in result.analysis["shared_target_updates"]:
+        print(update["document"], update["json_pointer"], update["affected_references"])
+
+``merge_directories`` resolves references between files for classification
+and then analyses the complete merged tree, so file iteration order cannot
+change whether a reference is considered connected.  The report includes
+``shared_target_updates`` (with the references that still observe the target
+and those disconnected from it), ``reference_redirects``, and ``local_copies``.
+
+The same merge is available from the command line::
+
+    python -m jsonref.merge base/config ours/config theirs/config \
+        -o merged/config --report merge-report.json
+
+Conflicts make the command exit with status 1; the chosen value at each
+conflicted location is controlled by ``--prefer ours`` or ``--prefer theirs``.
+
