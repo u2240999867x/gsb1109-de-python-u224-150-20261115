@@ -65,7 +65,7 @@ here.
 
 ### Module map
 
-The package is thirty-two modules; four carry most of the weight:
+The package is thirty-three modules; four carry most of the weight:
 `type/univ.py` (~3,300 lines), `codec/ber/decoder.py` (~2,200),
 `codec/ber/encoder.py` (~960), `type/constraint.py` (~750).
 
@@ -84,6 +84,7 @@ The package is thirty-two modules; four carry most of the weight:
 | `type/error.py` | A *second* `ValueConstraintError`, the one actually raised |
 | `codec/streaming.py` | `asSeekableStream`, `CachingStreamWrapper`, `readFromStream`: the resumable-stream engine |
 | `codec/ber/decoder.py` | The base decoder: payload decoders, the state machine, every security limit |
+| `codec/ber/validator.py` | Batch validation: TLV framing, relaxed decoding, per-field diagnostics |
 | `codec/ber/encoder.py` | The base encoder |
 | `codec/ber/eoo.py` | The end-of-octets singleton |
 | `codec/cer/*`, `codec/der/*` | Derived codecs, sharing BER's objects by identity |
@@ -615,6 +616,61 @@ namespace catches the other. Aliasing one class to the other keeps this repo's
 tests green while changing exception routing for every downstream
 `except pyasn1.error.ValueConstraintError` block that currently never fires,
 and no test detects the change.
+
+### Batch validation and diagnostics
+
+`codec/ber/validator.py` answers a different question from `decode()`: it
+takes a concatenation of top-level objects and reports which ones are
+unusable, where, and why. The stock decoder cannot do this, for two reasons.
+It raises on the first constraint violation
+(`SimpleAsn1Type.__init__` validates eagerly when the decoder clones a value),
+and once a top-level item fails, `StreamingDecoder` stops at that substrate
+position, so complete objects after the bad one are never yielded.
+
+`validate` therefore splits the substrate itself. `_parseTlv` walks tags and
+lengths, accepts definite and indefinite lengths, and records each top-level
+TLV's `[start, end)` extent; a framing failure reports the offset at which it
+became visible and then resynchronises, so a bad length cannot consume the
+object that follows.
+
+Recovery is bounded. `_resync` narrows candidate offsets to the schema's
+outer identifier octet (found with `bytes.find`, not a Python-level scan) and
+caps both the number of full decodes (`MAX_RESYNC_DECODES`) and the total TLV
+nodes parsed during one recovery (`_ResyncExhausted`). Without that, a long
+malformed prefix whose every byte begins a plausible TLV would make the scan
+quadratic. A structural failure inside a sound top-level header is bounded by
+the declared extent instead: the whole declared item is one bad object, and
+its fragments are not reported as separate items. Schema-less decoding cannot
+tell fragments from objects, so `_expectedTags` returns `None` there and only
+the parse budget bounds the scan.
+
+Each item is then decoded through `_relaxedSchema`, a copy of the caller's
+schema with every `subtypeSpec`/`sizeSpec` emptied. Values decode even when
+they violate constraints, and `_validateValue` walks the decoded tree and the
+*original* schema together, calling each node's constraint with the same
+mapping `isInconsistent` builds (named components for `Sequence`/`Set`/
+`Choice`, indexed ones for `SequenceOf`/`SetOf`). `_firstFailure` descends
+`ConstraintsIntersection`/`ContainedSubtypeConstraint` to name the innermost
+rejecting constraint instead of the aggregate wrapper.
+
+Two details make the report trustworthy. Paths are built from the schema
+walk and, for `Choice`, from `getComponent().getName()` — the branch actually
+decoded — never from an alternative guessed by position. Byte ranges come
+from the TLV walk, with EXPLICIT wrappers unwrapped by `_unwrapNode` so a
+value's range covers the value, not the wrapper. Collection size violations
+(`ValueSizeConstraint` on a `SequenceOf`/`SetOf`) are classified separately
+from element value violations.
+
+Accepted values are rebuilt by `_retype` through the caller's classes, so a
+relaxed subclass never escapes: the returned objects are exactly the schema
+types supplied, with the original constraints in `readOnly`. Recursive
+schemas need both halves of this machinery. `_relaxedSchema` memoises the
+prototype before visiting children, so the relaxed copy keeps a genuine cycle;
+the generated safe subclass replaces `__repr__`/`prettyPrint` because the
+decoder formats the spec into the debug log, and rendering a cyclic schema
+would recurse forever. The same cycle means validation must resolve a
+late-bound `componentType` via `clone()` (`_resolvedSpec`), the rule
+`ConstructedAsn1Type._cloneInitializers` already applies for codecs.
 
 ### Type relations and their flags
 

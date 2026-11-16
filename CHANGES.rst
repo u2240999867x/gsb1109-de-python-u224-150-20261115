@@ -1,6 +1,14 @@
 Revision 0.7.0, released XX-XX-2026
 ---------------------------------------
 
+- Added batch BER validation (``pyasn1.codec.ber.validator``).  Concatenated
+  objects are validated one at a time, so a malformed or constraint violating
+  item no longer hides the complete objects that follow it.  Each failure
+  reports its full field path, the responsible constraint and the original
+  byte range; collection size violations are classified separately from
+  element value violations, and a CHOICE failure is named after the
+  alternative actually decoded.
+
 - Fixed OverflowError from BER/CER/DER length values that fit in the
   supported 8-octet length field but exceed the platform maximum readable
   size. Such oversized definite lengths are now rejected with PyAsn1Error.
