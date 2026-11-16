@@ -31,6 +31,7 @@ __all__ = [  # noqa: RUF022
     "Annotation",
     "AnnotationEnd",
     "AnnotationMixin",
+    "AuditReport",
     "BackgroundImage",
     "Body",
     "Bookmark",
@@ -38,6 +39,7 @@ __all__ = [  # noqa: RUF022
     "BookmarkMixin",
     "BookmarkStart",
     "Cell",
+    "CellDiscrepancy",
     "ChangeInfo",
     "Chart",
     "CircleShape",
@@ -50,6 +52,12 @@ __all__ = [  # noqa: RUF022
     "ConnectorShape",
     "Container",
     "Content",
+    "DataPilotField",
+    "DataPilotLevel",
+    "DataPilotMember",
+    "DataPilotSubtotal",
+    "DataPilotTable",
+    "DataPilotTables",
     "Database",
     "DcCreatorMixin",
     "DcDateMixin",
@@ -152,6 +160,8 @@ __all__ = [  # noqa: RUF022
     "ParaFormattedTextMixin",
     "ParaMixin",
     "Paragraph",
+    "PilotAuditor",
+    "PilotFieldInfo",
     "PolygonShape",
     "PolylineShape",
     "PosMix",
@@ -172,6 +182,7 @@ __all__ = [  # noqa: RUF022
     "SecurityError",
     "Settings",
     "SizeMix",
+    "SourceColumn",
     "Spacer",
     "Span",
     "Spreadsheet",
@@ -236,6 +247,7 @@ __all__ = [  # noqa: RUF022
     "XmlPart",
     "ZMix",
     "__version__",
+    "audit_pilot_tables",
     "create_table_cell_style",
     "default_boolean_style",
     "default_currency_style",
@@ -245,6 +257,7 @@ __all__ = [  # noqa: RUF022
     "default_percentage_style",
     "default_time_style",
     "default_toc_level_style",
+    "get_pilot_tables",
     "hex2rgb",
     "hexa_color",
     "make_table_cell_border_string",
@@ -277,6 +290,21 @@ from .config_elements import (
 from .const import MAX_MD_COLUMNS, MAX_MD_LINES
 from .container import Container
 from .content import Content
+from .data_pilot import (
+    AuditReport,
+    CellDiscrepancy,
+    DataPilotField,
+    DataPilotLevel,
+    DataPilotMember,
+    DataPilotSubtotal,
+    DataPilotTable,
+    DataPilotTables,
+    PilotAuditor,
+    PilotFieldInfo,
+    SourceColumn,
+    audit_pilot_tables,
+    get_pilot_tables,
+)
 from .document import Document, TableMarkdown
 from .draw_page import DrawPage
 from .element import FIRST_CHILD, LAST_CHILD, NEXT_SIBLING, PREV_SIBLING, Element, EText

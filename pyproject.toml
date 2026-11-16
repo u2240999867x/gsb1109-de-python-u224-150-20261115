@@ -53,6 +53,7 @@ odfdo-from-json = "odfdo.scripts.from_json:main"
 odfdo-to-json = "odfdo.scripts.to_json:main"
 odfdo-meta-print = "odfdo.scripts.meta_print:main"
 odfdo-meta-update = "odfdo.scripts.meta_update:main"
+odfdo-pilot-audit = "odfdo.scripts.pilot_audit:main"
 
 [dependency-groups]
 doc = [

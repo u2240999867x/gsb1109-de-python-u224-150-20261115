@@ -1,5 +1,14 @@
 # Odfdo Release Notes
 
+## [Unreleased]
+
+### Added
+
+-   Data pilot (pivot table) parsing and auditing: new `odfdo.data_pilot` module exposing `DataPilotTable`, `DataPilotField`, `DataPilotLevel`, `DataPilotMember`, `DataPilotSubtotal`, `DataPilotTables`, `PilotAuditor`, `AuditReport` and the `audit_pivot_tables()` / `get_pilot_tables()` helpers.
+-   `PilotAuditor` recomputes the supported aggregations (`sum`, `count`, `countnums`, `average`, `min`, `max`) from the current source range and compares them with the cached result cells, reporting stale, missing, unexpected and unverifiable cells. Unknown aggregations are reported as unverifiable instead of being replaced by zero.
+-   New `odfdo-pilot-audit` command-line script producing human readable or JSON audit reports, with an optional non zero exit code on stale caches.
+-   New recipe `audit_data_pilot_table.py`.
+
 ## [3.27.3] - 2026-10-24
 
 -   Improve the filter for parasite files (`.DS_Store` and others) when savving the document.
