@@ -61,6 +61,7 @@ from . import rtp
 from . import rx
 from . import sccp
 from . import sctp
+from . import session
 from . import sip
 from . import sll
 from . import sll2

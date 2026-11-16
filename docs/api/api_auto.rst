@@ -407,6 +407,14 @@ dpkt.sctp module
     :undoc-members:
     :show-inheritance:
 
+dpkt.session module
+-------------------
+
+.. automodule:: dpkt.session
+    :members:
+    :undoc-members:
+    :show-inheritance:
+
 dpkt.sip module
 ---------------
 
