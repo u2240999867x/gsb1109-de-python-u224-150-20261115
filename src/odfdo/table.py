@@ -49,6 +49,12 @@ from .element import (
     xpath_return_elements,
 )
 from .form import FormMixin
+from .formula import (
+    FormulaCache,
+    FormulaCell,
+    recalculate,
+    table_formula_cache,
+)
 from .mixin_md import MD_GLOBAL, MDTable, _set_global
 from .mixin_named_range import TableNamedExpressions
 from .named_range import NamedRange, table_name_check
@@ -1549,6 +1555,7 @@ class Table(MDTable, FormMixin, OfficeFormsMixin, Element):
         # print self.serialize(True)
         # Update width if necessary
         self._update_width(row_back)
+        self._record_row_change(y, row_back)
         return row_back
 
     def insert_row(
@@ -1582,6 +1589,7 @@ class Table(MDTable, FormMixin, OfficeFormsMixin, Element):
         row_back.y = y
         # Update width if necessary
         self._update_width(row_back)
+        self._record_structure_change()
         return row_back
 
     def extend_rows(self, rows: Iterable[Row] | None = None) -> None:
@@ -1653,6 +1661,7 @@ class Table(MDTable, FormMixin, OfficeFormsMixin, Element):
             return
         # Inside the defined table
         self._table_cache.delete_row_in_cache(y, self)
+        self._record_structure_change()
 
     def get_row_values(
         self,
@@ -1891,6 +1900,10 @@ class Table(MDTable, FormMixin, OfficeFormsMixin, Element):
                 cell._set_repeated(None)
         cell.x = x
         cell.y = y
+        if clone:
+            from .formula import set_cell_origin
+
+            set_cell_origin(cell, self.name, x, y, self._xml_element)
         return cell
 
     def get_value(
@@ -1980,6 +1993,7 @@ class Table(MDTable, FormMixin, OfficeFormsMixin, Element):
                 cell_back = row.set_cell(x, cell, clone=clone)
                 # Update width if necessary, since we don't use set_row
                 self._update_width(row)
+        self._record_cell_change(x, y, copy_formula=cell_back)
         return cell_back
 
     def set_cells(
@@ -2066,7 +2080,13 @@ class Table(MDTable, FormMixin, OfficeFormsMixin, Element):
         )
         if style:
             cell.style = style
-        self.set_cell(coord, cell, clone=False)
+        cell_back = self.set_cell(coord, cell, clone=False)
+        if formula is not None:
+            # A formula supplied together with its value means the value is
+            # the freshly computed cache of that formula.
+            from .formula import record_cell_change
+
+            record_cell_change(cell_back, fresh_formula=True)
 
     def set_cell_image(
         self,
@@ -2169,10 +2189,16 @@ class Table(MDTable, FormMixin, OfficeFormsMixin, Element):
         row = self._get_row2(y, clone=True)
         row.y = y
         row.repeated = None
+        previous_width = row.width
         cell_back = row.insert_cell(x, cell, clone=False)
         self.set_row(y, row, clone=False)
         # Update width if necessary
         self._update_width(row)
+        self._record_row_change(
+            y,
+            row,
+            width=max(previous_width, row.width),
+        )
         return cell_back
 
     def append_cell(
@@ -2207,6 +2233,7 @@ class Table(MDTable, FormMixin, OfficeFormsMixin, Element):
         self.set_row(y, row)
         # Update width if necessary
         self._update_width(row)
+        self._record_row_change(y, row)
         return cell_back
 
     def delete_cell(self, coord: tuple | list | str) -> None:
@@ -2233,6 +2260,7 @@ class Table(MDTable, FormMixin, OfficeFormsMixin, Element):
         if row is None:
             raise ValueError
         row.delete_cell(x)
+        self._record_row_change(y, row)
         # self.set_row(y, row)
 
     # Columns
@@ -2456,6 +2484,7 @@ class Table(MDTable, FormMixin, OfficeFormsMixin, Element):
             # Longer rows shouldn't exist!
         self._table_cache.clear_row_indexes()
         self._table_cache.clear_col_indexes()
+        self._record_structure_change()
         return column_back
 
     def append_column(
@@ -2505,6 +2534,7 @@ class Table(MDTable, FormMixin, OfficeFormsMixin, Element):
             _repeated = column.repeated or 1
         self._table_cache.insert_col_map_once(_repeated)
         self._table_cache.clear_col_indexes()
+        self._record_structure_change()
         # No need to update row widths
         return column
 
@@ -2530,6 +2560,7 @@ class Table(MDTable, FormMixin, OfficeFormsMixin, Element):
                 row.delete_cell(x)
         self._table_cache.clear_row_indexes()
         self._table_cache.clear_col_indexes()
+        self._record_structure_change()
 
     def get_column_cells(
         self,
@@ -3099,6 +3130,89 @@ class Table(MDTable, FormMixin, OfficeFormsMixin, Element):
         # replace cells in table
         self.set_cells(cells, coord=start, clone=False)
         return True
+
+    # -- formulas ----------------------------------------------------------
+
+    @property
+    def formula_cache(self) -> FormulaCache:
+        """Return the formula cache shared by the tables of the document.
+
+        The cache records, for each formula cell, the cells it references,
+        and whether its cached value is still trustworthy. It is built from
+        the ``table:formula`` attributes and never runs a spreadsheet
+        application.
+
+        Returns:
+            FormulaCache: The cache of the document.
+
+        """
+        return table_formula_cache(self)
+
+    def recalculate(self) -> list[FormulaCell]:
+        """Refresh the cached values of the formulas odfdo can evaluate.
+
+        Only a documented subset of OpenFormula is supported (SUM, AVERAGE,
+        MIN, MAX, COUNT, IF, ... on cells and ranges). Formulas using an
+        unknown function or an unsupported construct are left untouched and
+        remain stale: their cached value is never guessed.
+
+        Returns:
+            list: The formula cells whose cached value was refreshed.
+
+        """
+        return recalculate(self)
+
+    def formula_cells(self) -> list[FormulaCell]:
+        """Return the description of all the formula cells of the document."""
+        return self.formula_cache.formulas()
+
+    def stale_formula_cells(self) -> list[FormulaCell]:
+        """Return the formula cells whose cached value is stale."""
+        return self.formula_cache.stale_formulas()
+
+    def _record_structure_change(self) -> None:
+        """Invalidate all formulas after a row/column layout change (internal)."""
+        from .formula import record_structure_change
+
+        record_structure_change(self)
+
+    def _record_row_change(
+        self,
+        y: int,
+        row: Row | None = None,
+        width: int | None = None,
+    ) -> None:
+        """Invalidate formulas affected by a whole row change (internal)."""
+        from .formula import record_region
+
+        if width is None:
+            if row is not None:
+                width = max(row.width, self.width)
+            else:
+                width = self.width
+        record_region(self, 0, y, max(width, 1) - 1, y, reason="cell changed")
+
+    def _record_cell_change(
+        self,
+        x: int,
+        y: int,
+        copy_formula: Cell | None = None,
+        fresh_formula: bool = False,
+    ) -> None:
+        """Notify the formula cache of a cell change (internal)."""
+        from .formula import record_cell_change
+
+        cell = (
+            copy_formula
+            if copy_formula is not None and copy_formula.formula
+            else self.get_cell((x, y), clone=False)
+        )
+        position = (self.name, x, y, cell.repeated or 1, 1)
+        record_cell_change(
+            cell,
+            fresh_formula=fresh_formula,
+            position=position,
+        )
 
     #
     # Import/export API

@@ -1,5 +1,16 @@
 # Odfdo Release Notes
 
+## [Unreleased]
+
+### Added
+
+-   Added `Cell.formula_is_stale`, `Cell.formula_stale_reason`, `Cell.formula_dependents()` and `Cell.mark_formula_stale()` to inspect and control the cached value of a formula cell.
+-   Added `Table.formula_cache`, `Table.recalculate()`, `Table.formula_cells()` and `Table.stale_formula_cells()`, plus `Document.formula_cache`, `Document.recalculate()` and `Document.stale_formula_cells()`.
+-   Added the `odfdo.formula` module: OpenFormula reference parser, dependency graph (`FormulaCache`), conservative evaluator and cached-value bookkeeping.
+-   Formula cached values are invalidated after a cell change: direct dependents, indirect dependents and cross-sheet references are marked stale, and absolute (`$`) references are reported separately.
+-   Formulas using an unknown function are never evaluated or guessed, and a formula whose text did not change is still marked stale when one of its precedents changed.
+-   Inserting, deleting or resizing rows and columns invalidates every cached formula value, since coordinates and range coverage shift.
+
 ## [3.27.3] - 2026-10-24
 
 -   Improve the filter for parasite files (`.DS_Store` and others) when savving the document.

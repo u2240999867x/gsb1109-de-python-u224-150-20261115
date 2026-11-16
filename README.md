@@ -94,6 +94,38 @@ sheet.set_value("B2", "Updated Value")
 doc.save("modified_spreadsheet.ods")
 ```
 
+## Formulas and Cached Values
+
+odfdo never runs a spreadsheet application. It keeps the `table:formula` text
+and the cached result stored in the file, and tracks which formula depends on
+which cell:
+
+```python
+from odfdo import Document
+
+doc = Document("existing_spreadsheet.ods")
+sheet = doc.body.get_sheet(0)
+
+# Changing a precedent marks the cached values of every affected formula,
+# directly or indirectly, as stale (cross-sheet references included).
+sheet.set_value("A1", 42)
+for cell in sheet.stale_formula_cells():
+    print(cell.table, cell.x, cell.y, cell.reason)
+
+# Refresh the formulas odfdo can evaluate (SUM, AVERAGE, IF, ...).
+doc.recalculate()
+
+# A formula using a function odfdo does not know is never guessed:
+# its cached value is preserved and stays marked stale.
+if sheet.get_cell("D1").formula_is_stale:
+    print("not computed by odfdo:", sheet.get_cell("D1").formula)
+```
+
+`Cell.formula_is_stale` reports the state of one formula, and
+`Cell.formula_dependents()` lists the formulas depending on a cell.
+Absolute (`$`) and cross-sheet references are reported separately through
+`FormulaReference`.
+
 ## Utilities
 
 A few scripts are provided with `odfdo`:

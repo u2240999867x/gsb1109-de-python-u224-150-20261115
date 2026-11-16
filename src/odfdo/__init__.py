@@ -71,6 +71,9 @@ __all__ = [  # noqa: RUF022
     "ElementTyped",
     "EllipseShape",
     "FIRST_CHILD",
+    "FormulaCache",
+    "FormulaCell",
+    "FormulaReference",
     "Form",
     "FormAsDictMixin",
     "FormButton",
@@ -325,6 +328,7 @@ from .form_properties import (
     FormProperties,
     FormProperty,
 )
+from .formula import FormulaCache, FormulaCell, FormulaReference
 from .frame import (
     AnchorMix,
     DrawTextBox,

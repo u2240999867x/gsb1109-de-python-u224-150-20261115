@@ -47,6 +47,7 @@ _float = builtins.float
 _bool = builtins.bool
 if TYPE_CHECKING:
     from .const import CellValue
+    from .formula import FormulaCell
     from .style import Style
 
 
@@ -208,6 +209,7 @@ class Cell(ListMixin, TocMixin, SectionMixin, AnnotationMixin, ElementTyped):
             case None:
                 self.delete_children()
                 self.clear_attrinutes()
+                self._notify_formula_change()
             case str() | bytes():
                 self.string = value
             case _bool():
@@ -305,6 +307,7 @@ class Cell(ListMixin, TocMixin, SectionMixin, AnnotationMixin, ElementTyped):
             self.set_attribute("office:value-type", "float")
         self.set_attribute("office:value", value_str)
         self.set_text_content(value_str)
+        self._notify_formula_change()
 
     @property
     def decimal(self) -> Decimal:
@@ -450,6 +453,7 @@ class Cell(ListMixin, TocMixin, SectionMixin, AnnotationMixin, ElementTyped):
             self.set_attribute("office:value-type", "string")
         self.set_attribute("office:string-value", value_str)
         self.set_text_content(value_str)
+        self._notify_formula_change()
 
     @property
     def bool(self) -> _bool:
@@ -491,6 +495,7 @@ class Cell(ListMixin, TocMixin, SectionMixin, AnnotationMixin, ElementTyped):
             self.set_attribute("office:value-type", "boolean")
         self.set_attribute("office:boolean-value", bvalue)
         self.set_text_content(bvalue)
+        self._notify_formula_change()
 
     @property
     def duration(self) -> timedelta:
@@ -526,6 +531,7 @@ class Cell(ListMixin, TocMixin, SectionMixin, AnnotationMixin, ElementTyped):
             self.set_attribute("office:value-type", "time")
         self.set_attribute("office:time-value", dvalue)
         self.set_text_content(dvalue)
+        self._notify_formula_change()
 
     @property
     def datetime(self) -> _datetime:
@@ -561,6 +567,7 @@ class Cell(ListMixin, TocMixin, SectionMixin, AnnotationMixin, ElementTyped):
             self.set_attribute("office:value-type", "date")
         self.set_attribute("office:date-value", dvalue)
         self.set_text_content(dvalue)
+        self._notify_formula_change()
 
     @property
     def date(self) -> _date:
@@ -596,6 +603,7 @@ class Cell(ListMixin, TocMixin, SectionMixin, AnnotationMixin, ElementTyped):
             self.set_attribute("office:value-type", "date")
         self.set_attribute("office:date-value", dvalue)
         self.set_text_content(dvalue)
+        self._notify_formula_change()
 
     def set_value(
         self,
@@ -761,6 +769,95 @@ class Cell(ListMixin, TocMixin, SectionMixin, AnnotationMixin, ElementTyped):
     @formula.setter
     def formula(self, formula: str | None) -> None:
         self.set_attribute("table:formula", formula)
+        self._notify_formula_change()
+
+    def _notify_formula_change(self) -> None:
+        """Notify the formula cache of an in-place cell change (internal).
+
+        Detached cells (clones) and cells outside a table are ignored: the
+        table write methods notify when the clone is inserted.
+        """
+        if getattr(self, "_formula_origin", None) is not None:
+            return
+        from .formula import notify_cell_mutation
+
+        notify_cell_mutation(self)
+
+    # -- formula cache -----------------------------------------------------
+
+    @property
+    def formula_is_stale(self) -> _bool:
+        """Return True if the cached value of the formula is stale.
+
+        odfdo never runs a spreadsheet application. When a cell referenced by
+        a formula changes, the cached value of the formula can no longer be
+        trusted: this property reports that state. Use
+        :meth:`Table.recalculate` or :meth:`Document.recalculate` to refresh
+        the values odfdo can compute.
+
+        A cell without formula is never stale.
+
+        Returns:
+            bool: True if the formula cache must be recomputed.
+
+        """
+        from .formula import formula_is_stale
+
+        return formula_is_stale(self)
+
+    @property
+    def formula_stale_reason(self) -> str | None:
+        """Return why the cached value of the formula is stale, or None.
+
+        Examples of reasons: ``"cell changed"``, ``"formula changed"``,
+        ``"structure changed"`` or ``"depends on Sheet1!A1"``.
+
+        Returns:
+            str or None: The reason, or None if the formula is not stale.
+
+        """
+        from .formula import formula_stale_reason
+
+        return formula_stale_reason(self)
+
+    def formula_dependents(
+        self,
+        recursive: _bool = False,
+    ) -> list[FormulaCell]:
+        """Return the formula cells depending on this cell.
+
+        Args:
+            recursive: If True, also return indirect dependents.
+
+        Returns:
+            list: A list of
+                :class:`~odfdo.formula.FormulaCell` descriptors.
+
+        """
+        from .formula import formula_dependents
+
+        return formula_dependents(self, recursive=recursive)
+
+    def mark_formula_stale(
+        self,
+        reason: str = "cell changed",
+    ) -> list[FormulaCell]:
+        """Mark the formulas affected by a change of this cell as stale.
+
+        odfdo detects most changes automatically, but a caller can force the
+        invalidation, for instance after updating a value through a low level
+        mechanism or because a volatile function must be recomputed.
+
+        Args:
+            reason: The reason recorded in the stale markers.
+
+        Returns:
+            list: The formula cells that became stale.
+
+        """
+        from .formula import mark_cell_formula_stale
+
+        return mark_cell_formula_stale(self, reason)
 
     def is_empty(self, aggressive: _bool = False) -> _bool:
         """Check if the cell is empty.

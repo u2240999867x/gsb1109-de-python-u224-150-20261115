@@ -55,6 +55,7 @@ from .container import Container
 from .content import Content
 from .datatype import Boolean
 from .element import Element
+from .formula import FormulaCache, FormulaCell, formula_cache_for, recalculate
 from .manifest import Manifest
 from .meta import Meta
 from .mixin_md import MDDocument, _set_global
@@ -932,6 +933,40 @@ class Document(MDDocument):
             _populate_table(table, data)
 
         return doc
+
+    # -- formulas ----------------------------------------------------------
+
+    @property
+    def formula_cache(self) -> FormulaCache:
+        """Return the formula cache of the document.
+
+        The cache records, for each formula cell, the cells it references and
+        whether its cached value is still trustworthy. It is built from the
+        ``table:formula`` attributes and never runs a spreadsheet application.
+
+        Returns:
+            FormulaCache: The formula cache of the document.
+
+        """
+        return formula_cache_for(self.body)
+
+    def recalculate(self) -> list[FormulaCell]:
+        """Refresh the cached values of the formulas odfdo can evaluate.
+
+        Only a documented subset of OpenFormula is supported (SUM, AVERAGE,
+        MIN, MAX, COUNT, IF, ... on cells and ranges). Formulas using an
+        unknown function or an unsupported construct are left untouched and
+        remain stale: their cached value is never guessed.
+
+        Returns:
+            list: The formula cells whose cached value was refreshed.
+
+        """
+        return recalculate(self.body)
+
+    def stale_formula_cells(self) -> list[FormulaCell]:
+        """Return the formula cells whose cached value is stale."""
+        return self.formula_cache.stale_formulas()
 
     def to_dict(
         self,
