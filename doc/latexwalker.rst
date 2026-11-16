@@ -16,6 +16,14 @@ The main `LatexWalker` class
    :members:
 
 
+Document Outline and Table of Contents
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+.. automodule:: pylatexenc.latexwalker.outline
+   :members: get_outline, LatexOutline, LatexOutlineBuilder,
+             LatexSectionEntry, SECTIONING_MACROS
+
+
 .. autofunction:: pylatexenc.latexwalker.get_default_latex_context_db
 
 

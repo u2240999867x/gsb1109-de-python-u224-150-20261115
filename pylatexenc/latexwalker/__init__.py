@@ -185,4 +185,21 @@ from ._helpers import (
     disp_node,
     make_json_encoder,
 )
+
+from .outline import (
+    SECTIONING_MACROS,
+    DEFAULT_SECTIONING_MACROS,
+    LatexSectionEntry,
+    SectionEntry,
+    LatexOutline,
+    SectionOutline,
+    LatexOutlineBuilder,
+    get_outline,
+    build_outline,
+    get_section_outline,
+    get_section_outlines,
+    get_table_of_contents,
+    make_outline,
+    parse_outline,
+)
 ### END_LATEXWALKER_HELPERS

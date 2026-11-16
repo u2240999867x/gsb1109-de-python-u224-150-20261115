@@ -722,6 +722,39 @@ class LatexWalker(latexnodes.LatexWalkerBase):
         return self._line_no_calc.pos_to_lineno_colno(pos, as_dict=as_dict)
 
 
+### BEGIN_LATEXWALKER_HELPERS
+    def get_outline(self, sectioning_macros=None, include_starred=True,
+                    use_short_titles=True, respect_tocdepth=False):
+        r"""
+        Return a :py:class:`~pylatexenc.latexwalker.LatexOutline` for the
+        LaTeX code that this walker was constructed with.
+
+        This is a convenience wrapper around
+        :py:func:`pylatexenc.latexwalker.get_outline`.  The method parses the
+        walker's string with the default parser, so calling it twice parses the
+        document twice; pass an already parsed node list to
+        :py:func:`pylatexenc.latexwalker.get_outline` if you want to avoid that.
+
+        .. versionadded:: 3.0
+        """
+        from .outline import get_outline
+        return get_outline(
+            self,
+            sectioning_macros=sectioning_macros,
+            include_starred=include_starred,
+            use_short_titles=use_short_titles,
+            respect_tocdepth=respect_tocdepth,
+        )
+
+    def get_table_of_contents(self, **kwargs):
+        r"""
+        Alias for :py:meth:`get_outline()`.
+
+        .. versionadded:: 3.0
+        """
+        return self.get_outline(**kwargs)
+### END_LATEXWALKER_HELPERS
+
     def __repr__(self):
         return "<LatexWalker {}>".format(fn_unique_object_id(self))
 
