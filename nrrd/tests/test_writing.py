@@ -282,6 +282,58 @@ class Abstract:
                 nrrd.write(output_filename, np.zeros((3, 9)), header, custom_field_map=custom_field_map,
                            index_order=self.index_order)
 
+        def test_write_custom_field_conflicts_with_standard_field(self):
+            output_filename = os.path.join(self.temp_write_dir, 'testfile_conflict.nrrd')
+            custom_field_map = {'space': 'string'}
+
+            with self.assertRaisesRegex(nrrd.NRRDError, 'Custom field conflicts with standard field: space'):
+                nrrd.write(output_filename, np.zeros((3, 9)), {'space': 'left-posterior-superior'},
+                           custom_field_map=custom_field_map, index_order=self.index_order)
+
+        def test_write_corrected_custom_fields(self):
+            output_filename = os.path.join(self.temp_write_dir, 'testfile_corrected_custom_fields.nrrd')
+            custom_field_map = {'double': 'double'}
+
+            data, header = nrrd.read(ASCII_1D_CUSTOM_FIELDS_FILE_PATH, custom_field_map,
+                                     index_order=self.index_order)
+            header.fields['double'].corrected_value = 42.25
+            nrrd.write(output_filename, data, header, custom_field_map=custom_field_map,
+                       index_order=self.index_order)
+
+            with open(output_filename) as fh:
+                lines = [line.rstrip() for line in fh.readlines()]
+
+            self.assertTrue('double:=42.25' in lines)
+            self.assertEqual(25.5566, header.fields['double'].parsed_value)
+
+        def test_write_unknown_fields_without_custom_field_map(self):
+            output_filename = os.path.join(self.temp_write_dir, 'testfile_unknown_fields.nrrd')
+            nrrd_header = nrrd.NRRDHeader({
+                'type': 'uint8',
+                'dimension': 1,
+                'sizes': [2],
+                'encoding': 'raw',
+            })
+            nrrd_header.add_field(nrrd.NRRDField(name='scanner note',
+                                                 value='keep  exact  spacing',
+                                                 field_type='string',
+                                                 declaration='scanner note:=keep  exact  spacing',
+                                                 raw_value='keep  exact  spacing',
+                                                 is_custom=True,
+                                                 is_unknown=True))
+
+            nrrd.write(output_filename, np.arange(2, dtype=np.uint8), nrrd_header, index_order=self.index_order)
+
+            with open(output_filename) as fh:
+                lines = [line.rstrip() for line in fh.readlines()]
+
+            self.assertTrue('scanner note:=keep  exact  spacing' in lines)
+
+            _, read_header = nrrd.read(output_filename, index_order=self.index_order)
+            self.assertEqual('keep  exact  spacing', read_header['scanner note'])
+            self.assertEqual('scanner note:=keep  exact  spacing',
+                             read_header.get_declaration('scanner note'))
+
         def test_remove_endianness(self):
             output_filename = os.path.join(self.temp_write_dir, 'testfile_remove_endianness.nrrd')
 

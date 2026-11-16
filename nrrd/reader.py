@@ -1,16 +1,15 @@
 import bz2
 import io
 import os
-import re
 import shlex
 import warnings
 import zlib
 from collections import OrderedDict
-from typing import IO, Any, AnyStr, Iterable, Tuple
+from typing import IO, Any, AnyStr, Iterable, Optional, Tuple
 
 import nrrd
 from nrrd.parsers import *
-from nrrd.types import IndexOrder, NRRDFieldMap, NRRDFieldType, NRRDHeader
+from nrrd.types import IndexOrder, NRRDField, NRRDFieldMap, NRRDFieldType, NRRDHeader
 
 # Older versions of Python had issues when uncompressed data was larger than 4GB (2^32). This should be fixed in latest
 # version of Python 2.7 and all versions of Python 3. The fix for this issue is to read the data in smaller chunks.
@@ -24,7 +23,8 @@ ALLOW_DUPLICATE_FIELD: bool = False
 """Allow duplicate header fields when reading NRRD files
 
 When there are duplicated fields in a NRRD file header, pynrrd throws an error by default. Setting this field as
-:obj:`True` will instead show a warning.
+:obj:`True` will instead show a warning for duplicate declarations that agree. Duplicate declarations that disagree
+always raise an error, because silently selecting the last declaration would discard information.
 
 Example:
     Reading a NRRD file with duplicated header field 'space' with field set to :obj:`False`.
@@ -86,37 +86,83 @@ _TYPEMAP_NRRD2NUMPY = {
     'block': 'V'
 }
 
+_STANDARD_FIELD_TYPES = {
+    'dimension': 'int',
+    'lineskip': 'int',
+    'line skip': 'int',
+    'byteskip': 'int',
+    'byte skip': 'int',
+    'space dimension': 'int',
+    'min': 'double',
+    'max': 'double',
+    'oldmin': 'double',
+    'old min': 'double',
+    'oldmax': 'double',
+    'old max': 'double',
+    'endian': 'string',
+    'encoding': 'string',
+    'content': 'string',
+    'sample units': 'string',
+    'datafile': 'string',
+    'data file': 'string',
+    'space': 'string',
+    'type': 'string',
+    'sizes': 'int list',
+    'spacings': 'double list',
+    'thicknesses': 'double list',
+    'axismins': 'double list',
+    'axis mins': 'double list',
+    'axismaxs': 'double list',
+    'axis maxs': 'double list',
+    'kinds': 'string list',
+    'centerings': 'string list',
+    'labels': 'quoted string list',
+    'units': 'quoted string list',
+    'space units': 'quoted string list',
+    'space origin': 'double vector',
+    'measurement frame': 'double matrix',
+    'block size': 'int',
+}
+
+_STANDARD_FIELDS = frozenset(_STANDARD_FIELD_TYPES) | {'space directions'}
+
+_VALID_FIELD_TYPES = frozenset([
+    'int', 'double', 'string', 'int list', 'double list', 'string list', 'quoted string list', 'int vector',
+    'double vector', 'int matrix', 'double matrix', 'int vector list', 'double vector list'
+])
+
+
+def _get_standard_field_type(field: str) -> Optional[NRRDFieldType]:
+    """Return the NRRD field type for a standard field, or :obj:`None` for non-standard fields."""
+    if field == 'space directions':
+        return nrrd.SPACE_DIRECTIONS_TYPE
+    return _STANDARD_FIELD_TYPES.get(field)
+
+
+def _validate_custom_field_map(custom_field_map: Optional[NRRDFieldMap]):
+    if not custom_field_map:
+        return
+
+    for field in custom_field_map:
+        if field in _STANDARD_FIELDS:
+            raise NRRDError(f'Custom field conflicts with standard field: {field}')
+
 
 def _get_field_type(field: str, custom_field_map: Optional[NRRDFieldMap]) -> NRRDFieldType:
-    if field in ['dimension', 'lineskip', 'line skip', 'byteskip', 'byte skip', 'space dimension']:
-        return 'int'
-    elif field in ['min', 'max', 'oldmin', 'old min', 'oldmax', 'old max']:
-        return 'double'
-    elif field in ['endian', 'encoding', 'content', 'sample units', 'datafile', 'data file', 'space', 'type']:
-        return 'string'
-    elif field in ['sizes']:
-        return 'int list'
-    elif field in ['spacings', 'thicknesses', 'axismins', 'axis mins', 'axismaxs', 'axis maxs']:
-        return 'double list'
-    elif field in ['kinds', 'centerings']:
-        return 'string list'
-    elif field in ['labels', 'units', 'space units']:
-        return 'quoted string list'
-    # No int vector fields yet
-    # elif field in []:
-    #     return 'int vector'
-    elif field in ['space origin']:
-        return 'double vector'
-    elif field in ['measurement frame']:
-        return 'double matrix'
-    elif field in ['space directions']:
-        return nrrd.SPACE_DIRECTIONS_TYPE
-    else:
+    standard_type = _get_standard_field_type(field)
+    if standard_type is not None:
         if custom_field_map and field in custom_field_map:
-            return custom_field_map[field]
+            raise NRRDError(f'Custom field conflicts with standard field: {field}')
+        return standard_type
 
-        # Default the type to string if unknown type
-        return 'string'
+    if custom_field_map and field in custom_field_map:
+        field_type = custom_field_map[field]
+        if field_type not in _VALID_FIELD_TYPES:
+            raise NRRDError(f'Invalid field type given: {field_type}')
+        return field_type
+
+    # Default the type to string if unknown type
+    return 'string'
 
 
 def _parse_field_value(value: str, field_type: NRRDFieldType) -> Any:
@@ -204,6 +250,20 @@ def _validate_magic_line(line: str) -> int:
     return len(line)
 
 
+def _field_values_equal(first: Any, second: Any) -> bool:
+    """Compare parsed header values, including NumPy arrays, without losing shape information."""
+    if isinstance(first, np.ndarray) or isinstance(second, np.ndarray):
+        try:
+            return bool(np.array_equal(np.asarray(first), np.asarray(second), equal_nan=True))
+        except TypeError:
+            return bool(np.array_equal(np.asarray(first), np.asarray(second)))
+    if isinstance(first, list) or isinstance(second, list):
+        if not isinstance(first, list) or not isinstance(second, list) or len(first) != len(second):
+            return False
+        return all(_field_values_equal(x, y) for x, y in zip(first, second))
+    return first == second
+
+
 def read_header(file: Union[str, Iterable[AnyStr]], custom_field_map: Optional[NRRDFieldMap] = None) -> NRRDHeader:
     """Read contents of header and parse values from :obj:`file`
 
@@ -226,8 +286,9 @@ def read_header(file: Union[str, Iterable[AnyStr]], custom_field_map: Optional[N
 
     Returns
     -------
-    header : :class:`dict` (:class:`str`, :obj:`Object`)
-        Dictionary containing the header fields and their corresponding parsed value
+    header : :class:`NRRDHeader`
+        Dictionary containing the header fields and their corresponding parsed value. Original declarations, parsed
+        field types, and parsed values are available through :attr:`NRRDHeader.fields`.
 
     See Also
     --------
@@ -239,6 +300,8 @@ def read_header(file: Union[str, Iterable[AnyStr]], custom_field_map: Optional[N
     if isinstance(file, str) and file.count('\n') == 0:
         with open(file, 'rb') as fh:
             return read_header(fh, custom_field_map)
+
+    _validate_custom_field_map(custom_field_map)
 
     # Collect number of bytes in the file header (for seeking below)
     header_size = 0
@@ -256,11 +319,9 @@ def read_header(file: Union[str, Iterable[AnyStr]], custom_field_map: Optional[N
     # Validate the magic line and increment header size by size of the line
     header_size += _validate_magic_line(magic_line)
 
-    # Create empty header
-    # This is an OrderedDict rather than an ordinary dict because an OrderedDict will keep it's order that key/values
-    # are added for when looping back through it. The added benefit of this is that saving the header will save the
-    # fields in the same order.
-    header = OrderedDict()
+    # Create empty header. The header keeps the declaration order, just like the OrderedDict returned by earlier
+    # versions, while also retaining the declaration metadata for round-tripping.
+    header = NRRDHeader()
 
     # Loop through each line
     for line in it:
@@ -269,34 +330,63 @@ def read_header(file: Union[str, Iterable[AnyStr]], custom_field_map: Optional[N
             line = line.decode('ascii', 'ignore')
 
         # Trailing whitespace ignored per the NRRD spec
-        line = line.rstrip()
+        declaration = line.rstrip()
 
         # Skip comments starting with # (no leading whitespace is allowed)
         # Or, stop reading the header once a blank line is encountered. This separates header from data.
-        if line.startswith('#'):
+        if declaration.startswith('#'):
             continue
-        elif line == '':
+        elif declaration == '':
             break
 
-        # Read the field and value from the line, split using regex to search for := or : delimiter
-        field, value = re.split(r':=?', line, maxsplit=1)
+        # Read the field and value from the line, splitting at the first ':' delimiter
+        field, separator, value = declaration.partition(':')
+        if not separator:
+            raise NRRDError(f'Invalid header line: {declaration}')
+
+        # Determine whether the field was declared as a standard or custom field
+        delimiter = ':'
+        if value.startswith('='):
+            delimiter = ':='
+            value = value[1:]
 
         # Remove whitespace before and after the field and value
         field, value = field.strip(), value.strip()
 
-        # Check if the field has been added already
-        if field in header.keys():
-            if not ALLOW_DUPLICATE_FIELD:
-                raise NRRDError(f'Duplicate header field: {field}')
-            else:
-                warnings.warn(f'Duplicate header field: {field}')
+        is_standard = field in _STANDARD_FIELDS
+        is_in_custom_map = bool(custom_field_map and field in custom_field_map)
+
+        if is_in_custom_map and is_standard:
+            raise NRRDError(f'Custom field conflicts with standard field: {field}')
 
         # Get the datatype of the field based on its field name and custom field map
         field_type = _get_field_type(field, custom_field_map)
 
         # Parse the field value using the datatype retrieved
-        # Place it in the header dictionary
-        header[field] = _parse_field_value(value, field_type)
+        parsed_value = _parse_field_value(value, field_type)
+
+        field_record = NRRDField(name=field,
+                                 value=parsed_value,
+                                 field_type=field_type,
+                                 declaration=declaration,
+                                 raw_value=value,
+                                 delimiter=delimiter,
+                                 is_standard=is_standard,
+                                 is_custom=is_in_custom_map or (delimiter == ':=' and not is_standard),
+                                 is_unknown=not is_standard and not is_in_custom_map)
+
+        # Check if the field has been added already
+        if field in header:
+            if not _field_values_equal(header.get_field(field).parsed_value, parsed_value):
+                raise NRRDError(f'Duplicate header field has conflicting values: {field}')
+
+            if not ALLOW_DUPLICATE_FIELD:
+                raise NRRDError(f'Duplicate header field: {field}')
+
+            warnings.warn(f'Duplicate header field: {field}')
+            header.add_field(field_record, duplicate=True)
+        else:
+            header.add_field(field_record)
 
     # Reading the file line by line is buffered and so the header is not in the correct position for reading data if
     # the file contains the data in it as well. The solution is to set the file pointer to just behind the header.
@@ -521,7 +611,7 @@ def read(filename: str, custom_field_map: Optional[NRRDFieldMap] = None, index_o
     -------
     data : :class:`numpy.ndarray`
         Data read from NRRD file
-    header : :class:`dict` (:class:`str`, :obj:`Object`)
+    header : :class:`NRRDHeader`
         Dictionary containing the header fields and their corresponding parsed value
 
     See Also

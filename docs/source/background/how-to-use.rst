@@ -9,11 +9,28 @@ There are three functions that are used to read NRRD files: :meth:`read`, :meth:
 
 Reading NRRD files using :meth:`read` or :meth:`read_data` will return arrays indexed in Fortran-order by default, i.e array elements are accessed by `data[x, y, z]`. This differs from the C-order where array elements are accessed by `data[z, y, x]`, which is the more common order in Python and libraries (e.g. NumPy, scikit-image, PIL, OpenCV). The :obj:`index_order` parameter can be used to specify which index ordering should be used on the returned array ('C' or 'F'). The :obj:`index_order` parameter needs to be consistent with the parameter of same name in :meth:`write`.
 
-The :meth:`read` and :meth:`read_header` methods accept an optional parameter :obj:`custom_field_map` for parsing custom field types not listed in :doc:`/background/fields` of the header. It is a :class:`dict` where the key is the custom field name and the value is a string identifying datatype for the custom field. See :doc:`/background/datatypes` for a list of supported datatypes.
+The :meth:`read` and :meth:`read_header` methods accept an optional parameter :obj:`custom_field_map` for parsing custom field types not listed in :doc:`/background/fields` of the header. It is a :class:`dict` where the key is the custom field name and the value is a string identifying datatype for the custom field. See :doc:`/background/datatypes` for a list of supported datatypes. A custom field may not have the same name as a standard field; this raises an :class:`NRRDError` naming the conflicting field.
+
+Headers returned by :meth:`read_header` and :meth:`read` are :class:`NRRDHeader` mappings. In addition to behaving like an ordered dictionary, the header keeps a :class:`NRRDField` record for every field under :attr:`NRRDHeader.fields`. Each record preserves the original declaration line, the parsed field type, the original value text, and the current parsed/corrected value. This makes it possible to correct a field and write the header back without losing how the original file declared it:
+
+.. code-block:: python
+
+    data, header = nrrd.read('input.nrrd', custom_field_map)
+
+    # Inspect the original declaration and parsed type
+    header.fields['instrument gain'].original_declaration
+    header.fields['instrument gain'].parsed_type
+
+    # Correct the value; the original declaration and parsed value remain available
+    header.fields['instrument gain'].corrected_value = 12.5
+
+    nrrd.write('output.nrrd', data, header, custom_field_map=custom_field_map)
+
+Fields that are neither standard nor in the custom field map are preserved as unknown fields. Their original value text is written back verbatim when a header is re-exported, so unknown metadata survives a read/write round-trip even without a custom field map.
 
 The :meth:`read_data` will typically be called in conjunction with :meth:`read_header` because header information is required in order to read the data. The function returns a :class:`numpy.ndarray` of the data saved in the given NRRD file.
 
-Some NRRD files, while prohibited by specification, may contain duplicated header fields causing an exception to be raised. Changing :data:`nrrd.reader.ALLOW_DUPLICATE_FIELD` to :obj:`True` will show a warning instead of an error while trying to read the file.
+Some NRRD files, while prohibited by specification, may contain duplicated header fields causing an exception to be raised. Changing :data:`nrrd.reader.ALLOW_DUPLICATE_FIELD` to :obj:`True` will show a warning instead of an error while trying to read the file, provided all declarations of the field agree. Duplicate declarations with conflicting values always raise an error; the last declaration is never silently selected.
 
 Writing NRRD files
 ------------------

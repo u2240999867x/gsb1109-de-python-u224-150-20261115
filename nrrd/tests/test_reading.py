@@ -315,6 +315,89 @@ class Abstract:
             with self.assertRaisesRegex(nrrd.NRRDError, 'Invalid field type given: fake'):
                 nrrd.read_header(ASCII_1D_CUSTOM_FIELDS_FILE_PATH, custom_field_map)
 
+        def test_custom_fields_metadata(self):
+            header = nrrd.read_header([
+                'NRRD0005',
+                'type: uint8',
+                'dimension: 1',
+                'sizes: 2',
+                'encoding: raw',
+                'instrument gain:=12.5',
+                'instrument label:= left  probe ',
+            ], {'instrument gain': 'double'})
+
+            gain = header.fields['instrument gain']
+            self.assertEqual('instrument gain:=12.5', gain.original_declaration)
+            self.assertEqual('double', gain.parsed_type)
+            self.assertEqual(12.5, gain.parsed_value)
+            self.assertEqual(12.5, gain.corrected_value)
+
+            unknown = header.fields['instrument label']
+            self.assertEqual('instrument label:= left  probe', unknown.declaration)
+            self.assertEqual('left  probe', unknown.raw_value)
+            self.assertTrue(unknown.is_unknown)
+            self.assertEqual('left  probe', header.get_original_value('instrument label'))
+
+            header.fields['instrument gain'].corrected_value = 13.5
+            header.sync()
+            self.assertEqual(13.5, header['instrument gain'])
+            self.assertEqual(12.5, header.fields['instrument gain'].parsed_value)
+
+        def test_custom_field_conflicts_with_standard_field(self):
+            cases = [
+                ('space', {'space': 'string'}),
+                ('sizes', {'sizes': 'int list'}),
+            ]
+            for field, custom_field_map in cases:
+                with self.subTest(field=field):
+                    with self.assertRaisesRegex(nrrd.NRRDError,
+                                                f'Custom field conflicts with standard field: {field}'):
+                        nrrd.read_header(['NRRD0005', f'{field}:= 1'], custom_field_map)
+
+        def test_duplicate_declarations_agree(self):
+            header_txt_tuple = ('NRRD0005', 'type: float', 'dimension: 3', 'type: float')
+            import warnings
+            with warnings.catch_warnings(record=True) as w:
+                warnings.simplefilter('always')
+                nrrd.reader.ALLOW_DUPLICATE_FIELD = True
+                try:
+                    header = nrrd.read_header(header_txt_tuple)
+                finally:
+                    nrrd.reader.ALLOW_DUPLICATE_FIELD = False
+
+            self.assertTrue('Duplicate header field: type' in str(w[0].message))
+            self.assertEqual('float', header['type'])
+            self.assertEqual(1, len(header.duplicates['type']))
+            self.assertEqual('type: float', header.duplicates['type'][0].declaration)
+
+        def test_duplicate_declarations_disagree(self):
+            header_txt_tuple = ('NRRD0005', 'type: float', 'dimension: 3', 'type: double')
+
+            for allow_duplicate in [False, True]:
+                with self.subTest(allow_duplicate=allow_duplicate):
+                    nrrd.reader.ALLOW_DUPLICATE_FIELD = allow_duplicate
+                    try:
+                        with self.assertRaisesRegex(nrrd.NRRDError,
+                                                    'Duplicate header field has conflicting values: type'):
+                            nrrd.read_header(header_txt_tuple)
+                    finally:
+                        nrrd.reader.ALLOW_DUPLICATE_FIELD = False
+
+        def test_unknown_field_declaration_preserved(self):
+            header = nrrd.read_header([
+                'NRRD0005',
+                'type: uint8',
+                'dimension: 1',
+                'sizes: 2',
+                'encoding: raw',
+                'scanner note:= keep  exact  spacing  and := colons ',
+            ])
+
+            self.assertEqual('scanner note:= keep  exact  spacing  and := colons',
+                             header.get_declaration('scanner note'))
+            self.assertEqual('keep  exact  spacing  and := colons', header['scanner note'])
+            self.assertTrue(header.fields['scanner note'].is_unknown)
+
         def test_invalid_magic_line(self):
             with self.assertRaisesRegex(nrrd.NRRDError, 'Invalid NRRD magic line. Is this an NRRD file?'):
                 nrrd.read_header(('invalid magic line', 'my extra info:=my : colon-separated : values'))
