@@ -36,6 +36,11 @@ from operator import itemgetter
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, BinaryIO, NamedTuple, cast
 
+from lxml.etree import (  # ty: ignore[unresolved-import]
+    XMLSyntaxError,
+    fromstring,
+)
+
 from .const import (
     FOLDER,
     ODF_CONTENT,
@@ -54,7 +59,7 @@ from .const import (
 from .container import Container
 from .content import Content
 from .datatype import Boolean
-from .element import Element
+from .element import ODF_NAMESPACES, Element
 from .manifest import Manifest
 from .meta import Meta
 from .mixin_md import MDDocument, _set_global
@@ -305,6 +310,10 @@ class Document(MDDocument):
         # Cache of the body
         self.__body: Element | None = None
         self.container: Container | None = None
+        # Image references captured when the document was loaded, so that
+        # save-time pruning can tell a revoked reference from a part that was
+        # never referenced in the first place.
+        self.__image_baseline: set[str] | None = None
         if isinstance(target, bytes):
             # eager conversion
             target = bytes_to_str(target)
@@ -315,10 +324,12 @@ class Document(MDDocument):
         if isinstance(target, Path):
             # let's assume we open a container on existing file
             self.container = Container(target)
+            self._capture_image_baseline()
             return
         if isinstance(target, Container):
             # special internal case, use an existing container
             self.container = target
+            self._capture_image_baseline()
             return
         if isinstance(target, str):
             if target in ODF_TEMPLATES:
@@ -327,9 +338,11 @@ class Document(MDDocument):
                 return
             # let's assume we open a container on existing file
             self.container = Container(target)
+            self._capture_image_baseline()
             return
         if isinstance(target, io.BytesIO):
             self.container = Container(target)
+            self._capture_image_baseline()
             return
         msg = f"Unknown Document source type: {target!r}"
         raise TypeError(msg)
@@ -1296,6 +1309,149 @@ class Document(MDDocument):
                 setattr(clone, name, value)
         return clone
 
+    _IMAGE_REFERENCE_TAGS = (
+        "draw:image",
+        "draw:fill-image",
+        "style:background-image",
+    )
+
+    @staticmethod
+    def _image_refs_from_bytes(raw: bytes) -> set[str]:
+        """Return the image paths referenced by one XML part, as raw bytes."""
+        refs: set[str] = set()
+        try:
+            root = fromstring(raw)
+        except (XMLSyntaxError, ValueError, TypeError):
+            return refs
+        for tag in Document._IMAGE_REFERENCE_TAGS:
+            prefix, _, local = tag.partition(":")
+            full_tag = f"{{{ODF_NAMESPACES[prefix]}}}{local}"
+            for element in root.iter():
+                if element.tag != full_tag:
+                    continue
+                url = element.get("{http://www.w3.org/1999/xlink}href")
+                if url:
+                    refs.add(url)
+        form_image_attr = f"{{{ODF_NAMESPACES['form']}}}image-data"
+        for element in root.iter():
+            url = element.get(form_image_attr)
+            if url:
+                refs.add(url)
+        return {
+            path.lstrip("./")
+            for path in refs
+            if path and not path.startswith(("http:", "https:", "file:"))
+        }
+
+    def _ensure_image_baseline(self) -> None:
+        """Record the image references present before the first edit.
+
+        The baseline keeps save-time pruning conservative: an image is removed
+        only when it was referenced by the document as loaded and no reference
+        remains. Images that were already unreferenced are left untouched,
+        since they may be used by parts odfdo does not interpret.
+        """
+        if self.__image_baseline is None:
+            self._capture_image_baseline()
+
+    def _capture_image_baseline(self) -> None:
+        """Capture the image references of the freshly loaded container."""
+        if not self.container:
+            return
+        refs: set[str] = set()
+        for part_path in (ODF_CONTENT, ODF_STYLES):
+            with contextlib.suppress(KeyError, ValueError, FileNotFoundError):
+                raw = self.container.get_part(part_path)
+                if isinstance(raw, bytes):
+                    refs |= self._image_refs_from_bytes(raw)
+        self.__image_baseline = refs
+
+    def _referenced_image_paths(self) -> set[str]:
+        """Return the internal paths of the images still referenced.
+
+        References are collected from every XML part that can hold an image
+        link: ``content.xml`` and ``styles.xml`` (draw:image, draw:fill-image,
+        style:background-image) as well as ``form:image-data`` attributes on
+        form controls. A path referenced by any of them is considered used.
+        """
+        paths: set[str] = set()
+        for part_path in (ODF_CONTENT, ODF_STYLES):
+            part = self.__xmlparts.get(part_path)
+            if part is None:
+                if self.container is None or part_path not in self.container.parts:
+                    continue
+                part = self.get_part(part_path)
+            if not isinstance(part, XmlPart):
+                continue
+            # Read the current tree directly: this also works for parts only
+            # cached as XmlPart without an Element wrapper around the root.
+            tree = part._get_tree()
+            for element in tree.iter():
+                if not isinstance(element.tag, str):
+                    continue
+                local = element.tag.rpartition("}")[2]
+                prefix = element.prefix or ""
+                qualified = f"{prefix}:{local}" if prefix else local
+                if qualified in self._IMAGE_REFERENCE_TAGS:
+                    url = element.get("{http://www.w3.org/1999/xlink}href")
+                    if url:
+                        paths.add(url)
+                url = element.get(
+                    "{urn:oasis:names:tc:opendocument:xmlns:form:1.0}image-data"
+                )
+                if url:
+                    paths.add(url)
+        return {
+            path.lstrip("./")
+            for path in paths
+            if path and not path.startswith(("http:", "https:", "file:"))
+        }
+
+    def unused_image_parts(self) -> list[str]:
+        """Return the image parts whose last reference was revoked.
+
+        An image is reported only when it was referenced by the document as
+        loaded and no XML part references it anymore. Shared images stay in
+        the list only once their last reference is gone, so deleting one of
+        two frames using the same picture keeps the picture.
+
+        Returns:
+            The sorted list of unreferenced ``Pictures/`` part paths.
+
+        """
+        if not self.container:
+            return []
+        self._ensure_image_baseline()
+        baseline = self.__image_baseline or set()
+        referenced = self._referenced_image_paths()
+        revoked = baseline - referenced
+        unused = []
+        for path in self.container.parts:
+            if not path.startswith("Pictures/") or path.endswith("/"):
+                continue
+            if path.lstrip("./") in revoked:
+                unused.append(path)
+        return sorted(unused)
+
+    def remove_unused_images(self) -> list[str]:
+        """Delete the image parts whose last reference was revoked.
+
+        Shared images are kept: a part is removed only when it was referenced
+        by the loaded document and no remaining reference points to it. The
+        manifest entry is removed at save time by the container reconciliation.
+
+        Returns:
+            The list of removed part paths.
+
+        """
+        if not self.container:
+            msg = "Empty Container"
+            raise ValueError(msg)
+        removed = self.unused_image_parts()
+        for path in removed:
+            self.container.del_part(path)
+        return removed
+
     def _check_manifest_rdf(self) -> None:
         if not self.container:
             return
@@ -1471,9 +1627,27 @@ class Document(MDDocument):
                 container.set_part(path, part.pretty_serialize())
         else:
             for path, part in self.__xmlparts.items():
-                if part is not None:
-                    container.set_part(path, part.serialize())
+                if part is None or not part.is_modified:
+                    # An untouched XML part keeps the bytes loaded from the
+                    # archive, so the member is copied verbatim on save.
+                    continue
+                container.set_part(path, part.serialize())
+        if packaging != FOLDER:
+            self._drop_unreferenced_images()
         container.save(target, packaging=packaging, backup=backup, pretty=pretty)
+
+    def _drop_unreferenced_images(self) -> None:
+        """Remove image parts that no XML part references anymore.
+
+        Called at save time so a deleted image frame does not leave its
+        ``Pictures/`` payload behind. Shared images are kept as long as one
+        reference remains. Parts explicitly deleted by the caller already
+        hold ``None`` and are handled by the container.
+        """
+        if not self.container:
+            return
+        for path in self.unused_image_parts():
+            self.container.del_part(path)
 
     @property
     def content(self) -> Content:

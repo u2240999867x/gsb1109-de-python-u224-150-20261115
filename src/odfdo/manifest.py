@@ -149,6 +149,7 @@ class Manifest(XmlPart):
         existing = self.get_media_type(full_path)
         if existing is not None:
             self.set_media_type(full_path, media_type)
+            return
         root = self.root
         root.append(self.make_file_entry(full_path, media_type))
 

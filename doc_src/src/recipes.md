@@ -632,6 +632,29 @@ Deleting content from one point to another in a .odt document.
     {% include "../../recipes/delete_parts_of_a_text_document.py" %}
     ```
 
+## Correct one table in a spreadsheet package
+
+Opening a spreadsheet that also contains charts, pictures and attachments,
+editing a single table, and saving it in place keeps every untouched package
+member byte-for-byte. Only the XML parts that were edited are rewritten, and
+the manifest is updated to match the members actually written.
+
+Pictures are reference counted: `Document.unused_image_parts()` reports the
+pictures whose last reference was removed, and `Document.remove_unused_images()`
+deletes them. A picture still referenced by another frame is kept.
+
+```python
+from odfdo import Document
+
+document = Document("weekly.ods")
+table = document.body.get_table(name="ODS")
+table.set_value("B2", 42)
+document.remove_unused_images()
+document.save()  # written to a temporary file, then renamed in place
+```
+
+If saving fails, the previous package is left untouched.
+
 ## Create color chart in spreadsheet
 
 Create some color chart in a spreadsheet using cells styles functions.

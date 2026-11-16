@@ -1,5 +1,40 @@
 # Odfdo Release Notes
 
+## [Unreleased]
+
+In-place update of one part in a package that also holds charts, pictures and
+attachments.
+
+### Added
+
+-   `Document.unused_image_parts()` lists the `Pictures/` parts whose last
+    reference was revoked.
+-   `Document.remove_unused_images()` deletes those parts explicitly.
+
+### Changed
+
+-   Saving a Zip package copies unmodified members byte-for-byte: compressed
+    payload, compression method, timestamps, attributes and member order are
+    kept. Only XML parts that were actually edited are serialized again.
+-   The manifest is reconciled with the members actually written on save:
+    entries for deleted parts are dropped, directories without remaining
+    members are dropped, and parts present in the container but missing from
+    the manifest are declared. `mimetype` is never declared.
+-   Save-time pruning removes a `Pictures/` part only when it was referenced
+    by the loaded document and no reference remains. Shared pictures are kept
+    until their last reference is deleted.
+-   A document loaded from a file-like object keeps an in-memory copy of the
+    source archive so raw members can still be reused when saving.
+
+### Fixed
+
+-   Saving to a Zip path now writes to a temporary file and renames it once
+    complete; a failed write leaves the previous package untouched and removes
+    the temporary file. When `backup=True`, the previous file is restored if
+    the write fails.
+-   `Manifest.add_full_path()` no longer appends a duplicate entry when the
+    path already exists.
+
 ## [3.27.3] - 2026-10-24
 
 -   Improve the filter for parasite files (`.DS_Store` and others) when savving the document.

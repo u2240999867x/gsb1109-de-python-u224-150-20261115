@@ -74,6 +74,15 @@ class XmlPart:
         # Internal state
         self.__tree: _ElementTree | None = None
         self.__root: Element | None = None
+        # Canonical serialization of the tree as first parsed. Comparing it
+        # with the current tree tells whether the part was really edited, so
+        # an untouched part can keep its original bytes on save.
+        self.__baseline: str | None = None
+
+    @staticmethod
+    def _canonical(tree: _ElementTree) -> str:
+        """Return a stable serialization of the tree, used for dirty checks."""
+        return tostring(tree, encoding="unicode")
 
     def _get_tree(self) -> _ElementTree:
         """Load and returns the XML tree for the part.
@@ -88,7 +97,26 @@ class XmlPart:
         if self.__tree is None:
             part = self.container.get_part(self.part_name)
             self.__tree = parse(BytesIO(part))  # ty: ignore[invalid-argument-type]
+            self.__baseline = self._canonical(self.__tree)
         return self.__tree
+
+    @property
+    def is_modified(self) -> bool:
+        """Return True if the XML tree differs from the loaded part.
+
+        A part that was never parsed is considered unmodified. A part whose
+        tree was read but not changed keeps its original bytes on save.
+        """
+        if self.__tree is None:
+            return False
+        if self.__baseline is None:
+            return True
+        return self._canonical(self.__tree) != self.__baseline
+
+    def mark_saved(self) -> None:
+        """Record the current tree as the new reference state."""
+        if self.__tree is not None:
+            self.__baseline = self._canonical(self.__tree)
 
     def __repr__(self) -> str:
         return f"<{self.__class__.__name__} part_name={self.part_name}>"
@@ -212,7 +240,7 @@ class XmlPart:
         for name in self.__dict__:
             if name == "container":
                 setattr(clone, name, self.container.clone)
-            elif name in ("_XmlPart__tree",):
+            elif name in ("_XmlPart__tree", "_XmlPart__baseline"):
                 setattr(clone, name, None)
             else:
                 value = getattr(self, name)

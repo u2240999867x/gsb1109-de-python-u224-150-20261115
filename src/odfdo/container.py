@@ -28,13 +28,24 @@ import contextlib
 import io
 import os
 import shutil
+import struct
 import sys
+import tempfile
 import textwrap
 import time
-from copy import deepcopy
+from copy import copy, deepcopy
 from functools import cache
 from pathlib import Path, PurePath, PurePosixPath
-from zipfile import ZIP_DEFLATED, ZIP_STORED, BadZipfile, ZipFile, is_zipfile
+from typing import TYPE_CHECKING
+from zipfile import (
+    ZIP_DEFLATED,
+    ZIP_STORED,
+    BadZipfile,
+    ZipFile,
+    ZipInfo,
+    is_zipfile,
+)
+from zlib import crc32
 
 from lxml.etree import (  # ty: ignore[unresolved-import]
     Element,
@@ -65,6 +76,9 @@ from .const import (
 from .element import NAMESPACES_XML, xpath_compile
 from .security import SecurityError, security, validate_zip_safety
 from .utils import bytes_to_str, str_to_bytes
+
+if TYPE_CHECKING:
+    from collections.abc import Callable
 
 CHUNK_SIZE = 65536  # 64KB for incremental ZIP reading
 TAB = "  "
@@ -324,6 +338,18 @@ class Container:
         self.__path_like: Path | str | io.BytesIO | None = None
         self.__packaging: str = ZIP
         self.path: Path | None = None  # or Path
+        # Byte-faithful bookkeeping of the Zip members the container was read
+        # from: original ZipInfo per member and the CRC/size computed at load
+        # time. Members whose CRC and size still match their loaded value are
+        # copied verbatim on save instead of being recompressed.
+        self.__zip_infos: dict[str, ZipInfo] = {}
+        self.__zip_signatures: dict[str, tuple[int, int]] = {}
+        self.__zip_order: list[str] = []
+        self.__zip_comment: bytes = b""
+        # In-memory copy of the source archive, kept only when the container
+        # was opened from bytes and no path is available. It lets save reuse
+        # the raw members instead of recompressing untouched parts.
+        self.__source_bytes: bytes | None = None
         if path:
             self.open(path)
 
@@ -337,6 +363,13 @@ class Container:
             path_or_file: Path to the document, or an opened file.
 
         """
+        self.__parts.clear()
+        self.__parts_ts.clear()
+        self.__zip_infos = {}
+        self.__zip_signatures = {}
+        self.__zip_order = []
+        self.__zip_comment = b""
+        self.__source_bytes = None
         self.__path_like = path_or_file
         if isinstance(path_or_file, (str, Path)):
             self.path = Path(path_or_file).expanduser()
@@ -418,6 +451,15 @@ class Container:
                 msg = f"Document of unknown type {mimetype!r}"
                 raise ValueError(msg)
             self.__parts["mimetype"] = str_to_bytes(mimetype)
+            self.__zip_comment = zf.comment
+            for info in zf.infolist():
+                upath = normalize_path(info.filename)
+                if upath in self.__zip_infos:
+                    # Duplicated member: keep the last one, as ZipFile does.
+                    self.__zip_order.remove(upath)
+                self.__zip_infos[upath] = info
+                self.__zip_signatures[upath] = (info.CRC, info.file_size)
+                self.__zip_order.append(upath)
         if self.path is None:
             if isinstance(self.__path_like, io.BytesIO):
                 self.__path_like.seek(0)
@@ -426,6 +468,12 @@ class Container:
                 for name in zf.namelist():
                     upath = normalize_path(name)
                     self.__parts[upath] = self._read_zip_entry(zf, name)
+            # Keep an in-memory copy so raw members can still be reused on
+            # save, then forget the file-like source.
+            try:
+                self.__source_bytes = self.__path_like.getvalue()  # ty: ignore
+            except AttributeError:
+                self.__source_bytes = None
             self.__path_like = None
 
     def _read_folder(self) -> None:
@@ -1016,6 +1064,99 @@ class Container:
         manifest_parts.append(b"</manifest:manifest>")
         self.__parts[ODF_MANIFEST] = b"".join(manifest_parts)
 
+    def _written_member_paths(self) -> set[str]:
+        """Return the paths of the members a save will actually write."""
+        written = {"mimetype"}
+        for path, data in self.__parts.items():
+            if data is None or path == ODF_MANIFEST:
+                continue
+            if _is_parasite_path(path):
+                continue
+            written.add(path)
+        return written
+
+    @staticmethod
+    def _manifest_dir_candidates(path: str) -> set[str]:
+        """Return the directory paths a member belongs to, with a trailing /."""
+        candidates: set[str] = set()
+        pure = PurePosixPath(path)
+        parents = pure.parents
+        for parent in parents:
+            text = parent.as_posix()
+            if text in {"", "."}:
+                continue
+            candidates.add(text + "/")
+        return candidates
+
+    def _reconcile_manifest(self) -> None:
+        """Make manifest file entries match the members that will be written.
+
+        Entries pointing to parts planned for deletion are dropped; parts that
+        exist in the container but are missing from the manifest are declared.
+        Directory entries are kept only while at least one written member
+        lives under them. Root and encrypted entries are preserved.
+        """
+        raw_manifest = self.__parts.get(ODF_MANIFEST)
+        if raw_manifest is None:
+            return
+        try:
+            root = fromstring(raw_manifest)
+        except (XMLSyntaxError, ValueError):
+            return
+        written = self._written_member_paths()
+        written.discard("mimetype")
+        manifest_ns = "{urn:oasis:names:tc:opendocument:xmlns:manifest:1.0}"
+        path_attr = f"{manifest_ns}full-path"
+        media_attr = f"{manifest_ns}media-type"
+        directory_prefixes: set[str] = set()
+        for member in written:
+            directory_prefixes |= self._manifest_dir_candidates(member)
+
+        known: set[str] = set()
+        removed = False
+        for entry in list(root.findall(f"{manifest_ns}file-entry")):
+            full_path = entry.get(path_attr)
+            if full_path is None:
+                continue
+            if full_path in {"/", ""}:
+                continue
+            if entry.find(f"{manifest_ns}encryption-data") is not None:
+                # Encrypted entry: keep the encryption metadata intact.
+                known.add(full_path)
+                continue
+            if full_path in written:
+                known.add(full_path)
+                continue
+            if full_path.endswith("/"):
+                # Directory entry: keep it while it still has members,
+                # otherwise drop it.
+                if full_path in directory_prefixes:
+                    known.add(full_path)
+                    continue
+                root.remove(entry)
+                removed = True
+                continue
+            # File entry without a matching member.
+            root.remove(entry)
+            removed = True
+
+        added = False
+        for path in written:
+            if path in known or path.endswith("/"):
+                continue
+            media_type = self._suffix_to_mime_type(PurePosixPath(path).suffix)
+            entry = Element(f"{manifest_ns}file-entry")
+            entry.set(path_attr, path)
+            entry.set(media_attr, media_type)
+            root.append(entry)
+            added = True
+        if not added and not removed:
+            return
+        xml = XML_TAG + tostring(root, encoding="UTF-8", xml_declaration=False)
+        self.__parts[ODF_MANIFEST] = xml
+        # The manifest bytes changed: never reuse the stale loaded signature.
+        self.__zip_signatures.pop(ODF_MANIFEST, None)
+
     def _parse_folder(self, folder: str) -> list[str]:
         parts = []
         if self.path is None:
@@ -1103,53 +1244,232 @@ class Container:
         except BadZipfile:
             pass
 
-    def _save_zip(self, target: str | Path | io.BytesIO) -> None:
-        """Save a Zip ODF from the available parts."""
+    def _is_unchanged_member(self, path: str) -> bool:
+        """Return True if the part still holds the bytes read from the archive.
+
+        A part is copied verbatim (compressed payload untouched, original
+        ZipInfo and member order kept) when its CRC and size match the values
+        recorded when the container was opened.
+        """
+        if path == "mimetype":
+            # mimetype is written first, as an uncompressed member, and is
+            # handled separately by _write_zip.
+            return False
+        signature = self.__zip_signatures.get(path)
+        if signature is None or path not in self.__zip_infos:
+            return False
+        data = self.__parts.get(path)
+        if data is None:
+            return False
+        crc, size = signature
+        return crc == crc32(data) and size == len(data)
+
+    def _is_pristine_mimetype(self, data: bytes | None) -> bool:
+        """Return True when mimetype still equals the bytes read at load."""
+        if data is None or "mimetype" not in self.__zip_infos:
+            return False
+        signature = self.__zip_signatures.get("mimetype")
+        if signature is None:
+            return False
+        crc, size = signature
+        return crc == crc32(data) and size == len(data)
+
+    @staticmethod
+    def _raw_member_record(zf: ZipFile, info: ZipInfo) -> tuple[bytes, bytes] | None:
+        """Return the raw local header and compressed bytes of a member.
+
+        Both blobs are taken verbatim from the source archive, so that an
+        unchanged member can be appended without re-encoding its payload or
+        rewriting its local header.
+        """
+        if info.flag_bits & 0x1:  # encrypted: leave it to the regular path
+            return None
+        try:
+            fp = zf.fp
+            if fp is None:  # pragma: no cover - defensive
+                return None
+            fp.seek(info.header_offset)
+            header = fp.read(30)
+            if len(header) != 30:
+                return None
+            (
+                signature,
+                _extract_version,
+                flag_bits,
+                _compress_type,
+                _time,
+                _date,
+                _crc,
+                _compress_size,
+                _file_size,
+                name_len,
+                extra_len,
+            ) = struct.unpack("<IHHHHHIIIHH", header)
+            if signature != 0x04034B50:
+                return None
+            if flag_bits & 0x1:  # encrypted
+                return None
+            record_len = 30 + name_len + extra_len
+            fp.seek(info.header_offset)
+            local_header = fp.read(record_len)
+            payload = fp.read(info.compress_size)
+        except (OSError, AttributeError, ValueError):
+            return None
+        if len(local_header) != record_len:
+            return None
+        if len(payload) != info.compress_size:
+            return None
+        return local_header, payload
+
+    def _copy_zip_member(self, target: ZipFile, source: ZipFile, path: str) -> bool:
+        """Copy an unchanged member into the new archive without re-encoding.
+
+        The raw compressed payload, compression method, timestamps and extra
+        fields are carried over from the source archive, so an untouched
+        member stays byte-identical.
+
+        Returns:
+            True if the member was copied, False if it must be rewritten.
+
+        """
+        info = self.__zip_infos.get(path)
+        if info is None:
+            return False
+        record = self._raw_member_record(source, info)
+        if record is None:
+            return False
+        local_header, payload = record
+        clone = copy(info)
+        clone.header_offset = target.fp.tell()
+        target.fp.write(local_header)
+        target.fp.write(payload)
+        target.start_dir = target.fp.tell()
+        target.filelist.append(clone)
+        target.NameToInfo[clone.filename] = clone
+        target._didModify = True
+        return True
+
+    def _zip_member_order(self) -> list[str]:
+        """Return the member order to use when writing the archive.
+
+        Original members keep their position. Parts that were added or
+        rewritten follow, then the manifest is appended last.
+        """
+        ordered = [path for path in self.__zip_order if path in self.__parts]
+        for path in self.__parts:
+            if path in ordered or path == ODF_MANIFEST:
+                continue
+            ordered.append(path)
+        return ordered
+
+    def _write_zip(self, fileobj: io.BufferedIOBase) -> None:
+        """Write the Zip ODF to an opened binary file object."""
         parts = self.__parts
-        with ZipFile(target, "w", compression=ZIP_DEFLATED) as filezip:
-            # Parts to save, except manifest at the end
-            part_names = list(parts.keys())
-            try:
-                part_names.remove(ODF_MANIFEST)
-            except ValueError:
-                printwarn(f"Missing '{ODF_MANIFEST}'")
-            # "Pretty-save" parts in some order
-            # mimetype requires to be first and uncompressed
-            mimetype = parts.get("mimetype")
-            if mimetype is None:
-                msg = "Mimetype is not defined"
-                raise ValueError(msg)
-            try:
-                filezip.writestr("mimetype", mimetype, ZIP_STORED)
-                part_names.remove("mimetype")
-            except (
-                ValueError,
-                KeyError,
-            ):
-                printwarn("Missing 'mimetype'")
-            # XML parts
-            for path in ODF_CONTENT, ODF_META, ODF_SETTINGS, ODF_STYLES:
-                if path not in parts:
-                    printwarn(f"Missing '{path}'")
-                    continue
-                part = parts[path]
-                if part is None:
-                    continue
-                filezip.writestr(path, part)
-                part_names.remove(path)
-            # Everything else
-            for path in part_names:
-                if _is_parasite_path(path):
-                    continue
-                data = parts[path]
-                if data is None:
-                    # Deleted
-                    continue
-                filezip.writestr(path, data)
-            with contextlib.suppress(KeyError):
-                part = parts[ODF_MANIFEST]
-                if part is not None:
-                    filezip.writestr(ODF_MANIFEST, part)
+        mimetype = parts.get("mimetype")
+        if mimetype is None:
+            msg = "Mimetype is not defined"
+            raise ValueError(msg)
+        if ODF_MANIFEST not in parts:
+            printwarn(f"Missing '{ODF_MANIFEST}'")
+        source: ZipFile | None = None
+        source_buffer: io.BytesIO | None = None
+        if self.path is not None and is_zipfile(self.path):
+            source = ZipFile(self.path)
+        elif self.__source_bytes is not None:
+            source_buffer = io.BytesIO(self.__source_bytes)
+            source = ZipFile(source_buffer)
+        try:
+            with ZipFile(fileobj, "w", compression=ZIP_DEFLATED) as filezip:
+                # mimetype requires to be first, stored uncompressed. An
+                # unchanged mimetype is copied raw so its local header,
+                # timestamps and attributes survive the round-trip.
+                copied_mimetype = False
+                if source is not None and self._is_pristine_mimetype(mimetype):
+                    copied_mimetype = self._copy_zip_member(filezip, source, "mimetype")
+                if not copied_mimetype:
+                    try:
+                        filezip.writestr("mimetype", mimetype, ZIP_STORED)
+                    except (
+                        ValueError,
+                        KeyError,
+                    ):
+                        printwarn("Missing 'mimetype'")
+                for path in self._zip_member_order():
+                    if path in {"mimetype", ODF_MANIFEST}:
+                        continue
+                    if _is_parasite_path(path):
+                        continue
+                    data = parts[path]
+                    if data is None:
+                        # Deleted
+                        continue
+                    if (
+                        source is not None
+                        and self._is_unchanged_member(path)
+                        and self._copy_zip_member(filezip, source, path)
+                    ):
+                        continue
+                    filezip.writestr(path, data)
+                manifest = parts.get(ODF_MANIFEST)
+                if manifest is not None:
+                    filezip.writestr(ODF_MANIFEST, manifest)
+                if self.__zip_comment:
+                    filezip.comment = self.__zip_comment
+        finally:
+            if source is not None:
+                source.close()
+            if source_buffer is not None:
+                source_buffer.close()
+
+    def _save_zip(self, target: str | Path | io.BytesIO) -> None:
+        """Save a Zip ODF from the available parts.
+
+        Unmodified members are copied byte-for-byte from the source archive,
+        and the manifest is reconciled with the members actually written.
+        """
+        self._reconcile_manifest()
+        if isinstance(target, io.BytesIO):
+            buffer = io.BytesIO()
+            self._write_zip(buffer)
+            target.seek(0)
+            target.write(buffer.getvalue())
+            target.truncate()
+            return
+        self._atomic_write_path(Path(target), self._write_zip)
+
+    def _atomic_write_path(
+        self,
+        target: Path,
+        writer: Callable[[io.BufferedIOBase], None],
+    ) -> None:
+        """Write the archive to `target` through a temporary file.
+
+        The temporary file lives in the target directory and is renamed only
+        after the whole archive has been written and flushed. A failure while
+        writing leaves any previous file at `target` untouched.
+        """
+        target = Path(target)
+        directory = target.parent if str(target.parent) else Path(".")
+        directory.mkdir(parents=True, exist_ok=True)
+        fd, tmp_name = tempfile.mkstemp(
+            prefix=f".{target.name}.",
+            suffix=".tmp",
+            dir=directory,
+        )
+        tmp_path = Path(tmp_name)
+        try:
+            with os.fdopen(fd, "w+b") as fileobj:
+                writer(fileobj)
+                fileobj.flush()
+                os.fsync(fileobj.fileno())
+            if target.exists():
+                with contextlib.suppress(OSError):
+                    os.chmod(tmp_path, target.stat().st_mode & 0o777)
+            os.replace(tmp_path, target)
+        except BaseException:
+            with contextlib.suppress(OSError):
+                tmp_path.unlink()
+            raise
 
     def _save_folder(self, folder: Path | str) -> None:
         """Save a folder ODF from the available parts."""
@@ -1661,11 +1981,31 @@ class Container:
             self._do_unlink(target)
 
     @staticmethod
+    def _backup_path(target: str | Path) -> Path:
+        path = Path(target)
+        return path.parent / (path.stem + ".backup" + path.suffix)
+
+    @classmethod
+    def _restore_backup(cls, target: str | Path) -> None:
+        """Restore the target from its backup after a failed save.
+
+        The backup file is copied back, not moved, so the previous package is
+        also still available under its backup name.
+        """
+        back_file = cls._backup_path(target)
+        if not back_file.exists():
+            return
+        try:
+            shutil.copy2(back_file, target)
+        except OSError as e:
+            printwarn(str(e))
+
+    @staticmethod
     def _do_backup(target: str | Path) -> None:
         path = Path(target)
         if not path.exists():
             return
-        back_file = path.parent / (path.stem + ".backup" + path.suffix)
+        back_file = Container._backup_path(path)
         if back_file.is_dir():
             try:
                 shutil.rmtree(back_file)
@@ -1714,8 +2054,19 @@ class Container:
         target: str | Path | io.BytesIO,
         backup: bool,
     ) -> None:
+        # The atomic writer replaces the target only once the new archive is
+        # complete. When a backup is requested, the previous file is moved
+        # aside first and restored if the write fails.
         if isinstance(target, (str, Path)) and backup:
-            self._do_backup(target)
+            path = Path(target)
+            if path.exists():
+                self._do_backup(path)
+                try:
+                    self._save_zip(path)
+                except BaseException:
+                    self._restore_backup(path)
+                    raise
+                return
         self._save_zip(target)
 
     def _save_as_folder(self, target: str | Path, backup: bool) -> None:
