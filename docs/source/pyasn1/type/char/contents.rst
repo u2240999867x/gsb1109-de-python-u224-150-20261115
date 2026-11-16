@@ -28,3 +28,4 @@ text, not bytes.
    /pyasn1/type/char/universalstring
    /pyasn1/type/char/bmpstring
    /pyasn1/type/char/utf8string
+   /pyasn1/type/char/characterfield

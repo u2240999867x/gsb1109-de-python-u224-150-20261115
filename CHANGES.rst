@@ -1,6 +1,17 @@
 Revision 0.7.0, released XX-XX-2026
 ---------------------------------------
 
+- Added provenance-preserving character fields (``CharacterField``,
+  ``CharacterFieldSet``, ``decodeCharacterField``, ``mergeCharacterFields``,
+  ``migrateCharacterField``). A field keeps the declared ASN.1 type, the
+  exact wire octets and the standard text side by side. Values that can not
+  be decoded under their declaration, or whose text falls outside the
+  declaration's repertoire, are quarantined with their octets intact rather
+  than replaced; migrating such a value, or one whose text exceeds the
+  target repertoire, raises ``CharacterRepertoireError``.
+  ``PyAsn1UnicodeError`` now pickles through its own ``__reduce__``, so a
+  quarantined field and its reason survive storage, and its ``str()`` no
+  longer drops the pyasn1-level message
 - Fixed OverflowError from BER/CER/DER length values that fit in the
   supported 8-octet length field but exceed the platform maximum readable
   size. Such oversized definite lengths are now rejected with PyAsn1Error.

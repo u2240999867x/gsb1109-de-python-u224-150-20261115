@@ -89,6 +89,26 @@ class PyAsn1UnicodeError(PyAsn1Error, UnicodeError):
             UnicodeError.__init__(self, *unicode_error.args)
         PyAsn1Error.__init__(self, message)
 
+    def __str__(self):
+        # UnicodeError.__str__ renders only its five positional arguments and
+        # would drop the pyasn1-level message; report that message and the
+        # codec detail together.
+        if self._args:
+            message = str(self._args[0])
+            detail = UnicodeError.__str__(self)
+
+            return detail and '%s: %s' % (message, detail) or message
+
+        return UnicodeError.__str__(self)
+
+    def __reduce__(self):
+        # UnicodeEncodeError/UnicodeDecodeError pickle through their own
+        # five-argument constructor, which `__init__` above does not accept.
+        message = self._args[0] if self._args else None
+        unicodeError = UnicodeError(*self.args)
+
+        return self.__class__, (message, unicodeError)
+
 
 class PyAsn1UnicodeDecodeError(PyAsn1UnicodeError, UnicodeDecodeError):
     """Unicode text decoding error

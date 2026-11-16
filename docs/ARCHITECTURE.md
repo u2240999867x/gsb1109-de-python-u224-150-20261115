@@ -73,7 +73,7 @@ The package is thirty-two modules; four carry most of the weight:
 |---|---|
 | `type/base.py` | The class spine: `Asn1Item` → `Asn1Type` → `{SimpleAsn1Type, ConstructedAsn1Type}`, plus the `noValue` sentinel |
 | `type/univ.py` | The core universal types: `Integer`, `Boolean`, `BitString`, `OctetString`, `Null`, `ObjectIdentifier`, `RelativeOID`, `Real`, `Enumerated`, `SequenceOf`/`SetOf`, `Sequence`/`Set`, `Choice`, `Any` |
-| `type/char.py` | Restricted character string types, mostly deriving from `AbstractCharacterString` |
+| `type/char.py` | Restricted character string types, mostly deriving from `AbstractCharacterString`, plus the provenance layer (`CharacterField`, `CharacterFieldSet`, `decodeCharacterField`, `mergeCharacterFields`, `migrateCharacterField`) |
 | `type/useful.py` | `ObjectDescriptor`, `TimeMixIn`, `GeneralizedTime`, `UTCTime`, nothing else |
 | `type/tag.py` | `Tag`, `TagSet`, implicit/explicit tagging, the `_tagIdToStr` hex fallback |
 | `type/tagmap.py` | `TagMap`: the present/skip/default three-way lookup the decoder runs on |
@@ -712,6 +712,50 @@ the guard effective against padded mantissas: `(10, 10, 308)` normalizes to
 The `base == 2` branch is the entire binary-form defense: routed through the
 generic `pow` path instead, every binary REAL on the wire reopens the
 vulnerability, and six bytes of substrate become an unbounded allocation.
+
+### Character-string provenance
+
+`type/char.py` carries a value-level layer above the ASN.1 classes:
+`CharacterField` holds the declared type, the exact wire octets and the
+standard text in separate slots, and `decodeCharacterField` fills them by
+cloning a schema object. Cloning rather than constructing matters: a schema
+instance supplied by the caller keeps its `subtypeSpec` and tags, so size
+violations still raise instead of being quarantined. A payload that raises
+`PyAsn1UnicodeDecodeError` becomes a quarantined field with the octets
+untouched and the exception in `quarantine`; `getText` and `asAsn1` raise
+`QuarantinedCharacterFieldError` rather than returning `?`-mangled data.
+`asRecord` is the flat export form, adding `octetsHex` so the bytes survive a
+JSON or text column; `asJsonRecord` drops the exception object and raw bytes
+for a store that only accepts scalars, keeping type, octets, text, quarantine
+and a readable message. `PyAsn1UnicodeError.__reduce__` rebuilds through the
+two-argument constructor, because the inherited `UnicodeDecodeError` pickle
+protocol otherwise calls the five-argument form that `__init__` rejects; that
+is what lets a quarantined field and its reason survive storage.
+
+The repertoire table `_REPERTOIRES`, read through `getCharacterRepertoire`,
+maps each concrete class to one of `numeric`, `printable`, `ia5`, `visible`,
+`latin-1`, `bmp` or `unicode`, and `_checkRepertoire` enforces it
+algorithmically without materialising character sets. The first four and
+`bmp` are the sets X.680 defines; the legacy `iso-8859-1` types
+(`GraphicString`, `GeneralString`, `TeletexString`, `T61String`,
+`VideotexString`, and `ObjectDescriptor` through its parent) follow their
+codec. Lookup walks the MRO, so a user subclass or a time type inherits its
+parent's repertoire. This is stricter than the codecs, which treat a
+character type as an `OctetString` with a codec and carry a tab in a
+`PrintableString`; the layer is a guard for migration code, not a new codec
+path. The BER/CER/DER dispatch tables are untouched, so tightening the
+decoders cannot reject payloads existing signers emit.
+
+`mergeCharacterFields` merges on standard text and keeps a
+`CharacterFieldIndex` of every contributor, so `getBySource('old')` and
+`getBySource('new')` both return the original type, octets and text.
+`migrateTo` checks the target repertoire before encoding and returns the
+field unchanged when the target type is the declaring type, preserving the
+original octets byte-for-byte; anything beyond the target range raises
+`CharacterRepertoireError` rather than truncating. `CharacterFieldSet` is the
+collection exit, partitioning `clean` from `quarantined` without dropping a
+field.
+
 Reverting `//=` to `/=` breaks `RealTestCase.testPrettyInBigBase10Mantissa`
 and truncates, without raising, the large mantissas that do construct. The
 encoder carries its own, older REAL bounds, inventoried under
