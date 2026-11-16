@@ -21,7 +21,7 @@ from .documents import validate, is_valid, iter_errors, iter_decode, \
     to_dict, to_json, to_etree, from_json, XmlDocument
 from .exports import download_schemas
 from .loaders import SchemaLoader, LocationSchemaLoader, SafeSchemaLoader
-from .utils.etree import etree_tostring
+from .utils.etree import etree_tostring, etree_canonical_key, etree_elements_equal
 from .utils.urls import normalize_url, normalize_locations
 
 from .validators import (
@@ -42,7 +42,8 @@ __status__ = "Production/Stable"
 
 __all__ = [
     'limits', 'translation', 'XMLSchemaException', 'XMLResourceError',
-    'XMLSchemaNamespaceError', 'etree_tostring', 'normalize_url',
+    'XMLSchemaNamespaceError', 'etree_tostring', 'etree_canonical_key',
+    'etree_elements_equal', 'normalize_url',
     'normalize_locations', 'fetch_resource', 'fetch_namespaces',
     'fetch_schema_locations', 'fetch_schema',
     'XMLResource', 'ElementPathMixin', 'ElementData', 'XMLSchemaConverter',

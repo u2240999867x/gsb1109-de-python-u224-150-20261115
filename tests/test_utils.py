@@ -26,7 +26,7 @@ from xmlschema import XMLSchema, XMLSchemaParseError
 from xmlschema.names import XSD_NAMESPACE, XSI_NAMESPACE, XSD_SCHEMA, \
     XSD_ELEMENT, XSD_SIMPLE_TYPE, XSD_ANNOTATION, XSI_TYPE
 from xmlschema.utils.etree import prune_etree, etree_get_ancestors, etree_getpath, \
-    iter_schema_location_hints, etree_tostring
+    iter_schema_location_hints, etree_tostring, etree_canonical_key, etree_elements_equal
 from xmlschema.utils.qnames import get_namespace, get_qname, local_name, \
     get_prefixed_qname, get_extended_qname, update_namespaces
 from xmlschema.utils.logger import set_logging_level, logged, format_xmlschema_stack, \
@@ -859,6 +859,120 @@ class TestUtils(unittest.TestCase):
         self.assertEqual(len(ctx), 1, "Wrong number of include/import warnings")
         self.assertEqual(ctx[0].category, DeprecationWarning)
         self.assertTrue(str(ctx[0].message).endswith(" will be removed in v2.0."))
+
+
+class TestEtreeContentEquality(unittest.TestCase):
+
+    def test_prefix_rename_only(self):
+        xml1 = '<a:root xmlns:a="http://example.com/ns" a:attr="1">' \
+               '<a:child>text</a:child></a:root>'
+        xml2 = '<b:root xmlns:b="http://example.com/ns" b:attr="1">' \
+               '<b:child>text</b:child></b:root>'
+        self.assertTrue(etree_elements_equal(xml1, xml2))
+        self.assertEqual(etree_canonical_key(xml1), etree_canonical_key(xml2))
+
+    def test_default_namespace_rename(self):
+        xml1 = '<root xmlns="http://example.com/ns"><child/></root>'
+        xml2 = '<p:root xmlns:p="http://example.com/ns"><p:child/></p:root>'
+        self.assertTrue(etree_elements_equal(xml1, xml2))
+
+    def test_different_content(self):
+        xml1 = '<root xmlns="http://example.com/ns"><child>1</child></root>'
+        self.assertFalse(etree_elements_equal(
+            xml1, '<root xmlns="http://example.com/ns"><child>2</child></root>'))
+        self.assertFalse(etree_elements_equal(
+            xml1, '<root xmlns="http://example.com/ns"><other>1</other></root>'))
+        self.assertFalse(etree_elements_equal(
+            xml1, '<root xmlns="http://example.com/other"><child>1</child></root>'))
+
+    def test_qname_attribute_values(self):
+        xml1 = '<root xmlns:a="http://example.com/ns" ' \
+               'xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" ' \
+               'xsi:type="a:Item"/>'
+        xml2 = '<root xmlns:b="http://example.com/ns" ' \
+               'xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" ' \
+               'xsi:type="b:Item"/>'
+        self.assertTrue(etree_elements_equal(xml1, xml2))
+
+        xml3 = xml2.replace('b:Item', 'b:Other')
+        self.assertFalse(etree_elements_equal(xml1, xml3))
+
+        xml4 = '<root xmlns:b="http://example.com/other" ' \
+               'xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" ' \
+               'xsi:type="b:Item"/>'
+        self.assertFalse(etree_elements_equal(xml1, xml4))
+
+    def test_qname_list_values(self):
+        xml1 = '<root xmlns:a="http://example.com/ns" types="a:X a:Y"/>'
+        xml2 = '<root xmlns:b="http://example.com/ns" types="b:X b:Y"/>'
+        self.assertTrue(etree_elements_equal(xml1, xml2))
+        xml3 = '<root xmlns:b="http://example.com/ns" types="b:Y b:X"/>'
+        self.assertFalse(etree_elements_equal(xml1, xml3))
+
+    def test_qname_text_values(self):
+        xml1 = '<r xmlns:p="http://example.com/ns"><ref>p:item</ref></r>'
+        xml2 = '<r xmlns:q="http://example.com/ns"><ref>q:item</ref></r>'
+        self.assertTrue(etree_elements_equal(xml1, xml2))
+        xml3 = '<r xmlns:q="http://example.com/ns"><ref>q:other</ref></r>'
+        self.assertFalse(etree_elements_equal(xml1, xml3))
+
+    def test_plain_strings_with_colons(self):
+        xml1 = '<root><time>12:30</time><link>https://example.com/x</link></root>'
+        self.assertTrue(etree_elements_equal(xml1, xml1))
+
+        # An unbound prefix-like token is kept as a plain string
+        xml2 = '<root><a>p:item</a></root>'
+        self.assertTrue(etree_elements_equal(xml2, xml2))
+        xml3 = '<root xmlns:p="http://example.com/ns"><a>p:item</a></root>'
+        self.assertFalse(etree_elements_equal(xml2, xml3))
+
+        # A plain string is not confused with a QName in another document
+        xml4 = '<root xmlns:p="http://example.com/ns"><a>12:30</a></root>'
+        xml5 = '<root xmlns:q="http://example.com/ns"><q:a>12:30</q:a></root>'
+        self.assertFalse(etree_elements_equal(xml4, xml5))
+
+    def test_inner_prefix_rebinding(self):
+        xml1 = '<r xmlns:p="urn:A">' \
+               '<c1 p:attr="p:x"/>' \
+               '<c2 xmlns:p="urn:B"><d p:attr="p:x"/></c2>' \
+               '</r>'
+        xml2 = xml1.replace('p:', 'q:').replace(':p=', ':q=')
+        self.assertTrue(etree_elements_equal(xml1, xml2))
+
+        key = etree_canonical_key(xml1)
+        children = key[3]
+        self.assertEqual(children[0][1], (('{urn:A}attr', '{urn:A}x'),))
+        self.assertEqual(children[1][3][0][1], (('{urn:B}attr', '{urn:B}x'),))
+
+        # The inner binding differs: entities must not be merged
+        xml3 = xml1.replace('xmlns:p="urn:B"', 'xmlns:p="urn:A"')
+        self.assertFalse(etree_elements_equal(xml1, xml3))
+
+    def test_parsed_elements_with_namespaces_argument(self):
+        elem1 = ElementTree.fromstring('<root><child attr="p:v"/></root>')
+        elem2 = ElementTree.fromstring('<root><child attr="q:v"/></root>')
+        self.assertTrue(etree_elements_equal(
+            elem1, elem2, {'p': 'urn:A'}, {'q': 'urn:A'}))
+        self.assertFalse(etree_elements_equal(
+            elem1, elem2, {'p': 'urn:A'}, {'q': 'urn:B'}))
+
+    def test_file_like_sources(self):
+        import io
+        xml1 = '<p:root xmlns:p="http://example.com/ns"/>'
+        xml2 = '<q:root xmlns:q="http://example.com/ns"/>'
+        self.assertTrue(etree_elements_equal(io.StringIO(xml1), io.StringIO(xml2)))
+
+    @unittest.skipIf(lxml_etree is None, "lxml is not installed")
+    def test_lxml_elements_keep_position_bindings(self):
+        xml1 = '<r xmlns:p="urn:A"><c1 p:attr="p:x"/>' \
+               '<c2 xmlns:p="urn:B"><d p:attr="p:x"/></c2></r>'
+        xml2 = xml1.replace('p:', 'q:').replace(':p=', ':q=')
+        elem1 = lxml_etree.fromstring(xml1)
+        elem2 = lxml_etree.fromstring(xml2)
+        self.assertTrue(etree_elements_equal(elem1, elem2))
+
+        elem3 = lxml_etree.fromstring(xml1.replace('xmlns:p="urn:B"', 'xmlns:p="urn:A"'))
+        self.assertFalse(etree_elements_equal(elem1, elem3))
 
 
 if __name__ == '__main__':
