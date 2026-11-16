@@ -1,5 +1,6 @@
 import functools
 import json
+import re
 import warnings
 from collections.abc import Mapping, MutableMapping, Sequence
 from urllib import parse as urlparse
@@ -20,6 +21,369 @@ except ImportError:
 
 __version__ = "1.1.0"
 
+# A JSON pointer array index is either "0" or a non-zero digit followed by more
+# digits.  In particular, values accepted by ``int()`` such as "-1", "+1" and
+# "01" are *not* valid JSON pointer array indices.
+_ARRAY_INDEX_RE = re.compile(r"(?:0|[1-9][0-9]*)\Z")
+# "~" may only appear as part of the "~0" or "~1" escapes.
+_INVALID_POINTER_ESCAPE_RE = re.compile(r"~(?![01])")
+# Every "%" in a URI fragment must introduce two hexadecimal digits.
+_INVALID_PERCENT_ESCAPE_RE = re.compile(r"%(?![0-9A-Fa-f]{2})")
+
+
+class PointerSteps(tuple):
+    """
+    An ordered tuple of pointer steps.
+
+    Steps are strings for object member names and integers for array indices.
+    Comparing with a list is supported so callers can use either sequence type.
+    """
+
+    __slots__ = ()
+
+    def __new__(cls, steps=()):
+        return super(PointerSteps, cls).__new__(cls, steps)
+
+    def __eq__(self, other):
+        if isinstance(other, list):
+            return list(self) == other
+        if isinstance(other, tuple):
+            return tuple(self) == tuple(other)
+        return NotImplemented
+
+    def __ne__(self, other):
+        result = self.__eq__(other)
+        if result is NotImplemented:
+            return result
+        return not result
+
+    __hash__ = tuple.__hash__
+
+
+class PointerParseError(ValueError):
+    """Raised when a JSON pointer URI fragment is syntactically invalid."""
+
+    def __init__(
+        self,
+        message,
+        pointer,
+        token_index=None,
+        token=None,
+        char_index=None,
+        pointer_tokens=(),
+    ):
+        super().__init__(message)
+        self.message = message
+        self.pointer = pointer
+        self.token_index = token_index
+        self.token = token
+        self.char_index = char_index
+        self.pointer_tokens = tuple(pointer_tokens)
+
+    @property
+    def step_index(self):
+        return self.token_index
+
+    @property
+    def step(self):
+        return self.token
+
+    @property
+    def tokens(self):
+        return self.pointer_tokens
+
+
+class PointerResolutionError(ValueError):
+    """Raised when a syntactically valid pointer cannot be resolved."""
+
+    def __init__(
+        self,
+        message,
+        pointer,
+        pointer_tokens=(),
+        steps=(),
+        step=None,
+        step_index=None,
+        char_index=None,
+        cause=None,
+    ):
+        super().__init__(message)
+        self.message = message
+        self.pointer = pointer
+        self.pointer_tokens = tuple(pointer_tokens)
+        self.steps = PointerSteps(steps)
+        self.step = step
+        self.step_index = step_index
+        self.char_index = char_index
+        self.cause = self.__cause__ = cause
+
+    @property
+    def tokens(self):
+        return self.pointer_tokens
+
+
+def parse_pointer(pointer):
+    """
+    Parse a JSON pointer (a URI fragment without the leading ``#``) into a
+    :class:`PointerSteps` of decoded string tokens.
+
+    A URI fragment is percent-decoded exactly once and only then split on
+    ``/``; this matches RFC 6901's URI fragment representation, where the
+    fragment is decoded before the pointer is parsed.  Each decoded token is
+    then unescaped with ``~1`` -> ``/`` and ``~0`` -> ``~``.  Percent escapes
+    are deliberately not decoded a second time: doing so would turn text such
+    as ``%252F`` into ``/`` and silently resolve to a different member.
+
+    Empty member names are preserved: the pointer ``/`` has a single token
+    ``""``, and ``//foo`` starts with an empty token.  Array-index conversion
+    is intentionally left to the resolver, because the same token is a string
+    member name when applied to an object and an index when applied to an
+    array.
+
+    :raises PointerParseError: if an escape sequence or percent escape is
+        invalid.
+    """
+    if pointer is None:
+        return ()
+    if not isinstance(pointer, str):
+        raise PointerParseError(
+            "JSON pointer must be a string, not %s" % type(pointer).__name__,
+            pointer,
+        )
+    if pointer.startswith("#"):
+        # Also accept a complete URI fragment (with its '#' delimiter).
+        pointer = pointer[1:]
+    if not pointer:
+        return ()
+
+    invalid = _INVALID_PERCENT_ESCAPE_RE.search(pointer)
+    if invalid is not None:
+        # Attribute the failure to the token containing the '%' so callers can
+        # identify both the step and the exact character.
+        has_leading_slash = pointer.startswith("/")
+        raw_tokens = pointer[1:].split("/") if has_leading_slash else pointer.split("/")
+        token_index = 0
+        consumed = 1 if has_leading_slash else 0
+        for index, raw_token in enumerate(raw_tokens):
+            if consumed <= invalid.start() <= consumed + len(raw_token):
+                token_index = index
+                break
+            consumed += len(raw_token) + 1
+        raise PointerParseError(
+            "invalid percent escape in JSON pointer %r at character %d"
+            % (pointer, invalid.start()),
+            pointer,
+            token_index=token_index,
+            token=raw_tokens[token_index] if raw_tokens else None,
+            char_index=invalid.start(),
+        )
+
+    try:
+        decoded = unquote(pointer, errors="strict")
+    except UnicodeDecodeError as e:
+        # Locate the offending token for error reporting.  This second pass is
+        # only used to build the error; it does not affect resolution.
+        bad_index = None
+        for token_index, raw_token in enumerate(pointer[1:].split("/")):
+            try:
+                unquote(raw_token, errors="strict")
+            except UnicodeDecodeError:
+                bad_index = token_index
+                break
+        raise PointerParseError(
+            "invalid UTF-8 escape in JSON pointer %r: %s" % (pointer, e),
+            pointer,
+            token_index=bad_index,
+            token=pointer[1:].split("/")[bad_index] if bad_index is not None else None,
+        ) from e
+
+    tokens = []
+    # Strip exactly one leading '/', not all of them.  The remaining empty
+    # strings are significant tokens (empty member names).  Fragments without
+    # a leading slash are kept as pointer text for backwards compatibility.
+    has_leading_slash = decoded.startswith("/")
+    raw_tokens = pointer[1:].split("/") if has_leading_slash else pointer.split("/")
+    decoded_tokens = (
+        decoded[1:].split("/") if has_leading_slash else decoded.split("/")
+    )
+    # Character offsets are only meaningful while raw and decoded tokens line
+    # up; a percent-encoded slash can change the token count.
+    if len(raw_tokens) == len(decoded_tokens):
+        offsets = []
+        offset = 1 if has_leading_slash else 0
+        for raw_token in raw_tokens:
+            offsets.append(offset)
+            offset += len(raw_token) + 1
+    else:
+        offsets = [None] * len(decoded_tokens)
+
+    for token_index, token in enumerate(decoded_tokens):
+        if _INVALID_POINTER_ESCAPE_RE.search(token):
+            raise PointerParseError(
+                "invalid '~' escape in token %d (%r) of JSON pointer %r"
+                % (token_index, token, pointer),
+                pointer,
+                token_index=token_index,
+                token=token,
+                char_index=offsets[token_index],
+                pointer_tokens=tuple(tokens),
+            )
+        tokens.append(token.replace("~1", "/").replace("~0", "~"))
+    return PointerSteps(tokens)
+
+
+class PointerResult(tuple):
+    """
+    A pair of ``(target, steps)`` returned when pointer steps are requested.
+
+    It is a real tuple, so ``target, steps = result`` works, and the target and
+    steps are also available as the :attr:`target` / :attr:`value` and
+    :attr:`steps` attributes.
+    """
+
+    __slots__ = ()
+
+    def __new__(cls, target, steps):
+        return super(PointerResult, cls).__new__(cls, (target, PointerSteps(steps)))
+
+    @property
+    def target(self):
+        return self[0]
+
+    @property
+    def value(self):
+        return self[0]
+
+    @property
+    def steps(self):
+        return self[1]
+
+    def __repr__(self):
+        return "PointerResult(target=%r, steps=%r)" % (self[0], self[1])
+
+
+def _resolve_pointer_tokens(document, pointer, tokens, own_reference=None):
+    """Apply parsed pointer tokens, returning ``(target, steps)``."""
+    steps = []
+    for step_index, token in enumerate(tokens):
+        if own_reference is not None and document is own_reference:
+            # A reference object may point inside itself; in that case the
+            # path is interpreted against the reference object itself.
+            document = own_reference.__reference__
+
+        if isinstance(document, Sequence) and not isinstance(
+            document, (str, bytes, bytearray)
+        ):
+            try:
+                # Array tokens must be canonical decimal indices.  int() on
+                # its own is too permissive (it accepts "01", "+1", "-1"...).
+                step = _sequence_index(document, token)
+            except (TypeError, IndexError) as e:
+                raise PointerResolutionError(
+                    "Unresolvable JSON pointer: %r at step %d (%r): %s"
+                    % (pointer, step_index, token, e),
+                    pointer,
+                    pointer_tokens=tokens,
+                    steps=steps,
+                    step=token,
+                    step_index=step_index,
+                    char_index=_token_char_index(pointer, step_index),
+                    cause=e,
+                ) from e
+        else:
+            # Object member names are always strings, even numeric ones.
+            # Containers that are not Mapping subclasses (including proxies)
+            # are still indexed duck-typing style, as before.
+            step = token
+
+        try:
+            document = document[step]
+        except (TypeError, LookupError) as e:
+            raise PointerResolutionError(
+                "Unresolvable JSON pointer: %r at step %d (%r): %s"
+                % (pointer, step_index, token, e),
+                pointer,
+                pointer_tokens=tokens,
+                steps=steps,
+                step=step,
+                step_index=step_index,
+                char_index=_token_char_index(pointer, step_index),
+                cause=e,
+            ) from e
+        steps.append(step)
+    return document, tuple(steps)
+
+
+def resolve_pointer(document, pointer, return_steps=False):
+    """
+    Resolve a JSON pointer ``pointer`` within ``document``.
+
+    :param document: the document to resolve against
+    :param str pointer: a JSON pointer URI fragment (without the leading
+        ``#``), or a full pointer beginning with ``/``
+    :param bool return_steps: if true, return a :class:`PointerResult`
+        containing both the target and the ordered steps.  Array-index steps
+        are integers; object-key steps are strings.
+    :raises PointerParseError: if the pointer has an invalid escape
+    :raises PointerResolutionError: if a token does not exist, an array index
+        is not a valid canonical index, or an index is out of range
+
+    When ``return_steps`` is false the target itself is returned, preserving
+    the historical behavior.  This module-level helper and
+    :meth:`JsonRef.resolve_pointer` share the same resolution semantics.
+    """
+    tokens = parse_pointer(pointer)
+    target, steps = _resolve_pointer_tokens(document, pointer, tokens)
+    if return_steps:
+        return PointerResult(target, steps)
+    return target
+
+
+def resolve_pointer_steps(document, pointer):
+    """
+    Resolve ``pointer`` within ``document`` and return ``(target, steps)``.
+
+    This is a convenience wrapper around :func:`resolve_pointer` with
+    ``return_steps=True``.  The result is a :class:`PointerResult`, which
+    unpacks like a plain pair and also exposes ``.target`` and ``.steps``.
+    """
+    return resolve_pointer(document, pointer, return_steps=True)
+
+
+def _token_char_index(pointer, token_index):
+    """Return the character offset of a pointer token, or None."""
+    if not pointer or token_index is None:
+        return None
+    if pointer.startswith("#"):
+        pointer = pointer[1:]
+    offset = 1
+    if not pointer.startswith("/"):
+        offset = 0
+    for index, raw_token in enumerate(pointer[1:].split("/")):
+        if index == token_index:
+            return offset
+        offset += len(raw_token) + 1
+    return None
+
+
+def _sequence_index(document, token):
+    """Convert an array token to an index, or raise a TypeError."""
+    if not _ARRAY_INDEX_RE.match(token):
+        raise TypeError(
+            "invalid array index %r; array indices must be '0' or a "
+            "non-zero digit followed by digits" % (token,)
+        )
+    try:
+        index = int(token)
+    except ValueError as e:
+        raise TypeError("invalid array index %r: %s" % (token, e)) from e
+    if index >= len(document):
+        raise IndexError(
+            "array index %d is out of range for an array of length %d"
+            % (index, len(document))
+        )
+    return index
+
 
 class JsonRefError(Exception):
     def __init__(self, message, reference, uri="", base_uri="", path=(), cause=None):
@@ -29,6 +393,15 @@ class JsonRefError(Exception):
         self.base_uri = base_uri
         self.path = path
         self.cause = self.__cause__ = cause
+        # Details about where a JSON pointer failed to resolve.  These are
+        # populated for pointer errors and default to empty values otherwise.
+        self.pointer = None
+        self.pointer_tokens = ()
+        self.steps = PointerSteps()
+        self.step = None
+        self.step_index = None
+        self.token_index = None
+        self.char_index = None
 
     def __repr__(self):
         return "<%s: %r>" % (self.__class__.__name__, self.message)
@@ -154,39 +527,81 @@ class JsonRef(LazyProxy):
             }
         return result
 
-    def resolve_pointer(self, document, pointer):
+    def resolve_pointer(
+        self, document, pointer, return_steps=False, return_path=False
+    ):
         """
         Resolve a json pointer ``pointer`` within the referenced ``document``.
 
+        The fragment is percent-decoded exactly once and then split on
+        literal ``/``, so percent escapes are never decoded a second time and
+        cannot silently land on a different member.  Each token is then
+        unescaped (``~1`` -> ``/`` and ``~0`` -> ``~``).  When a token is
+        applied to an array it is converted to a canonical integer index; when
+        it is applied to an object it always remains a string key, even if it
+        looks numeric.
+
         :argument document: the referent document
         :argument str pointer: a json pointer URI fragment to resolve within it
+        :argument bool return_steps: if true, return a :class:`PointerResult`
+            with both the target and the ordered sequence of applied steps.
+            Array steps are integers; object steps are strings.
+        :argument bool return_path: alias for ``return_steps``.
 
         """
-        parts = unquote(pointer.lstrip("/")).split("/") if pointer else []
+        if return_path:
+            return_steps = True
+        try:
+            tokens = parse_pointer(pointer)
+        except PointerParseError as e:
+            raise self._error(
+                "Unresolvable JSON pointer: %r at step %s: %s"
+                % (
+                    pointer,
+                    "?" if e.token_index is None else e.token_index,
+                    e,
+                ),
+                cause=e,
+                pointer=pointer,
+                pointer_tokens=e.pointer_tokens,
+                step=getattr(e, "token", None),
+                step_index=getattr(e, "token_index", None),
+                char_index=getattr(e, "char_index", None),
+            ) from e
 
-        for part in parts:
-            part = part.replace("~1", "/").replace("~0", "~")
+        try:
+            target, steps = _resolve_pointer_tokens(
+                document, pointer, tokens, own_reference=self
+            )
+        except PointerResolutionError as e:
+            raise self._error(
+                e.args[0],
+                cause=e.cause,
+                pointer=pointer,
+                pointer_tokens=e.pointer_tokens,
+                steps=e.steps,
+                step=e.step,
+                step_index=e.step_index,
+                char_index=e.char_index,
+            ) from e
 
-            if isinstance(document, Sequence):
-                # Try to turn an array index to an int
-                try:
-                    part = int(part)
-                except ValueError:
-                    pass
-            # If a reference points inside itself, it must mean inside reference object, not the referent data
-            if document is self:
-                document = self.__reference__
-            try:
-                document = document[part]
-            except (TypeError, LookupError) as e:
-                raise self._error(
-                    "Unresolvable JSON pointer: %r" % pointer, cause=e
-                ) from e
-        return document
+        if return_steps:
+            return PointerResult(target, steps)
+        return target
 
-    def _error(self, message, cause=None):
+    def _error(
+        self,
+        message,
+        cause=None,
+        pointer=None,
+        pointer_tokens=(),
+        steps=(),
+        step=None,
+        step_index=None,
+        char_index=None,
+    ):
         message = "Error while resolving `{}`: {}".format(self.full_uri, message)
-        return JsonRefError(
+        error = JsonRefError(
             message,
             self.__reference__,
             uri=self.full_uri,
@@ -194,6 +609,14 @@ class JsonRef(LazyProxy):
             path=self.path,
             cause=cause,
         )
+        error.pointer = pointer
+        error.pointer_tokens = tuple(pointer_tokens)
+        error.steps = PointerSteps(steps)
+        error.step = step
+        error.step_index = step_index
+        error.token_index = step_index
+        error.char_index = char_index
+        return error
 
     def __repr__(self):
         if hasattr(self, "cache") or self.load_on_repr:

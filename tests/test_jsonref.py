@@ -48,6 +48,48 @@ class TestJsonRef(object):
         json = {"a/~a": ["resolved"], "b": {"$ref": "#/a~1~0a"}}
         assert parametrized_replace_refs(json)["b"] == json["a/~a"]
 
+    def test_local_empty_key_ref(self, parametrized_replace_refs):
+        json = {"": {"target": 1}, "b": {"$ref": "#//target"}}
+        assert parametrized_replace_refs(json)["b"] == 1
+
+    def test_local_root_empty_key_ref(self, parametrized_replace_refs):
+        json = {"": "empty", "b": {"$ref": "#/"}}
+        assert parametrized_replace_refs(json)["b"] == "empty"
+
+    def test_local_percent_encoded_ref(self, parametrized_replace_refs):
+        json = {"sp ace": "resolved", "b": {"$ref": "#/sp%20ace"}}
+        assert parametrized_replace_refs(json)["b"] == "resolved"
+
+    def test_percent_escape_is_decoded_only_once(self, parametrized_replace_refs):
+        json = {
+            "a%2Fb": "literal-percent",
+            "a": {"b": "nested"},
+            "dotted": {"$ref": "#/a%2Fb"},
+            "literal": {"$ref": "#/a%252Fb"},
+        }
+        result = parametrized_replace_refs(json)
+        assert result["dotted"] == "nested"
+        assert result["literal"] == "literal-percent"
+
+    def test_numeric_key_stays_a_string(self, parametrized_replace_refs):
+        json = {"0": "zero", "ref": {"$ref": "#/0"}}
+        assert parametrized_replace_refs(json)["ref"] == "zero"
+
+    def test_array_index_is_an_int(self, parametrized_replace_refs):
+        json = ["zero", "one", {"$ref": "#/1"}]
+        assert parametrized_replace_refs(json)[2] == "one"
+
+    def test_pointer_steps_keep_key_and_index_types(self):
+        json = {"arr": [{"k": "v"}], "num": {"0": "string-zero"}}
+        ref = JsonRef({"$ref": "#"})
+        result = JsonRef.resolve_pointer(ref, json, "/arr/0/k", return_steps=True)
+        assert result.target == "v"
+        assert result.steps == ("arr", 0, "k")
+
+        result = JsonRef.resolve_pointer(ref, json, "/num/0", return_steps=True)
+        assert result.target == "string-zero"
+        assert result.steps == ("num", "0")
+
     def test_local_nonexistent_ref(self):
         json = {
             "data": [1, 2],

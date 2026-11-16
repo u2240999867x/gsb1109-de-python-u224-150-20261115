@@ -98,7 +98,7 @@ properties. This behavior should not be used if you want your JSON documents to 
 usable with the widest possible array of tools.
 
 A note on ``base_uri``
---------------------
+---------------------
 
 A common question is how to reference other documents from the local filesystem. This is
 easy if you provide the correct ``base_uri`` to the :func:`replace_refs` function (or
@@ -118,6 +118,44 @@ like this::
 
     with file_a_path.open() as file_a:
         result = jsonref.load(file_a, base_uri=file_a_path.as_uri())
+
+
+JSON Pointer resolution
+=======================
+
+The fragment of a reference is a `JSON Pointer <https://tools.ietf.org/html/rfc6901>`_
+in its URI fragment form. The fragment is percent-decoded exactly once before it is
+split into tokens, and each token is then unescaped::
+
+    {"":          "empty key",       "$ref": "#/"         ->  empty key
+     "a/b":       "slash key",       "$ref": "#/a~1b"     ->  slash key
+     "a~b":       "tilde key",       "$ref": "#/a~0b"     ->  tilde key
+     "a b":       "space key",       "$ref": "#/a%20b"    ->  space key
+     "100%":      "percent key",     "$ref": "#/100%25"   ->  percent key
+     "a%2Fb":     "literal %2F",     "$ref": "#/a%252Fb"  ->  literal %2F}
+
+Consecutive slashes are significant, so ``#//target`` starts with the empty key. A
+percent escape is never decoded twice; if a value must contain the literal text
+``%2F``, the reference writes it as ``%252F`` and it resolves to a member named
+``%2F``, not to a nested member.
+
+When a token is applied to an array it must be a canonical decimal index (``0``, or a
+non-zero digit followed by digits). Indices such as ``01``, ``+1`` and ``-1`` are
+rejected instead of being converted by :func:`int`, so a negative index cannot silently
+select an element from the end of the array. Tokens applied to objects always remain
+strings, including numeric-looking tokens.
+
+The resolution helpers expose both the target and the ordered steps that were applied::
+
+    from jsonref import resolve_pointer
+
+    doc = {"arr": [{"k": "v"}]}
+    target, steps = resolve_pointer(doc, "/arr/0/k", return_steps=True)
+    # target == "v"; steps == ("arr", 0, "k")
+
+Array-index steps are integers and object-key steps are strings. Without
+``return_steps=True`` the target itself is returned, preserving the historical
+behavior. The same option is available on :meth:`JsonRef.resolve_pointer`.
 
 
 :class:`JsonRef` Objects
@@ -254,6 +292,34 @@ If there is a failure when resolving a JSON reference, a :class:`JsonRefError` w
 
         This is the path within the JSON document the reference was found. This can be useful when the reference was
         deeply nested within the document.
+
+    .. attribute:: pointer
+
+        The JSON pointer URI fragment (without the leading ``#``) that failed
+        to resolve, or ``None`` if the failure was not a pointer failure.
+
+    .. attribute:: pointer_tokens
+
+        The decoded pointer tokens that were parsed before resolution. Empty
+        member names are preserved.
+
+    .. attribute:: step_index
+
+        The zero-based index of the pointer token that failed, or ``None`` if
+        no specific token could be identified (for example, an invalid
+        percent escape).
+
+    .. attribute:: step
+
+        The token that failed, as a decoded string. For a step that was applied
+        to an array, this is still the original token text (for example
+        ``"01"``), while :attr:`steps` contains the resolved array index as an
+        integer for every step that succeeded before it.
+
+    .. attribute:: steps
+
+        The steps that resolved successfully before the failure. Object keys
+        are strings and array indices are integers.
 
     .. attribute:: cause
 
