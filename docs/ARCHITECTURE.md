@@ -87,6 +87,7 @@ The package is thirty-two modules; four carry most of the weight:
 | `codec/ber/encoder.py` | The base encoder |
 | `codec/ber/eoo.py` | The end-of-octets singleton |
 | `codec/cer/*`, `codec/der/*` | Derived codecs, sharing BER's objects by identity |
+| `codec/crosscheck.py` | CER/DER cross-validation export: logical-content comparison plus the X.690 segment walk; see [CER/DER cross-validation](#cerder-cross-validation) |
 | `codec/native/*` | Conversion to and from Python dicts, lists and scalars |
 | `compat/integer.py` | A single `to_bytes` helper |
 | `debug.py` | The logging facility; see [The debug hook](#the-debug-hook) |
@@ -1570,6 +1571,45 @@ for long strings. DER's remaining decoder overrides are inventoried under
 [What each dialect changes](#what-each-dialect-changes), and this attribute
 is the one DER restriction that applies on every decode path
 ([Registration and import order](#registration-and-import-order)).
+
+### CER/DER cross-validation
+
+CER and DER encode the same value differently once a string crosses the
+1000-unit chunk threshold: CER emits a constructed, indefinitely-framed
+sequence of segments while DER emits one primitive, definitely-framed TLV.
+`codec/crosscheck.py` therefore never compares substrates or segment counts.
+`export_and_validate` runs both encoders and decodes each result;
+`_logical_signature` reduces the values to structure-sensitive keys -- octet
+content, bit length and octets, and for REAL the sign plus significant
+mantissa digits after stripping insignificant trailing zeroes -- so the two
+codecs agree on value and precision regardless of how CER split the payload.
+`validate_cer_substrate` takes archived CER octets directly, which is the
+entry that can catch a bad original: `_walk_tlvs` enforces X.690 9.2 before
+any re-encoding (primitive segments only, matching OCTET STRING/BIT STRING
+tag, the 1000-octet data limit, full-size non-final segments), so an overlong
+or mistagged source segment fails instead of being normalised away by a DER
+round-trip.
+
+Two root-cause fixes make the round-trip trustworthy. Character strings hold
+their payload as a Python `str`, but `OctetStringEncoder.encodeValue` sliced
+that value by *octet* offsets; a multi-byte character straddling a boundary
+made every slice return the whole string and recurse without progress. The
+encoder now slices the encoded octets. On the decode side,
+`OctetStringPayloadDecoder` constructed each fragment through the concrete
+character type, decoding a split multi-byte glyph before its other halves
+were reassembled. Both its constructed-form loops now decode fragments
+tag-driven (no fixed `asn1Spec`) and join the raw octets, applying the
+character codec exactly once in `_createComponent`; this also accepts the
+hand-built fragments carrying the concrete string tag that
+`testConstructedCharacterString` in `tests/codec/der/test_decoder.py` pins.
+
+A decoded segmented string keeps the constructed format on its tag, which is
+not valid DER. Rather than change decoder semantics globally, crosscheck
+rebuilds only those tags in primitive form via `_normalized_for_der` (a deep
+copy, so the reported CER value and absent OPTIONAL/DEFAULT components are
+never mutated) before the DER re-export. Segmentation correctness is covered
+by `tests/codec/test_crosscheck.py`, registered in
+`tests/codec/__main__.py` like every other cross-codec module.
 
 ### Deferred typing: ANY and open types
 

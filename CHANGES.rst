@@ -21,6 +21,16 @@ Revision 0.7.0, released XX-XX-2026
   qualifies for a private advisory and a CVE versus what is handled
   as an ordinary public bug report
   [issue #96](https://github.com/pyasn1/pyasn1/issues/96)
+- Fixed CER/BER constructed string encoding and decoding. Long octet and
+  character strings above the 1000-octet chunk limit now slice the encoded
+  octets rather than the Python value, so multi-byte characters straddling a
+  segment boundary no longer cause unbounded recursion, and constructed
+  fragments are reassembled as opaque octets before the character codec is
+  applied once. Added ``pyasn1.codec.crosscheck`` with
+  ``export_and_validate`` and ``validate_cer_substrate``, which export a value
+  through both CER and DER and compare logical content (and REAL significant
+  digits) instead of segment counts, while a structural walk rejects
+  malformed source segments before canonical re-encoding can hide them.
 
 Revision 0.6.5, released 26-10-2026
 ---------------------------------------

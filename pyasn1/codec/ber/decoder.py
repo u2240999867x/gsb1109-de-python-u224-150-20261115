@@ -363,13 +363,17 @@ class OctetStringPayloadDecoder(AbstractSimplePayloadDecoder):
             LOG('assembling constructed serialization')
 
         # Assemble the logical value of each fragment, including nested ones.
+        # Fragments are decoded tag-driven (no fixed asn1Spec): an encoder
+        # tags them as OCTET STRING while hand-built data may tag each
+        # fragment with the concrete character string type. A multi-byte
+        # character may straddle a fragment boundary, so only the assembled
+        # octets are handed to the concrete type once, at the end.
         fragments = []
 
         original_position = substrate.tell()
         # head = popSubstream(substrate, length)
         while substrate.tell() - original_position < length:
-            for component in decodeFun(
-                    substrate, self.protoComponent, **options):
+            for component in decodeFun(substrate, None, **options):
                 if isinstance(component, SubstrateUnderrunError):
                     yield component
 
@@ -390,12 +394,13 @@ class OctetStringPayloadDecoder(AbstractSimplePayloadDecoder):
             return
 
         # Assemble the logical value of each fragment, including nested ones.
+        # See valueDecoder for why fragments are decoded without a fixed spec.
         fragments = []
 
         while True:  # loop over fragments
 
             for component in decodeFun(
-                    substrate, self.protoComponent, allowEoo=True, **options):
+                    substrate, None, allowEoo=True, **options):
 
                 if isinstance(component, SubstrateUnderrunError):
                     yield component

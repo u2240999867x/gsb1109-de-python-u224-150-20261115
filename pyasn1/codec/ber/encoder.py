@@ -229,18 +229,18 @@ class OctetStringEncoder(AbstractItemEncoder):
     def encodeValue(self, value, asn1Spec, encodeFun, **options):
 
         if asn1Spec is None:
-            substrate = value.asOctets()
+            octets = value.asOctets()
 
         elif not isinstance(value, bytes):
-            substrate = asn1Spec.clone(value).asOctets()
+            octets = asn1Spec.clone(value).asOctets()
 
         else:
-            substrate = value
+            octets = value
 
         maxChunkSize = options.get('maxChunkSize', 0)
 
-        if not maxChunkSize or len(substrate) <= maxChunkSize:
-            return substrate, False, True
+        if not maxChunkSize or len(octets) <= maxChunkSize:
+            return octets, False, True
 
         if LOG:
             LOG('encoding into up to %s-octet chunks' % maxChunkSize)
@@ -271,15 +271,17 @@ class OctetStringEncoder(AbstractItemEncoder):
 
             asn1Spec = asn1Spec.clone(tagSet=tagSet)
 
+        # Character strings keep their payload as a Python ``str`` while the
+        # chunk limit counts octets. Slice the encoded octets rather than the
+        # value, otherwise multi-byte characters straddling a boundary make
+        # every slice return the whole string and the encoder recurses forever.
         pos = 0
         substrate = b''
 
-        while True:
-            chunk = value[pos:pos + maxChunkSize]
-            if not chunk:
-                break
-
-            substrate += encodeFun(chunk, asn1Spec, **options)
+        while pos < len(octets):
+            substrate += encodeFun(
+                octets[pos:pos + maxChunkSize], asn1Spec, **options
+            )
             pos += maxChunkSize
 
         return substrate, True, True
